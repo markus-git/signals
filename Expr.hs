@@ -23,6 +23,17 @@ data Expr a
     Exp :: Floating a   => Expr a -> Expr a -> Expr a
     Sin :: Floating a   => Expr a -> Expr a
 
+    -- ^ ToDo: Remove
+    TupE :: Expr a -> Expr b -> Expr (a, b)
+    FstE :: Expr (a, b) -> Expr a
+    SndE :: Expr (a, b) -> Expr b
+
+--------------------------------------------------------------------------------
+-- **
+
+-- Tuples
+tupE = TupE; fstE = FstE; sndE = SndE;
+
 --------------------------------------------------------------------------------
 -- ** Evaluation
 
