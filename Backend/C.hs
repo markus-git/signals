@@ -39,6 +39,7 @@ instance CompExp C Expr
 
 compExp' :: Expr a -> C C.Exp
 compExp' (Var v)   = return [cexp| $id:v |]
+compExp' (Val v)   = let s = show v in return [cexp| $id:s |]
 compExp' (Add a b) = do
   a' <- compExp' a
   b' <- compExp' b
@@ -69,30 +70,50 @@ instance CompCMD C cmd => CompCMD C (Construct cmd)
     compCMD = compConstruct
 
 compCMD' :: CMD Expr a -> C a
+
+-- ^ File handling
 compCMD' (Open path) = do
   addInclude "<stdio.h>"
   addInclude "<stdlib.h>"
   sym <- gensym "v"
-  addLocal [cdecl| char * $id:sym; |]
+  addLocal [cdecl| typename FILE * $id:sym; |]
   addStm   [cstm| $id:sym = fopen($id:path, "a+"); |]
   return $ Ptr sym
 compCMD' (Close ptr) = do
   let ptr' = unPtr ptr
-  addInclude "<stdio.h>"
   addStm [cstm| fclose($id:ptr'); |]
-compCMD' (Put ptr v) = do
+compCMD' (Put ptr exp) = do
   let ptr' = unPtr ptr
-  addInclude "<stdio.h>"
-  addInclude "<stdlib.h>"
-  v' <- compExp v
-  addStm [cstm| fprintf($id:ptr', "$f", $v'); |]
-compCMD' (Get ptr)   = do
+  v <- compExp exp
+  addStm [cstm| fprintf($id:ptr', "$f", $v); |]
+compCMD' (Get ptr) = do
   let ptr' = unPtr ptr
-  addInclude "<stdio.h>"
   sym <- gensym "v"
   addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = atof(fgetc($id:ptr')); |]
   return $ Var sym
+
+-- ^ Mutable refrences
+compCMD' (InitRef) = do
+  sym <- gensym "r"
+  addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  return $ Ref sym
+compCMD' (NewRef exp) = do
+  sym <- gensym "r"
+  v   <- compExp exp
+  addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  addStm   [cstm| $id:sym = $v; |]
+  return $ Ref sym
+compCMD' (GetRef ref) = do
+  let ref' = unRef ref
+  sym <- gensym "r"
+  addLocal [cdecl| float $id:sym; |]
+  addStm   [cstm| $id:sym = $id:ref'; |]
+  return $ Var sym
+compCMD' (SetRef ref exp) = do
+  let ref' = unRef ref
+  v <- compExp exp
+  addStm [cstm| $id:ref' = $v; |]
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body

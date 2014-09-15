@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveDataTypeable   #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 
 module Frontend.SignalObsv where
 
@@ -15,6 +16,7 @@ import Frontend.Signal
 import Control.Applicative hiding (Const)
 import Data.Dynamic
 import Data.Reify
+import Data.Proxy
 
 --------------------------------------------------------------------------------
 -- *
@@ -23,18 +25,18 @@ import Data.Reify
 data SigTree ref
   where
     -- | Signal functions
-    TLambda :: ref -> ref -> SigTree ref
-    TVar    ::               SigTree ref
+    TLambda :: (Typeable a, Typeable b)
+            => Proxy (a, b) -> ref -> ref -> SigTree ref
+    TVar    :: SigTree ref
 
     -- | Signals
-    TConst  :: (Typeable a) => (Stream a) -> SigTree ref
-    TLift   :: (Typeable a, Typeable b)
-            => (Stream a -> Stream b)
-            -> ref
-            -> SigTree ref
+    TConst  :: (Typeable a) => (Stream (Expr a)) -> SigTree ref
 
-    TZip    :: ref -> ref -> SigTree ref
-    TFst    :: ref        -> SigTree ref
+    TLift   :: (Typeable a, Typeable b)
+            => (Stream (Expr a) -> Stream (Expr b)) -> ref -> SigTree ref
+
+    TZip    :: (Typeable a, Typeable b) => Proxy (a, b) -> ref -> ref -> SigTree ref
+    TFst    :: (Typeable a, Typeable b) => Proxy (a, b) -> ref        -> SigTree ref
 
     TDelay  :: (Typeable a) => Expr a   -> ref -> SigTree ref
     TSample ::                 Expr Int -> ref -> SigTree ref
@@ -46,36 +48,36 @@ class NewVar a
 --------------------------------------------------------------------------------
 -- **
 
-deriving instance Typeable1 Expr
-deriving instance Typeable1 Stream
-deriving instance Typeable1 Signal
-
 instance NewVar (Signal a)
   where
     mkVar = Var
 
-instance MuRef (Signal a)
+instance MuRef (Signal (Expr a))
   where
-    type DeRef (Signal a) = SigTree
+    type DeRef (Signal (Expr a)) = SigTree
 
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
 
-      (Zip s u)    -> TZip <$> f s <*> f u
-      (Fst s)      -> TFst <$> f s
+      (Zip (s :: Signal (Expr x))
+           (u :: Signal (Expr y)))      -> TZip (Proxy::Proxy(x, y)) <$> f s <*> f u
+      (Fst (s :: Signal (Expr (x, y)))) -> TFst (Proxy::Proxy(x, y)) <$> f s
 
       (Delay  v s) -> TDelay  v <$> f s
       (Sample n s) -> TSample n <$> f s
 
       (Var _)      -> pure $ TVar
 
-instance (Typeable a, Typeable b) => MuRef (Signal a -> Signal b)
+instance forall a b. (Typeable a, Typeable b)
+    => MuRef (Signal (Expr a) -> Signal (Expr b))
   where
-    type DeRef (Signal a -> Signal b) = SigTree
+    type DeRef (Signal (Expr a) -> Signal (Expr b)) = SigTree
 
     mapDeRef f sf = let (v, sg) = capture sf
-                     in TLambda <$> f v <*> f sg
+                     in TLambda (Proxy::Proxy (a, b))
+                          <$> f v
+                          <*> f sg
 
 capture :: (Typeable a, Typeable b, NewVar a) => (a -> b) -> (a, b)
 capture f = let a = mkVar (toDyn f) in (a, f a)

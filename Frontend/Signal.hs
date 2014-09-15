@@ -1,4 +1,8 @@
-{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- {-# LANGUAGE DataKinds      #-}
 -- {-# LANGUAGE KindSignatures #-}
@@ -9,6 +13,7 @@ module Frontend.Signal where
 import Expr
 
 import Data.Dynamic
+import Data.Typeable (Typeable1)
 
 import Frontend.Stream (Stream)
 import qualified Frontend.Stream as S
@@ -25,60 +30,71 @@ import qualified Prelude as P
 data Signal a
   where
     Const  :: (Typeable a)
-           => Stream a
-           -> Signal a
+           => Stream (Expr a)
+           -> Signal (Expr a)
 
     Lift   :: (Typeable a, Typeable b)
-           => (Stream a -> Stream b)
-           ->  Signal a -> Signal b
+           => (Stream (Expr a) -> Stream (Expr b))
+           ->  Signal (Expr a) -> Signal (Expr b)
 
-    Zip    :: (Typeable a, Typeable b) => Signal a -> Signal b -> Signal (a, b)
-    Fst    :: (Typeable a, Typeable b) => Signal (a, b) -> Signal a
+    Zip    :: (Typeable a, Typeable b)
+           => Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
 
-    Delay  :: (Typeable a) => Expr a   -> Signal a -> Signal a
-    Sample :: (Typeable a) => Expr Int -> Signal a -> Signal a
+    Fst    :: (Typeable a, Typeable b)
+           => Signal (Expr (a, b)) -> Signal (Expr a)
+
+    Delay  :: (Typeable a) => Expr a   -> Signal (Expr a) -> Signal (Expr a)
+    Sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
 
     -- |
     Var    :: Dynamic -> Signal a
 
-----------------------------------------
--- Constructors
+deriving instance Typeable1 Signal
 
-const :: (Typeable a) => Stream a -> Signal a
+--------------------------------------------------------------------------------
+-- ** Constructors
+
+const :: (Typeable a) => Stream (Expr a) -> Signal (Expr a)
 const = Const
 
-lift :: (Typeable a, Typeable b) => (Stream a -> Stream b) -> Signal a -> Signal b
+lift
+  :: (Typeable a, Typeable b)
+  => (Stream (Expr a) -> Stream (Expr b))
+  -> Signal (Expr a) -> Signal (Expr b)
 lift = Lift
 
-zip :: (Typeable a, Typeable b) => Signal a -> Signal b -> Signal (a, b)
+zip
+  :: (Typeable a, Typeable b)
+  => Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
 zip = Zip
 
-fst :: (Typeable a, Typeable b) => Signal (a, b) -> Signal a
+fst
+  :: (Typeable a, Typeable b)
+  => Signal (Expr (a, b)) -> Signal (Expr a)
 fst = Fst
 
-delay :: (Typeable a) => Expr a -> Signal a -> Signal a
+delay :: (Typeable a) => Expr a -> Signal (Expr a) -> Signal (Expr a)
 delay = Delay
 
-sample :: (Typeable a) => Expr Int -> Signal a -> Signal a
+sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
 sample = Sample
 
 --------------------------------------------------------------------------------
 -- **
 
-repeat :: (Typeable a) => Expr a -> Signal a
+repeat :: (Typeable a) => Expr a -> Signal (Expr a)
 repeat a = const $ S.repeat a
 
-map :: (Typeable a, Typeable b) => (Expr a -> Expr b) -> Signal a -> Signal b
+map :: (Typeable a, Typeable b)
+    => (Expr a -> Expr b)
+    -> Signal (Expr a)
+    -> Signal (Expr b)
 map f = lift (S.map f)
 
-zipWith :: (Typeable a, Typeable b, Typeable c)
+zipWith :: ( -- TupleExpr expr, Typeable1 expr
+             Typeable a, Typeable b, Typeable c)
         => (Expr a -> Expr b -> Expr c)
-        -> Signal a -> Signal b -> Signal c
-zipWith f s1 s2 = map (unc f) $ zip s1 s2
-  where unc f p = f (fstE p) (sndE p)
-
-zipWith3 :: (Typeable a, Typeable b, Typeable c, Typeable d)
-         => (Expr a -> Expr b -> Expr c -> Expr d)
-         -> Signal a -> Signal b -> Signal c -> Signal d
-zipWith3 f s1 s2 s3 = map (unc f) $ zip (zip s1 s2) s3
-  where unc f p = f (fstE (fstE p)) (sndE (fstE p)) (sndE p)
+        -> Signal (Expr a)
+        -> Signal (Expr b)
+        -> Signal (Expr c)
+zipWith f s1 s2 = map (\p -> f (fstE p) (sndE p)) $ zip s1 s2

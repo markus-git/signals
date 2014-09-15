@@ -1,9 +1,13 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Expr where
 
 import Interpretation
+
+import Data.Typeable (Typeable1)
 
 --------------------------------------------------------------------------------
 -- * Expressions
@@ -27,6 +31,8 @@ data Expr a
     TupE :: Expr a -> Expr b -> Expr (a, b)
     FstE :: Expr (a, b) -> Expr a
     SndE :: Expr (a, b) -> Expr b
+
+deriving instance Typeable1 Expr
 
 --------------------------------------------------------------------------------
 -- **
@@ -77,11 +83,10 @@ instance (Show a, Floating a) => Floating (Expr a)
     sin  = Sin
     (**) = Exp
 
-    exp   = todo; sqrt  = todo; log     = todo
-    tan   = todo; cos   = todo; asin    = todo
-    atan  = todo; acos  = todo; sinh    = todo
-    tanh  = todo; cosh  = todo; asinh   = todo
-    atanh = todo; acosh = todo; logBase = todo
+    exp   = todo; sqrt  = todo; log     = todo;
+    tan   = todo; cos   = todo; asin    = todo;
+    atan  = todo; acos  = todo; sinh    = todo;
+    tanh  = todo; cosh  = todo; asinh   = todo;
+    atanh = todo; acosh = todo; logBase = todo;
 
--- I'll add these later
-todo = undefined
+todo = undefined -- I'll add these later
