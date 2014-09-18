@@ -107,11 +107,11 @@ compGraph graph@(Graph gnodes groot) buffers input =
         (TFst (p :: Proxy (x, y)) s) -> do
           r  <- initRef
           sd <- castNode s (addNode i (toDyn r) nodes)
-                  :: Program (CMD Expr) (Ref (Expr x))
+                  :: Program (CMD Expr) (Ref (Expr (x, y)))
 
             -- todo: remove
           apa <- getRef sd
-          setRef r apa
+          setRef r $ fstE apa
 
           return $ toDyn r
 
