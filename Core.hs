@@ -32,11 +32,25 @@ data CMD exp a
     GetRef  :: VarPred exp a => Ref (exp a)          -> CMD exp (exp a)
     SetRef  :: VarPred exp a => Ref (exp a) -> exp a -> CMD exp ()
 
+    -- ^ Mutable arrays (IOArray in Haskell)
+    NewArr
+      :: (Num (exp n), VarPred exp a)
+      => exp n -> exp a -> CMD exp (Arr (exp a))
+    GetArr
+      :: (Num (exp n), VarPred exp a)
+      => exp n -> Arr (exp a) -> CMD exp (exp a)
+    SetArr
+      :: (Num (exp n), VarPred exp a)
+      => exp n -> exp a -> Arr (exp a) -> CMD exp ()
+
 -- |
 newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
 
 -- |
 newtype Ref a = Ref {unRef :: String} deriving Typeable
+
+-- |
+newtype Arr a = Arr {unArr :: String} deriving Typeable
 
 --------------------------------------------------------------------------------
 -- **
@@ -69,6 +83,23 @@ setRef r = singleton . SetRef r
 
 modifyRef :: VarPred exp a => Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
 modifyRef r f = getRef r >>= setRef r . f
+
+----------------------------------------
+
+newArr
+  :: (Num (exp n), VarPred exp a)
+  => exp n -> exp a -> Program (CMD exp) (Arr (exp a))
+newArr n = singleton . NewArr n
+
+getArr
+  :: (Num (exp n), VarPred exp a)
+  => exp n -> Arr (exp a) -> Program (CMD exp) (exp a)
+getArr n = singleton . GetArr n
+
+setArr
+  :: (Num (exp n), VarPred exp a)
+  => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
+setArr n a = singleton . SetArr n a
 
 --------------------------------------------------------------------------------
 -- * Constructs

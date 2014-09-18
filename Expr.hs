@@ -26,6 +26,12 @@ data Expr a
     Div :: Fractional a => Expr a -> Expr a -> Expr a
     Exp :: Floating a   => Expr a -> Expr a -> Expr a
     Sin :: Floating a   => Expr a -> Expr a
+    Mod :: Integral a   => Expr a -> Expr a -> Expr a
+
+    -- ^ Equality
+    Eq  :: Eq a  => Expr a -> Expr a -> Expr Bool
+    NEq :: Eq a  => Expr a -> Expr a -> Expr Bool
+    LEq :: Ord a => Expr a -> Expr a -> Expr Bool
 
     -- ^ ToDo: Remove
     TupE :: Expr a -> Expr b -> Expr (a, b)
@@ -39,6 +45,13 @@ deriving instance Typeable1 Expr
 
 -- Tuples
 tupE = TupE; fstE = FstE; sndE = SndE;
+
+-- Equality
+eq, neq :: Eq a => Expr a -> Expr a -> Expr Bool
+eq = Eq; neq = NEq
+
+leq :: Ord a => Expr a -> Expr a -> Expr Bool
+leq = LEq;
 
 --------------------------------------------------------------------------------
 -- ** Evaluation
@@ -57,9 +70,33 @@ evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
 evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
 evalExpr' (Div a b) = evalExpr' a / evalExpr' b
 evalExpr' (Sin a)   = sin $ evalExpr' a
+evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
 
 --------------------------------------------------------------------------------
 -- ** Haskell Instances
+
+instance (Show a, Eq a) => Eq (Expr a)     -- bad
+  where
+    a == b = evalExp $ Eq  a b
+    a /= b = evalExp $ NEq a b
+
+instance (Show a, Ord a) => Ord (Expr a)   -- bad
+  where
+    a <= b = evalExp $ LEq a b
+
+instance (Show a, Real a) => Real (Expr a) -- bad
+  where
+    toRational = todo
+
+instance (Show a, Enum a) => Enum (Expr a) -- bad
+  where
+    toEnum = todo; fromEnum = todo;
+
+instance (Show a, Integral a) => Integral (Expr a)
+  where
+    mod = Mod
+
+    quotRem = todo; toInteger = todo;
 
 instance (Show a, Num a) => Num (Expr a)
   where
@@ -89,4 +126,4 @@ instance (Show a, Floating a) => Floating (Expr a)
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
 
-todo = undefined -- I'll add these later
+todo = error "todo in expr" -- I'll add these later

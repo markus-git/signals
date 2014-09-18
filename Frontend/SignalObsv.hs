@@ -24,12 +24,12 @@ import Data.Proxy
 
 data SigTree ref
   where
-    -- | Signal functions
+    -- ^ Signal functions
     TLambda :: (Typeable a, Typeable b)
             => Proxy (a, b) -> ref -> ref -> SigTree ref
     TVar    :: SigTree ref
 
-    -- | Signals
+    -- ^ Signals
     TConst  :: (Typeable a) => (Stream (Expr a)) -> SigTree ref
 
     TLift   :: (Typeable a, Typeable b)
@@ -40,6 +40,11 @@ data SigTree ref
 
     TDelay  :: (Typeable a) => Expr a   -> ref -> SigTree ref
     TSample ::                 Expr Int -> ref -> SigTree ref
+
+    -- ^ Buffers
+    TMarrV :: ref             -> SigTree ref
+    TMarrD :: ref -> Expr Int -> SigTree ref
+  deriving Typeable
 
 class NewVar a
   where
@@ -81,3 +86,20 @@ instance forall a b. (Typeable a, Typeable b)
 
 capture :: (Typeable a, Typeable b, NewVar a) => (a -> b) -> (a, b)
 capture f = let a = mkVar (toDyn f) in (a, f a)
+
+--------------------------------------------------------------------------------
+-- ** Debugging
+
+instance Show (SigTree Unique)
+  where
+    show node = case node of
+      TLambda p r1 r2 -> "lam. "    ++ show r1            ++ " " ++ show r2
+      TVar            -> "var. "
+      TConst  s       -> "const. "
+      TLift sf r      -> "lift. "   ++ show r
+      TZip p r1 r2    -> "zip. "    ++ show r1            ++ " " ++ show r2
+      TFst p r        -> "fst. "    ++ show r
+      TDelay v r      -> "delay. "  ++ show r
+      TSample i r     -> "sample. " ++ show (evalExpr' i) ++ " " ++ show r
+      TMarrV r        -> "marrv. "  ++ show r
+      TMarrD r i      -> "marrd. "  ++ show (evalExpr' i) ++ " " ++ show r

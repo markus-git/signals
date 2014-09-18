@@ -1,9 +1,9 @@
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances  #-}
 
-{-# LANGUAGE ScopedTypeVariables #-}
-
+-- {-# LANGUAGE ScopedTypeVariables #-}
 -- {-# LANGUAGE DataKinds      #-}
 -- {-# LANGUAGE KindSignatures #-}
 -- {-# LANGUAGE TypeOperators  #-}
@@ -49,8 +49,6 @@ data Signal a
     -- |
     Var    :: Dynamic -> Signal a
 
-deriving instance Typeable1 Signal
-
 --------------------------------------------------------------------------------
 -- ** Constructors
 
@@ -78,6 +76,18 @@ delay = Delay
 
 sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
 sample = Sample
+
+--------------------------------------------------------------------------------
+-- **
+
+deriving instance Typeable1 Signal
+
+instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
+  where
+    fromInteger = repeat . fromInteger
+    (+)         = zipWith (+)
+    (*)         = zipWith (*)
+    (-)         = zipWith (-)
 
 --------------------------------------------------------------------------------
 -- **

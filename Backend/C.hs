@@ -56,6 +56,41 @@ compExp' (Div a b) = do
   a' <- compExp' a
   b' <- compExp' b
   return [cexp| $a' / $b' |]
+compExp' (Exp a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' ^ $b' |]
+compExp' (Sin a)   = do
+  a' <- compExp' a
+  return [cexp| sin( $a' ) |]
+compExp' (Mod a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' % $b'|]
+compExp' (Eq a b)  = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' == $b' |]
+compExp' (NEq a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' != $b' |]
+compExp' (LEq a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' <= $b' |]
+
+-- todo: remove
+compExp' (TupE a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| pair($a', $b') |]
+compExp' (FstE a) = do
+  a' <- compExp' a
+  return [cexp| snd($a') |]
+compExp' (SndE a) = do
+  a' <- compExp' a
+  return [cexp| fst($a') |]
 
 --------------------------------------------------------------------------------
 -- * Compilation of Commands
@@ -114,6 +149,36 @@ compCMD' (SetRef ref exp) = do
   let ref' = unRef ref
   v <- compExp exp
   addStm [cstm| $id:ref' = $v; |]
+
+-- ^ Mutable arrays
+compCMD' (NewArr size init) = do
+  addInclude "<string.h>"
+  sym <- gensym "a"
+  v   <- compExp size
+  i   <- compExp init -- todo: use this with memset
+  addLocal [cdecl| float $id:sym[$i]; |]
+  addStm   [cstm| memset($id:sym, 0, sizeof( $id:sym )); |]
+  return $ Arr sym
+compCMD' (GetArr i arr) = do
+  let arr' = unArr arr
+  sym <- gensym "v"
+  addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  return $ Var sym
+compCMD' (SetArr expv expi arr) = do
+  let arr' = unArr arr
+  v <- compExp expv
+  i <- compExp expi
+  addStm [cstm| $id:arr'[ $i ] = $v; |]
+
+    -- NewArr
+    --   :: (Num (exp n), VarPred exp a)
+    --   => exp n -> exp a -> CMD exp (Arr (exp a))
+    -- GetArr
+    --   :: (Num (exp n), VarPred exp a)
+    --   => exp n -> Arr (exp a) -> CMD exp (exp a)
+    -- SetArr
+    --   :: (Num (exp n), VarPred exp a)
+    --   => exp n -> exp a -> Arr (exp a) -> CMD exp ()
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body
