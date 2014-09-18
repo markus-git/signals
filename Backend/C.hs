@@ -166,7 +166,7 @@ compCMD' (GetArr expi arr) = do
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   addStm   [cstm| $id:sym = $id:arr'[ $i ]; |]
   return $ Var sym
-compCMD' (SetArr expv expi arr) = do
+compCMD' (SetArr expi expv arr) = do
   let arr' = unArr arr
   v <- compExp expv
   i <- compExp expi

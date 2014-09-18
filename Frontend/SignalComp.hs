@@ -115,29 +115,23 @@ compGraph graph@(Graph gnodes groot) buffers input =
 
           return $ toDyn r
 
-        (TDelay v s) -> do
-          undefined
-        (TMarrV r) -> do
-          let buff = case (M.lookup r buffers) of
-                       Just x  -> x
-                       Nothing -> error "TMarrV: Missing buffer!"
+        (TDelay  v s) -> todo
+        (TSample n s) -> todo
+
+        (TMarrV r)   -> do
+          let buff = fromJust $ M.lookup r buffers
           v <- input
           putBuff buff v
           r <- newRef v
           return $ toDyn r
         (TMarrD r i) -> do
-          let buff = case (M.lookup r buffers) of
-                       Just x  -> x
-                       Nothing -> error "TMarrD: Missing buffer!"
+          let buff = fromJust $ M.lookup r buffers
           v <- getBuff buff i
           r <- newRef v
           return $ toDyn r
 
     findNode :: Unique -> Node
-    findNode u = case (find ((P.==) u . P.fst) gnodes) of
-                   Just x  -> x
-                   Nothing -> error $ "couldn't find node " ++ show u
-                                    ++ "in graph " ++ show gnodes
+    findNode u = fromJust $ find ((P.==) u . P.fst) gnodes
 
     addNode :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
     addNode = M.insertWith (P.flip P.const)
@@ -186,30 +180,25 @@ putBuffer = flip putBuff
 --------------------------------------------------------------------------------
 -- ** Delay chains
 
+type Chain = [Node]
+
 -- todo : remove one element buffers
 --      , support mult. refs. to same node
 find_delay_chains
   :: Typeable a
   => Graph SigTree
   -> Program (CMD Expr) (Map Unique (Buffer a), Graph SigTree)
-find_delay_chains (Graph nodes root) =
-  do chains'   <- create_buffers $ find_chains nodes
-     let nodes' = update_graph (fmap (\(x,y,z) -> y)     chains') nodes
-         map'   = M.fromList   (fmap (\(x,y,z) -> (x,z)) chains')
-
-     -- error $ show "testing"
-     --           ++ "\n\n nodes: "          ++ show nodes
-     --           ++ "\n\n find_chains: "    ++ show (find_chains nodes)
-     --           ++ "\n\n create_buffers: " ++ show chains'
-     --           ++ "\n\n new nodes: "      ++ show nodes'
-
-     return (map', Graph nodes' root)
+find_delay_chains (Graph gnodes groot) = do
+    (chains, buffers) <- fmap P.unzip $ buffer $ find gnodes
+    let nodes = update chains gnodes
+    let maps  = M.fromList $ P.zip (P.map (P.fst . P.head) chains) buffers
+    return (maps, Graph nodes groot)
   where
     -- ^ Find all delay chains in the graph
-    find_chains :: [Node] -> [[Node]]
-    find_chains nodes = fmap (flip chain delays) vars
+    find :: [Node] -> [Chain]
+    find nodes = fmap (flip chain delays) vars
       where
-        chain :: Node -> [Node] -> [Node]
+        chain :: Node -> [Node] -> Chain
         chain u@(i, _) xs = u : go i xs
           where
             go _ [] = []
@@ -220,31 +209,30 @@ find_delay_chains (Graph nodes root) =
         vars   = [x | x@(_, TVar)       <- nodes]
         delays = [x | x@(_, TDelay _ _) <- nodes]
 
-    create_buffers
-      :: Typeable a
-      => [[Node]] -> Program (CMD Expr) ([(Unique, [Node], Buffer a)])
-    create_buffers chains = P.sequence $ fmap buffer $ fmap update chains
+      -- ^ Create buffers from chains and update nodes
+    buffer
+      :: Typeable a => [Chain] -> Program (CMD Expr) [(Chain, Buffer a)]
+    buffer chains = P.sequence $ fmap (create . update) chains
       where
-        update :: Typeable a => [Node] -> (Unique, [Node], [Expr a])
-        update ((u, TVar):xs) = uncurry ((,,) u)
-                              $ P.unzip
-                              $ P.snd
-                              $ mapAccumL f 1 xs
+        update
+          :: Typeable a
+          => Chain -> (Chain, [Expr a])
+        update ((u, TVar):xs) =
+          let (chain, delays) = P.unzip $ P.snd $ mapAccumL f 1 xs
+           in ((u, TMarrV u) : chain, delays)
           where
-            f :: Typeable a => Expr Int -> Node -> (Expr Int, (Node, Expr a))
-            f n (i, TDelay a _) = (n + 1, ((i, TMarrD u n), fromJust $ cast a))
-        buffer
-          :: Typeable a => (Unique, [Node], [Expr a])
-          -> Program (CMD Expr) (Unique, [Node], Buffer a)
-        buffer (u, ns, []) = error (show u)
-        buffer (u, ns, as) = do
-          buff <- newBuff (Val $ length as) (head as)
-          --P.sequence $ fmap (putBuff buff) as -- todo: create init function
-          return (u, ns, buff)
+            f n (i, TDelay a _) = (n+1, ((i, TMarrD u n), fromJust $ cast a))
+
+        create
+          :: Typeable a
+          => (Chain, [Expr a]) -> Program (CMD Expr) (Chain, Buffer a)
+        create (ns, as) = do
+          buff <- newBuff (Val $ length as) (head as) -- todo: create init function
+          return (ns, buff)
 
     -- ^ Replace old nodes in graph with those from the updated version
-    update_graph :: [[Node]] -> [Node] -> [Node]
-    update_graph xs nodes = P.foldr (P.flip (P.foldr replace)) nodes xs
+    update :: [Chain] -> [Node] -> [Node]
+    update xs nodes = P.foldr (P.flip (P.foldr replace)) nodes xs
       where
         replace :: Node -> [Node] -> [Node]
         replace _ [] = []
