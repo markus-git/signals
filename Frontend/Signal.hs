@@ -89,6 +89,8 @@ instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
     (*)         = zipWith (*)
     (-)         = zipWith (-)
 
+    abs = todo; signum = todo;
+
 --------------------------------------------------------------------------------
 -- **
 

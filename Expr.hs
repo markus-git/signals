@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances  #-}
 
 module Expr where
 
@@ -39,6 +40,8 @@ data Expr a
     SndE :: Expr (a, b) -> Expr b
 
 deriving instance Typeable1 Expr
+
+instance Show (Expr Int) where show (Val v) = show v
 
 --------------------------------------------------------------------------------
 -- **

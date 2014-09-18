@@ -156,29 +156,21 @@ compCMD' (NewArr size init) = do
   sym <- gensym "a"
   v   <- compExp size
   i   <- compExp init -- todo: use this with memset
-  addLocal [cdecl| float $id:sym[$i]; |]
+  addLocal [cdecl| float $id:sym[ $i ]; |]
   addStm   [cstm| memset($id:sym, 0, sizeof( $id:sym )); |]
   return $ Arr sym
-compCMD' (GetArr i arr) = do
+compCMD' (GetArr expi arr) = do
   let arr' = unArr arr
   sym <- gensym "v"
+  i   <- compExp expi
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  addStm   [cstm| $id:sym = $id:arr'[ $i ]; |]
   return $ Var sym
 compCMD' (SetArr expv expi arr) = do
   let arr' = unArr arr
   v <- compExp expv
   i <- compExp expi
   addStm [cstm| $id:arr'[ $i ] = $v; |]
-
-    -- NewArr
-    --   :: (Num (exp n), VarPred exp a)
-    --   => exp n -> exp a -> CMD exp (Arr (exp a))
-    -- GetArr
-    --   :: (Num (exp n), VarPred exp a)
-    --   => exp n -> Arr (exp a) -> CMD exp (exp a)
-    -- SetArr
-    --   :: (Num (exp n), VarPred exp a)
-    --   => exp n -> exp a -> Arr (exp a) -> CMD exp ()
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body

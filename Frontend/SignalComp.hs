@@ -19,7 +19,7 @@ import qualified Frontend.Stream as S
 import Control.Applicative
 import Control.Monad.Operational
 import Data.Dynamic
-import Data.List     (mapAccumR)
+import Data.List     (mapAccumL)
 import Data.Maybe    (fromJust)
 import Data.Foldable (find)
 import Data.Reify
@@ -162,6 +162,8 @@ data Buffer a = Buffer
   , putBuff :: Expr a   -> Program (CMD Expr) ()
   }
 
+instance Show (Buffer a) where show _ = "buffer"
+
 newBuff :: Expr Int -> Expr a -> Program (CMD Expr) (Buffer a)
 newBuff size init = do
   arr <- newArr size init
@@ -194,6 +196,13 @@ find_delay_chains (Graph nodes root) =
   do chains'   <- create_buffers $ find_chains nodes
      let nodes' = update_graph (fmap (\(x,y,z) -> y)     chains') nodes
          map'   = M.fromList   (fmap (\(x,y,z) -> (x,z)) chains')
+
+     -- error $ show "testing"
+     --           ++ "\n\n nodes: "          ++ show nodes
+     --           ++ "\n\n find_chains: "    ++ show (find_chains nodes)
+     --           ++ "\n\n create_buffers: " ++ show chains'
+     --           ++ "\n\n new nodes: "      ++ show nodes'
+
      return (map', Graph nodes' root)
   where
     -- ^ Find all delay chains in the graph
@@ -217,21 +226,20 @@ find_delay_chains (Graph nodes root) =
     create_buffers chains = P.sequence $ fmap buffer $ fmap update chains
       where
         update :: Typeable a => [Node] -> (Unique, [Node], [Expr a])
-        update ((u, _):xs) = uncurry ((,,) u) $ P.unzip $ P.snd $ mapAccumR f 1 xs
+        update ((u, TVar):xs) = uncurry ((,,) u)
+                              $ P.unzip
+                              $ P.snd
+                              $ mapAccumL f 1 xs
           where
             f :: Typeable a => Expr Int -> Node -> (Expr Int, (Node, Expr a))
-            f n (i, TDelay a _) = (n + 1, ( (i, TMarrD u n)
-                                          , case cast a of
-                                              Just x  -> x
-                                              Nothing -> error "casting in update"))
-
+            f n (i, TDelay a _) = (n + 1, ((i, TMarrD u n), fromJust $ cast a))
         buffer
           :: Typeable a => (Unique, [Node], [Expr a])
           -> Program (CMD Expr) (Unique, [Node], Buffer a)
         buffer (u, ns, []) = error (show u)
         buffer (u, ns, as) = do
           buff <- newBuff (Val $ length as) (head as)
-          P.sequence $ fmap (putBuff buff) as -- todo: create init function
+          --P.sequence $ fmap (putBuff buff) as -- todo: create init function
           return (u, ns, buff)
 
     -- ^ Replace old nodes in graph with those from the updated version
