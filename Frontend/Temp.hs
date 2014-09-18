@@ -13,12 +13,17 @@ import Expr
 import Frontend.Stream (Stream)
 import qualified Frontend.Stream as S
 
-import Prelude (($),(.), undefined)
+import Prelude (($),(.), undefined, curry, uncurry)
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
 
 data Signal a
+  where
+    Const ::  Stream a -> Signal a
+    Lift  :: (Stream a -> Stream b) -> Signal a -> Signal b
+
+--------------------------------------------------------------------------------
 
 data Struct c a
   where
@@ -32,7 +37,8 @@ data Struct' c expr a
 
 mapS :: (Struct         expr a -> Struct         expr b)
      -> (Struct' Signal expr a -> Struct' Signal expr b)
-mapS  = undefined
+mapS f (Leaf' s)     = undefined -- s :: Signal (expr a)
+mapS f (Pair' sl sr) = undefined
 
 --------------------------------------------------------------------------------
 
@@ -104,3 +110,24 @@ lift
      )
   => (FF s1 -> FF s2) -> s1 -> s2
 lift f = toS . mapS (fromE . f . toE) . fromS
+
+--------------------------------------------------------------------------------
+
+-- lift2
+--   :: (expr ~ Expr)
+--    => (expr a -> expr b -> expr c)
+--    -> Signal (expr a)
+--    -> Signal (expr b)
+--    -> Signal (expr c)
+lift2 f a b = lift (\(a, b) -> f a b) (a, b)
+
+lift3 f a b c = lift (\(a, b, c) -> f a b c) (a, b, c)
+
+
+----------------------------------------
+
+addS :: Signal (Expr P.Int) -> Signal (Expr P.Int) -> Signal (Expr P.Int)
+addS = curry $ lift (\(a, b) -> addE a b)
+
+addE :: Expr P.Int -> Expr P.Int -> Expr P.Int
+addE = (P.+)
