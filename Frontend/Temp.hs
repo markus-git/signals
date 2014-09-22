@@ -25,13 +25,12 @@ data Signal a
   where
     Const :: Stream a -> Signal (Leaf a)
     Lift  :: (Stream a -> Stream b) -> Signal (Leaf a) -> Signal (Leaf a)
-    Zip   :: Signal a -> Signal b -> Signal (a, b)
     Map   :: (Struct a -> Struct b) -> Signal a -> Signal b
+
+    Zip   :: Signal a -> Signal b -> Signal (a, b)
     Fst   :: Signal (a, b) -> Signal a
 
-type Sig a = Signal (Leaf a)
-
-----------------------------------------
+newtype Sig a = Sig { unSig :: Signal (Leaf a)}
 
 zip :: Signal a -> Signal b -> Signal (a, b)
 zip = Zip
@@ -60,6 +59,13 @@ instance StructS (Signal (Leaf a))
 
     fromS = id
     toS   = id
+
+instance StructS (Sig a)
+  where
+    type Internal (Sig a) = Leaf a
+
+    fromS = unSig
+    toS   = Sig
 
 instance (StructS a, StructS b) => StructS (a, b)
   where
@@ -119,4 +125,3 @@ addS' = lift $ uncurry addE
 
 addS'' :: (Sig (Expr Int), Sig (Expr Int)) -> Sig (Expr Int)
 addS'' = lift $ uncurry addE
-
