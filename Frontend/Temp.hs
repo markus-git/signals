@@ -26,7 +26,7 @@ data Signal a
     Const :: Stream a -> Signal (Leaf a)
     Lift  :: (Stream a -> Stream b) -> Signal (Leaf a) -> Signal (Leaf a)
     Zip   :: Signal a -> Signal b -> Signal (a, b)
-    Map   :: (Struct Expr a -> Struct Expr b) -> Signal a -> Signal b
+    Map   :: (Struct a -> Struct b) -> Signal a -> Signal b
     Fst   :: Signal (a, b) -> Signal a
 
 type Sig a = Signal (Leaf a)
@@ -42,7 +42,7 @@ fst = Fst
 snd :: Signal (a, b) -> Signal b
 snd = undefined -- fst . map swap
 
-mapS :: (Struct Expr a -> Struct Expr b) -> Signal a -> Signal b
+mapS :: (Struct a -> Struct b) -> Signal a -> Signal b
 mapS = Map
 
 --------------------------------------------------------------------------------
@@ -70,53 +70,53 @@ instance (StructS a, StructS b) => StructS (a, b)
 
 --------------------------------------------------------------------------------
 
-data Struct c a
+data Struct a
   where
-    Leaf :: c a -> Struct c a
-    Pair :: Struct c a -> Struct c b -> Struct c (a, b)
+    Leaf :: a -> Struct (Leaf a)
+    Pair :: Struct a -> Struct b -> Struct (a, b)
 
 class StructE a
   where
-    type InternalE a -- ~Internal
+    type Normal a
 
-    fromE :: a -> Struct Expr (InternalE a)
-    toE   :: Struct Expr (InternalE a) -> a
+    fromE :: Struct a -> Normal a
+    toE   :: Normal a -> Struct a
 
-instance StructE (Expr a)
+instance StructE (Leaf a)
   where
-    type InternalE (Expr a) = a
-
-    fromE e = Leaf e
-    toE (Leaf e) = e
+    type Normal (Leaf a) = a
+    fromE (Leaf a) = a
+    toE a          = Leaf a
 
 instance (StructE a, StructE b) => StructE (a, b)
   where
-    type InternalE (a, b) = (InternalE a, InternalE b)
+    type Normal (a, b) = (Normal a, Normal b)
 
-    fromE (a, b) = Pair (fromE a) (fromE b)
-    toE (Pair a b) = (toE a, toE b)
+    fromE (Pair a b) = (fromE a, fromE b)
+    toE (a, b)       = Pair (toE a) (toE b)
 
 --------------------------------------------------------------------------------
-
-type family FF s
-type instance FF (Signal (e a)) = e a
-type instance FF (a, b)         = (FF a, FF b)
 
 lift
   :: ( StructS s1
      , StructS s2
-     , StructE (FF s1)
-     , StructE (FF s2)
-     , Internal s1 ~ InternalE (FF s1) -- Fel!
-     , Internal s2 ~ InternalE (FF s2) -- Fel!
+     , StructE (Internal s1)
+     , StructE (Internal s2)
      )
-  => (FF s1 -> FF s2) -> s1 -> s2
-lift f = toS . mapS (fromE . f . toE) . fromS
+  => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
+lift f = toS . mapS (toE . f . fromE) . fromS
 
 --------------------------------------------------------------------------------
 
--- addE :: Expr Int -> Expr Int -> Expr Int
--- addE = undefined
+addE :: Expr Int -> Expr Int -> Expr Int
+addE = undefined
 
--- addS :: Signal (Expr Int) -> Signal (Expr Int) -> Signal (Expr Int)
--- addS = curry $ lift (\(a, b) -> addE a b)
+addS :: Sig (Expr Int) -> Sig (Expr Int) -> Sig (Expr Int)
+addS = curry $ lift $ uncurry addE
+
+addS' :: Sig (Expr Int, Expr Int) -> Sig (Expr Int)
+addS' = lift $ uncurry addE
+
+addS'' :: (Sig (Expr Int), Sig (Expr Int)) -> Sig (Expr Int)
+addS'' = lift $ uncurry addE
+
