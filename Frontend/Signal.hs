@@ -49,6 +49,8 @@ data Signal a
     -- |
     Var    :: Dynamic -> Signal a
 
+deriving instance Typeable1 Signal
+
 --------------------------------------------------------------------------------
 -- ** Constructors
 
@@ -80,8 +82,6 @@ sample = Sample
 --------------------------------------------------------------------------------
 -- **
 
-deriving instance Typeable1 Signal
-
 instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
   where
     fromInteger = repeat . fromInteger
@@ -90,6 +90,8 @@ instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
     (-)         = zipWith (-)
 
     abs = todo; signum = todo;
+
+-- todo: add more instances
 
 --------------------------------------------------------------------------------
 -- **
@@ -103,8 +105,7 @@ map :: (Typeable a, Typeable b)
     -> Signal (Expr b)
 map f = lift (S.map f)
 
-zipWith :: ( -- TupleExpr expr, Typeable1 expr
-             Typeable a, Typeable b, Typeable c)
+zipWith :: (Typeable a, Typeable b, Typeable c)
         => (Expr a -> Expr b -> Expr c)
         -> Signal (Expr a)
         -> Signal (Expr b)

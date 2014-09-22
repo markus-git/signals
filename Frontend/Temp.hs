@@ -6,22 +6,67 @@
 {-# LANGUAGE KindSignatures     #-}
 {-# LANGUAGE TypeFamilies       #-}
 
+{-# LANGUAGE InstanceSigs #-}
+
 module Temp where
 
-import Expr
-
-import Frontend.Stream (Stream)
-import qualified Frontend.Stream as S
-
-import Prelude (($),(.), undefined, curry, uncurry)
+import Prelude hiding (zip, fst, snd)
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
 
+data Leaf a
+
+data Expr a
+
+data Stream a
+
 data Signal a
   where
-    Const ::  Stream a -> Signal a
-    Lift  :: (Stream a -> Stream b) -> Signal a -> Signal b
+    Const :: Stream a -> Signal (Leaf a)
+    Lift  :: (Stream a -> Stream b) -> Signal (Leaf a) -> Signal (Leaf a)
+    Zip   :: Signal a -> Signal b -> Signal (a, b)
+    Map   :: (Struct Expr a -> Struct Expr b) -> Signal a -> Signal b
+    Fst   :: Signal (a, b) -> Signal a
+
+type Sig a = Signal (Leaf a)
+
+----------------------------------------
+
+zip :: Signal a -> Signal b -> Signal (a, b)
+zip = Zip
+
+fst :: Signal (a, b) -> Signal a
+fst = Fst
+
+snd :: Signal (a, b) -> Signal b
+snd = undefined -- fst . map swap
+
+mapS :: (Struct Expr a -> Struct Expr b) -> Signal a -> Signal b
+mapS = Map
+
+--------------------------------------------------------------------------------
+
+class StructS a
+  where
+    type Internal a
+
+    fromS :: a -> Signal (Internal a)
+    toS   :: Signal (Internal a) -> a
+
+instance StructS (Signal (Leaf a))
+  where
+    type Internal (Signal (Leaf a)) = Leaf a
+
+    fromS = id
+    toS   = id
+
+instance (StructS a, StructS b) => StructS (a, b)
+  where
+    type Internal (a, b) = (Internal a, Internal b)
+
+    fromS (a, b) = zip (fromS a) (fromS b)
+    toS p = (toS (fst p), toS (snd p))
 
 --------------------------------------------------------------------------------
 
@@ -30,64 +75,23 @@ data Struct c a
     Leaf :: c a -> Struct c a
     Pair :: Struct c a -> Struct c b -> Struct c (a, b)
 
-data Struct' c expr a
-  where
-    Leaf' :: c (expr a) -> Struct' c expr a
-    Pair' :: Struct' c expr a -> Struct' c expr b -> Struct' c expr (a, b)
-
-mapS :: (Struct         expr a -> Struct         expr b)
-     -> (Struct' Signal expr a -> Struct' Signal expr b)
-mapS f (Leaf' s)     = undefined -- s :: Signal (expr a)
-mapS f (Pair' sl sr) = undefined
-
---------------------------------------------------------------------------------
-
-class StructS a
-  where
-    type Internal a
-    type Exp      a :: * -> *
-
-    fromS :: a -> Struct' Signal (Exp a) (Internal a)
-    toS   :: Struct' Signal (Exp a) (Internal a) -> a
-
-instance StructS (Signal (e a))
-  where
-    type Internal (Signal (e a)) = a
-    type Exp      (Signal (e a)) = e
-
-    fromS s = Leaf' s
-    toS (Leaf' s) = s
-
-instance (StructS a, StructS b, Exp a ~ Exp b) => StructS (a, b)
-  where
-    type Internal (a, b) = (Internal a, Internal b)
-    type Exp      (a, b) = Exp a -- ~ Exp b
-
-    fromS (a, b) = Pair' (fromS a) (fromS b)
-    toS (Pair' a b) = (toS a, toS b)
-
---------------------------------------------------------------------------------
-
 class StructE a
   where
-    type InternalE a
-    type ExpE      a :: * -> *
+    type InternalE a -- ~Internal
 
-    fromE :: a -> Struct (ExpE a) (InternalE a)
-    toE   :: Struct (ExpE a) (InternalE a) -> a
+    fromE :: a -> Struct Expr (InternalE a)
+    toE   :: Struct Expr (InternalE a) -> a
 
 instance StructE (Expr a)
   where
     type InternalE (Expr a) = a
-    type ExpE      (Expr a) = Expr
 
     fromE e = Leaf e
     toE (Leaf e) = e
 
-instance (StructE a, StructE b, ExpE a ~ ExpE b) => StructE (a, b)
+instance (StructE a, StructE b) => StructE (a, b)
   where
     type InternalE (a, b) = (InternalE a, InternalE b)
-    type ExpE      (a, b) = ExpE a -- ~ ExpE b
 
     fromE (a, b) = Pair (fromE a) (fromE b)
     toE (Pair a b) = (toE a, toE b)
@@ -99,35 +103,20 @@ type instance FF (Signal (e a)) = e a
 type instance FF (a, b)         = (FF a, FF b)
 
 lift
-  :: ( StructS s1,      StructS s2
-     , StructE (FF s1), StructE (FF s2)
-
-     , Exp s1       ~ e, Exp s2       ~ e
-     , ExpE (FF s1) ~ e, ExpE (FF s2) ~ e
-
-     , Internal s1 ~ InternalE (FF s1)
-     , Internal s2 ~ InternalE (FF s2)
+  :: ( StructS s1
+     , StructS s2
+     , StructE (FF s1)
+     , StructE (FF s2)
+     , Internal s1 ~ InternalE (FF s1) -- Fel!
+     , Internal s2 ~ InternalE (FF s2) -- Fel!
      )
   => (FF s1 -> FF s2) -> s1 -> s2
 lift f = toS . mapS (fromE . f . toE) . fromS
 
 --------------------------------------------------------------------------------
 
--- lift2
---   :: (expr ~ Expr)
---    => (expr a -> expr b -> expr c)
---    -> Signal (expr a)
---    -> Signal (expr b)
---    -> Signal (expr c)
-lift2 f a b = lift (\(a, b) -> f a b) (a, b)
+-- addE :: Expr Int -> Expr Int -> Expr Int
+-- addE = undefined
 
-lift3 f a b c = lift (\(a, b, c) -> f a b c) (a, b, c)
-
-
-----------------------------------------
-
-addS :: Signal (Expr P.Int) -> Signal (Expr P.Int) -> Signal (Expr P.Int)
-addS = curry $ lift (\(a, b) -> addE a b)
-
-addE :: Expr P.Int -> Expr P.Int -> Expr P.Int
-addE = (P.+)
+-- addS :: Signal (Expr Int) -> Signal (Expr Int) -> Signal (Expr Int)
+-- addS = curry $ lift (\(a, b) -> addE a b)
