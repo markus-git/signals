@@ -29,27 +29,42 @@ import qualified Prelude as P
 
 data Signal a
   where
-    Const  :: (Typeable a)
+    Const  :: Typeable a
            => Stream (Expr a)
            -> Signal (Expr a)
 
-    Lift   :: (Typeable a, Typeable b)
+    Lift   :: (Typeable b)
            => (Stream (Expr a) -> Stream (Expr b))
-           ->  Signal (Expr a) -> Signal (Expr b)
+           -> Signal (Expr a) -> Signal (Expr b)
 
-    Zip    :: (Typeable a, Typeable b)
-           => Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
+    Zip    :: Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
 
     Fst    :: (Typeable a, Typeable b)
            => Signal (Expr (a, b)) -> Signal (Expr a)
 
-    Delay  :: (Typeable a) => Expr a   -> Signal (Expr a) -> Signal (Expr a)
-    Sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
+    Delay  :: Expr a   -> Signal (Expr a) -> Signal (Expr a)
+    Sample :: Expr Int -> Signal (Expr a) -> Signal (Expr a)
 
-    -- |
-    Var    :: Dynamic -> Signal a
+    Var    :: Typeable a => Dynamic -> Signal (Expr a)
 
 deriving instance Typeable1 Signal
+
+data WitType a
+  where
+    Wit :: Typeable a => WitType a
+
+witTypeable :: Signal (Expr a) -> WitType a
+witTypeable (Const _) = Wit
+witTypeable (Lift _ _) = Wit
+witTypeable (Zip a b)
+    | Wit <- witTypeable a
+    , Wit <- witTypeable b = Wit
+witTypeable (Fst _) = Wit
+witTypeable (Delay _ a)
+    | Wit <- witTypeable a = Wit
+witTypeable (Sample _ a)
+    | Wit <- witTypeable a = Wit
+witTypeable (Frontend.Signal.Var _) = Wit
 
 --------------------------------------------------------------------------------
 -- ** Constructors

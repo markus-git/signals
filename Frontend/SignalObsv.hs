@@ -53,7 +53,7 @@ class NewVar a
 --------------------------------------------------------------------------------
 -- **
 
-instance NewVar (Signal a)
+instance Typeable a => NewVar (Signal (Expr a))
   where
     mkVar = Var
 
@@ -61,18 +61,22 @@ instance MuRef (Signal (Expr a))
   where
     type DeRef (Signal (Expr a)) = SigTree
 
-    mapDeRef f node = case node of
-      (Const sf)   -> pure $ TConst sf
-      (Lift  sf s) -> TLift sf <$> f s
+    mapDeRef f node
+      | Wit <- witTypeable node = case node of
+          (Const sf)   -> pure $ TConst sf
+          (Lift  sf s)
+              | Wit <- witTypeable s -> TLift sf <$> f s
 
-      (Zip (s :: Signal (Expr x))
-           (u :: Signal (Expr y)))      -> TZip (Proxy::Proxy(x, y)) <$> f s <*> f u
-      (Fst (s :: Signal (Expr (x, y)))) -> TFst (Proxy::Proxy(x, y)) <$> f s
+          (Zip (s :: Signal (Expr x))
+               (u :: Signal (Expr y)))
+               | Wit <- witTypeable s
+               , Wit <- witTypeable u       -> TZip (Proxy::Proxy(x, y)) <$> f s <*> f u
+          (Fst (s :: Signal (Expr (x, y)))) -> TFst (Proxy::Proxy(x, y)) <$> f s
 
-      (Delay  v s) -> TDelay  v <$> f s
-      (Sample n s) -> TSample n <$> f s
+          (Delay  v s) -> TDelay  v <$> f s
+          (Sample n s) -> TSample n <$> f s
 
-      (Var _)      -> pure $ TVar
+          (Var _)      -> pure $ TVar
 
 instance forall a b. (Typeable a, Typeable b)
     => MuRef (Signal (Expr a) -> Signal (Expr b))
