@@ -26,8 +26,11 @@ import Data.Typeable
 -- |
 data Signal a
   where
-    Const ::  Stream a              -> Signal (Leaf a)
-    Lift  :: (Stream a -> Stream b) -> Signal (Leaf a) -> Signal (Leaf b)
+    Const :: Typeable a =>  Stream a -> Signal (Leaf a)
+    Lift  :: Typeable b
+            => (Stream a -> Stream b)
+            -> Signal (Leaf a)
+            -> Signal (Leaf b)
 
     Map   :: (Struct a     -> Struct b) -> Signal a -> Signal b
     Zip   :: Signal  a     -> Signal b  -> Signal (a, b)
@@ -48,22 +51,39 @@ data Leaf a deriving Typeable
 -- | ...
 newtype Sig a = Sig { unSig :: Signal (Leaf a) }
 
-constSig :: Stream a -> Sig a
+constSig :: Typeable a => Stream a -> Sig a
 constSig  = Sig . Const
 
-liftSig  :: (Stream a -> Stream b) -> Sig a -> Sig b
+liftSig  :: Typeable b => (Stream a -> Stream b) -> Sig a -> Sig b
 liftSig f = Sig . Lift f . unSig
 
 mapSig   :: (Struct a -> Struct b) -> Signal a -> Signal b
 mapSig    = Map
 
+----------------------------------------
+
+data WitType a
+  where
+    Wit :: Typeable a => WitType a
+
+witTypeable :: Signal a -> WitType a
+witTypeable (Const _)      = Wit
+witTypeable (Lift _ _)     = Wit
+witTypeable (Zip a b)
+    | Wit <- witTypeable a
+    , Wit <- witTypeable b = Wit
+witTypeable (Fst _)        = Wit
+witTypeable (Delay _ a)
+    | Wit <- witTypeable a = Wit
+witTypeable (Var _)        = Wit
+
 --------------------------------------------------------------------------------
 -- ** User Interface
 
-repeat :: exp a -> Sig (exp a)
+repeat :: (Typeable1 exp, Typeable a) => exp a -> Sig (exp a)
 repeat = constSig . S.repeat
 
-map :: (exp a -> exp b) -> Sig (exp a) -> Sig (exp b)
+map :: (Typeable1 exp, Typeable b) => (exp a -> exp b) -> Sig (exp a) -> Sig (exp b)
 map f = liftSig (S.map f)
 
 zipWith :: (exp a -> exp b -> exp c) -> Sig (exp a) -> Sig (exp b) -> Sig (exp c)
@@ -81,7 +101,7 @@ snd = Snd
 --------------------------------------------------------------------------------
 -- ** Instances
 
-instance (Show a, Num a) => Num (Sig (Expr a))
+instance (Show a, Typeable a, Num a) => Num (Sig (Expr a))
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -90,14 +110,14 @@ instance (Show a, Num a) => Num (Sig (Expr a))
 
     abs = todo; signum = todo;
 
-instance (Show a, Fractional a) => Fractional (Sig (Expr a))
+instance (Show a, Typeable a, Fractional a) => Fractional (Sig (Expr a))
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Show a, Floating a) => Floating (Sig (Expr a))
+instance (Show a, Typeable a, Floating a) => Floating (Sig (Expr a))
   where
     pi   = repeat pi
     sin  = map sin

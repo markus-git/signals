@@ -59,14 +59,6 @@ structT _ = go $ typeOf (undefined :: a)
     go r | typeRepTyCon r == ty = let [x,y] = typeRepArgs r in B (go x) (go y)
          | otherwise            = L ()
 
-----------------------------------------
-
-data Wit a where
-  Wit :: Typeable a => Wit a
-
-checkT :: Signal a -> Wit a
-checkT = undefined
-
 --------------------------------------------------------------------------------
 
 instance MuRef (Signal a)
