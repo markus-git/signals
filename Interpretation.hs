@@ -42,9 +42,8 @@ class CompExp m exp
 -- | Variable indetifiers
 type VarId = String
 
---------------------------------------------------------------------------------
--- **
-
+-- | General interface for compiling constructs
 class CompCMD m cmd
   where
+    -- | Compilation of constructs
     compCMD :: cmd a -> m a

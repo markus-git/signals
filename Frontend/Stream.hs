@@ -5,13 +5,13 @@
 
 module Frontend.Stream where
 
-import Core
-import Expr
+import Core (CMD)
+import Expr (Expr)
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Operational
-import Data.Typeable (Typeable1)
+import Data.Typeable (Typeable)
 
 import Prelude (($))
 import qualified Prelude as P
@@ -25,11 +25,10 @@ import qualified Prelude as P
 data Stream a
   where
     Stream :: Program (CMD Expr) (Program (CMD Expr) a) -> Stream a
-
-deriving instance Typeable1 Stream
+  deriving Typeable
 
 --------------------------------------------------------------------------------
--- ** Interface
+-- ** User Interface
 
 repeat :: expr a -> Stream (expr a)
 repeat a = Stream $ return $ return a

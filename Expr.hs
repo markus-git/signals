@@ -8,7 +8,7 @@ module Expr where
 
 import Interpretation
 
-import Data.Typeable (Typeable1)
+import Data.Typeable (Typeable)
 
 --------------------------------------------------------------------------------
 -- * Expressions
@@ -29,32 +29,11 @@ data Expr a
     Sin :: Floating a   => Expr a -> Expr a
     Mod :: Integral a   => Expr a -> Expr a -> Expr a
 
-    -- ^ Equality
-    Eq  :: Eq a  => Expr a -> Expr a -> Expr Bool
-    NEq :: Eq a  => Expr a -> Expr a -> Expr Bool
-    LEq :: Ord a => Expr a -> Expr a -> Expr Bool
-
-    -- ^ ToDo: Remove
-    TupE :: Expr a -> Expr b -> Expr (a, b)
-    FstE :: Expr (a, b) -> Expr a
-    SndE :: Expr (a, b) -> Expr b
-
-deriving instance Typeable1 Expr
-
-instance Show (Expr Int) where show (Val v) = show v
-
---------------------------------------------------------------------------------
--- **
-
--- Tuples
-tupE = TupE; fstE = FstE; sndE = SndE;
-
--- Equality
-eq, neq :: Eq a => Expr a -> Expr a -> Expr Bool
-eq = Eq; neq = NEq
-
-leq :: Ord a => Expr a -> Expr a -> Expr Bool
-leq = LEq;
+    -- ^ Bool. operations
+    Not ::          Expr Bool -> Expr Bool
+    Eq  :: Eq a  => Expr a    -> Expr a -> Expr Bool
+    LEq :: Ord a => Expr a    -> Expr a -> Expr Bool
+  deriving Typeable
 
 --------------------------------------------------------------------------------
 -- ** Evaluation
@@ -66,22 +45,31 @@ instance EvalExp Expr
     litExp  = Val
     evalExp = evalExpr'
 
+-- |
 evalExpr' :: Expr a -> a
-evalExpr' (Val a)   = a
+evalExpr' (Val a) = a
+evalExpr' (Var _) = error "cannot eval var"
+
+-- ^ Math. ops.
 evalExpr' (Add a b) = evalExpr' a + evalExpr' b
 evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
 evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
 evalExpr' (Div a b) = evalExpr' a / evalExpr' b
-evalExpr' (Sin a)   = sin $ evalExpr' a
 evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
+evalExpr' (Sin   a) = sin $ evalExpr' a
+
+-- ^ Bool. ops.
+evalExpr' (Not   a) = not $ evalExpr' a
+evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
+evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
 
 --------------------------------------------------------------------------------
--- ** Haskell Instances
+-- ** Instances
 
 instance (Show a, Eq a) => Eq (Expr a)     -- bad
   where
     a == b = evalExp $ Eq  a b
-    a /= b = evalExp $ NEq a b
+    a /= b = evalExp $ Not $ Eq a b
 
 instance (Show a, Ord a) => Ord (Expr a)   -- bad
   where

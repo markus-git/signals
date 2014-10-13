@@ -1,88 +1,87 @@
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleInstances  #-}
-
--- {-# LANGUAGE ScopedTypeVariables #-}
--- {-# LANGUAGE DataKinds      #-}
--- {-# LANGUAGE KindSignatures #-}
--- {-# LANGUAGE TypeOperators  #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ConstraintKinds     #-}
 
 module Frontend.Signal where
 
-import Expr
+import Expr (Expr, todo)
 
-import Data.Dynamic
-import Data.Typeable (Typeable1)
-
-import Frontend.Stream (Stream)
+import           Frontend.Stream (Stream)
 import qualified Frontend.Stream as S
 
-import Prelude hiding (const, zip, fst, repeat, map, zipWith)
+import           Prelude hiding (fst, snd, zip, zipWith, map, repeat)
 import qualified Prelude as P
 
+import Data.Dynamic
+import Data.Typeable
+
 --------------------------------------------------------------------------------
--- * Signals
+-- *
 --------------------------------------------------------------------------------
 
--- todo: abstract over expr
-
+-- |
 data Signal a
   where
-    Const  :: (Typeable a)
-           => Stream (Expr a)
-           -> Signal (Expr a)
+    Const ::  Stream a              -> Signal (Leaf a)
+    Lift  :: (Stream a -> Stream b) -> Signal (Leaf a) -> Signal (Leaf b)
 
-    Lift   :: (Typeable a, Typeable b)
-           => (Stream (Expr a) -> Stream (Expr b))
-           ->  Signal (Expr a) -> Signal (Expr b)
+    Map   :: (Struct a     -> Struct b) -> Signal a -> Signal b
+    Zip   :: Signal  a     -> Signal b  -> Signal (a, b)
+    Fst   :: Signal (a, b) -> Signal a
+    Snd   :: Signal (a, b) -> Signal b
 
-    Zip    :: (Typeable a, Typeable b)
-           => Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
+    Delay :: a -> Signal (Leaf a) -> Signal (Leaf a)
 
-    Fst    :: (Typeable a, Typeable b)
-           => Signal (Expr (a, b)) -> Signal (Expr a)
+    Var   :: Dynamic -> Signal a
+  deriving Typeable
 
-    Delay  :: (Typeable a) => Expr a   -> Signal (Expr a) -> Signal (Expr a)
-    Sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
-
-    -- |
-    Var    :: Dynamic -> Signal a
-
-deriving instance Typeable1 Signal
+-- |
+data Leaf a deriving Typeable
 
 --------------------------------------------------------------------------------
--- ** Constructors
+-- ** "Smart" constructors
 
-const :: (Typeable a) => Stream (Expr a) -> Signal (Expr a)
-const = Const
+-- | ...
+newtype Sig a = Sig { unSig :: Signal (Leaf a) }
 
-lift
-  :: (Typeable a, Typeable b)
-  => (Stream (Expr a) -> Stream (Expr b))
-  -> Signal (Expr a) -> Signal (Expr b)
-lift = Lift
+constSig :: Stream a -> Sig a
+constSig  = Sig . Const
 
-zip
-  :: (Typeable a, Typeable b)
-  => Signal (Expr a) -> Signal (Expr b) -> Signal (Expr (a, b))
+liftSig  :: (Stream a -> Stream b) -> Sig a -> Sig b
+liftSig f = Sig . Lift f . unSig
+
+mapSig   :: (Struct a -> Struct b) -> Signal a -> Signal b
+mapSig    = Map
+
+--------------------------------------------------------------------------------
+-- ** User Interface
+
+repeat :: exp a -> Sig (exp a)
+repeat = constSig . S.repeat
+
+map :: (exp a -> exp b) -> Sig (exp a) -> Sig (exp b)
+map f = liftSig (S.map f)
+
+zipWith :: (exp a -> exp b -> exp c) -> Sig (exp a) -> Sig (exp b) -> Sig (exp c)
+zipWith f = curry $ lift $ uncurry f
+
+zip :: Signal a -> Signal b -> Signal (a, b)
 zip = Zip
 
-fst
-  :: (Typeable a, Typeable b)
-  => Signal (Expr (a, b)) -> Signal (Expr a)
+fst :: Signal (a, b) -> Signal a
 fst = Fst
 
-delay :: (Typeable a) => Expr a -> Signal (Expr a) -> Signal (Expr a)
-delay = Delay
-
-sample :: (Typeable a) => Expr Int -> Signal (Expr a) -> Signal (Expr a)
-sample = Sample
+snd :: Signal (a, b) -> Signal b
+snd = Snd
 
 --------------------------------------------------------------------------------
--- **
+-- ** Instances
 
-instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
+instance (Show a, Num a) => Num (Sig (Expr a))
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -91,23 +90,95 @@ instance (Show a, Num a, Typeable a) => Num (Signal (Expr a))
 
     abs = todo; signum = todo;
 
--- todo: add more instances
+instance (Show a, Fractional a) => Fractional (Sig (Expr a))
+  where
+    fromRational = repeat . fromRational
+    (/)          = zipWith (/)
+
+    recip = todo;
+
+instance (Show a, Floating a) => Floating (Sig (Expr a))
+  where
+    pi   = repeat pi
+    sin  = map sin
+    (**) = zipWith (**)
+
+    exp   = todo; sqrt  = todo; log     = todo;
+    tan   = todo; cos   = todo; asin    = todo;
+    atan  = todo; acos  = todo; sinh    = todo;
+    tanh  = todo; cosh  = todo; asinh   = todo;
+    atanh = todo; acosh = todo; logBase = todo;
 
 --------------------------------------------------------------------------------
--- **
+-- *
+--------------------------------------------------------------------------------
 
-repeat :: (Typeable a) => Expr a -> Signal (Expr a)
-repeat a = const $ S.repeat a
+{- All this to convert between tuples and zip pairs -}
 
-map :: (Typeable a, Typeable b)
-    => (Expr a -> Expr b)
-    -> Signal (Expr a)
-    -> Signal (Expr b)
-map f = lift (S.map f)
+class StructS a
+  where
+    type Internal a
 
-zipWith :: (Typeable a, Typeable b, Typeable c)
-        => (Expr a -> Expr b -> Expr c)
-        -> Signal (Expr a)
-        -> Signal (Expr b)
-        -> Signal (Expr c)
-zipWith f s1 s2 = map (\p -> f (fstE p) (sndE p)) $ zip s1 s2
+    fromS :: a -> Signal (Internal a)
+    toS   :: Signal (Internal a) -> a
+
+instance StructS (Signal (Leaf a))
+  where
+    type Internal (Signal (Leaf a)) = Leaf a
+
+    fromS = id
+    toS   = id
+
+instance StructS (Sig a)
+  where
+    type Internal (Sig a) = Leaf a
+
+    fromS = unSig
+    toS   = Sig
+
+instance (StructS a, StructS b) => StructS (a, b)
+  where
+    type Internal (a, b) = (Internal a, Internal b)
+
+    fromS (a, b) = zip (fromS a) (fromS b)
+    toS p        = (toS (fst p), toS (snd p))
+
+--------------------------------------------------------------------------------
+--
+
+data Struct a
+  where
+    Leaf :: a        -> Struct (Leaf a)
+    Pair :: Struct a -> Struct b -> Struct (a, b)
+
+class StructE a
+  where
+    type Normal a
+
+    fromE :: Struct a -> Normal a
+    toE   :: Normal a -> Struct a
+
+instance StructE (Leaf a)
+  where
+    type Normal (Leaf a) = a
+    fromE (Leaf a) = a
+    toE a          = Leaf a
+
+instance (StructE a, StructE b) => StructE (a, b)
+  where
+    type Normal (a, b) = (Normal a, Normal b)
+
+    fromE (Pair a b) = (fromE a, fromE b)
+    toE (a, b)       = Pair (toE a) (toE b)
+
+--------------------------------------------------------------------------------
+-- ***
+
+lift
+  :: ( StructS s1
+     , StructS s2
+     , StructE (Internal s1)
+     , StructE (Internal s2)
+     )
+  => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
+lift f = toS . mapSig (toE . f . fromE) . fromS

@@ -37,9 +37,12 @@ instance CompExp C Expr
     varExp  = Var
     compExp = compExp'
 
+-- |
 compExp' :: Expr a -> C C.Exp
 compExp' (Var v)   = return [cexp| $id:v |]
 compExp' (Val v)   = let s = show v in return [cexp| $id:s |]
+
+-- ^ Math. ops.
 compExp' (Add a b) = do
   a' <- compExp' a
   b' <- compExp' b
@@ -67,30 +70,19 @@ compExp' (Mod a b) = do
   a' <- compExp' a
   b' <- compExp' b
   return [cexp| $a' % $b'|]
+
+-- ^ Bool. ops.
+compExp' (Not  a)  = do
+  a' <- compExp' a
+  return [cexp| ! $a' |]
 compExp' (Eq a b)  = do
   a' <- compExp' a
   b' <- compExp' b
   return [cexp| $a' == $b' |]
-compExp' (NEq a b) = do
-  a' <- compExp' a
-  b' <- compExp' b
-  return [cexp| $a' != $b' |]
 compExp' (LEq a b) = do
   a' <- compExp' a
   b' <- compExp' b
   return [cexp| $a' <= $b' |]
-
--- todo: remove
-compExp' (TupE a b) = do
-  a' <- compExp' a
-  b' <- compExp' b
-  return [cexp| pair($a', $b') |]
-compExp' (FstE a) = do
-  a' <- compExp' a
-  return [cexp| snd($a') |]
-compExp' (SndE a) = do
-  a' <- compExp' a
-  return [cexp| fst($a') |]
 
 --------------------------------------------------------------------------------
 -- * Compilation of Commands
@@ -120,7 +112,7 @@ compCMD' (Close ptr) = do
 compCMD' (Put ptr exp) = do
   let ptr' = unPtr ptr
   v <- compExp exp
-  addStm [cstm| fprintf($id:ptr', "$f", $v); |]
+  addStm [cstm| fprintf($id:ptr', "%f", $v); |]
 compCMD' (Get ptr) = do
   let ptr' = unPtr ptr
   sym <- gensym "v"
