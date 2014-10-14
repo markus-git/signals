@@ -7,7 +7,7 @@
 
 module Frontend.SignalObsv where
 
-import           Frontend.Signal (Signal(..), Struct(..))
+import           Frontend.Signal (Signal(..), Struct(..), WitType(..), witTypeable)
 import qualified Frontend.Signal as Sig
 
 import           Frontend.Stream (Stream)
@@ -27,11 +27,11 @@ data TSignal r
   where
     -- ^ Sig. func.
     TLambda :: r -> r -> TSignal r
-    TVar    ::           TSignal r
+    TVar    :: TSignal r
 
     -- ^ Sig.
-    TConst  ::  Stream a                   -> TSignal r
-    TLift   :: (Stream a -> Stream b) -> r -> TSignal r
+    TConst  :: Typeable a => Stream a -> TSignal r
+    TLift   :: (Typeable a, Typeable b) => (Stream a -> Stream b) -> r -> TSignal r
 
     TMap    :: T -> (Struct a -> Struct b) -> r -> TSignal r
     TZip    :: r -> r -> TSignal r
@@ -45,13 +45,12 @@ data TSignal r
     TDBuff  :: Num n => n -> r -> TSignal r
   deriving Typeable
 
-data Tree e = L e | B (Tree e) (Tree e)
-
 ----------------------------------------
 
-type T = Tree ()
+data Tree e = L e | B (Tree e) (Tree e)
+type T      = Tree ()
 
--- |
+-- | ...
 structT :: forall a. Typeable a => Proxy a -> T
 structT _ = go $ typeOf (undefined :: a)
   where
@@ -65,16 +64,33 @@ instance MuRef (Signal a)
   where
     type DeRef (Signal a) = TSignal
 
-    mapDeRef f node = case node of
+    mapDeRef f node | Wit <- witTypeable node = case node of
       (Const sf)   -> pure $ TConst sf
-      (Lift  sf s) -> TLift sf <$> f s
 
-      (Map sf s)   -> TMap undefined sf <$> f s
-      (Zip s  u)   -> TZip <$> f s <*> f u
-      (Fst s)      -> TFst <$> f s
-      (Snd s)      -> TSnd <$> f s
+      (Lift  sf s)
+        | Wit <- witTypeable s
+        -> TLift sf <$> f s
 
-      (Delay a s)  -> TDelay a <$> f s
+      (Map sf s)
+        | (Wit::WitType x) <- witTypeable s
+        -> TMap (structT (Proxy::Proxy x)) sf <$> f s
+
+      (Zip s u) -> TZip <$> f s <*> f u
+      (Fst s)   -> TFst <$> f s
+      (Snd s)   -> TSnd <$> f s
+
+      (Delay a s) -> TDelay a <$> f s
+
+      (Var _) -> pure $ TVar
+
+      --(Lift  sf s) | Wit <- witTypeable s -> TLift sf <$> f s
+
+      -- (Map sf s)   -> TMap undefined sf <$> f s
+      -- (Zip s  u)   -> TZip <$> f s <*> f u
+      -- (Fst s)      -> TFst <$> f s
+      -- (Snd s)      -> TSnd <$> f s
+
+
 
 instance (Typeable a, Typeable b) => MuRef (Signal a -> Signal b)
   where

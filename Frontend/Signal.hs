@@ -28,18 +28,18 @@ data Signal a
   where
     Const :: Typeable a =>  Stream a -> Signal (Leaf a)
     Lift  :: Typeable b
-            => (Stream a -> Stream b)
-            -> Signal (Leaf a)
-            -> Signal (Leaf b)
+            => (Stream a        -> Stream b)
+            -> (Signal (Leaf a) -> Signal (Leaf b))
 
-    Map   :: (Struct a     -> Struct b) -> Signal a -> Signal b
-    Zip   :: Signal  a     -> Signal b  -> Signal (a, b)
-    Fst   :: Signal (a, b) -> Signal a
-    Snd   :: Signal (a, b) -> Signal b
+    Map   :: Typeable b => (Struct a -> Struct b) -> Signal a -> Signal b
+
+    Zip   ::               Signal a      -> Signal b -> Signal (a, b)
+    Fst   :: Typeable a => Signal (a, b) -> Signal a
+    Snd   :: Typeable b => Signal (a, b) -> Signal b
 
     Delay :: a -> Signal (Leaf a) -> Signal (Leaf a)
 
-    Var   :: Dynamic -> Signal a
+    Var   :: Typeable a => Dynamic -> Signal a
   deriving Typeable
 
 -- |
@@ -57,7 +57,7 @@ constSig  = Sig . Const
 liftSig  :: Typeable b => (Stream a -> Stream b) -> Sig a -> Sig b
 liftSig f = Sig . Lift f . unSig
 
-mapSig   :: (Struct a -> Struct b) -> Signal a -> Signal b
+mapSig   :: Typeable b => (Struct a -> Struct b) -> Signal a -> Signal b
 mapSig    = Map
 
 ----------------------------------------
@@ -69,10 +69,13 @@ data WitType a
 witTypeable :: Signal a -> WitType a
 witTypeable (Const _)      = Wit
 witTypeable (Lift _ _)     = Wit
+witTypeable (Map _ a)
+    | Wit <- witTypeable a = Wit
 witTypeable (Zip a b)
     | Wit <- witTypeable a
     , Wit <- witTypeable b = Wit
 witTypeable (Fst _)        = Wit
+witTypeable (Snd _)        = Wit
 witTypeable (Delay _ a)
     | Wit <- witTypeable a = Wit
 witTypeable (Var _)        = Wit
@@ -86,16 +89,20 @@ repeat = constSig . S.repeat
 map :: (Typeable1 exp, Typeable b) => (exp a -> exp b) -> Sig (exp a) -> Sig (exp b)
 map f = liftSig (S.map f)
 
-zipWith :: (exp a -> exp b -> exp c) -> Sig (exp a) -> Sig (exp b) -> Sig (exp c)
+zipWith :: (Typeable1 exp, Typeable c, Typeable b, Typeable a)
+        => (exp a -> exp b -> exp c)
+        -> Sig (exp a)
+        -> Sig (exp b)
+        -> Sig (exp c)
 zipWith f = curry $ lift $ uncurry f
 
 zip :: Signal a -> Signal b -> Signal (a, b)
 zip = Zip
 
-fst :: Signal (a, b) -> Signal a
+fst :: Typeable a => Signal (a, b) -> Signal a
 fst = Fst
 
-snd :: Signal (a, b) -> Signal b
+snd :: Typeable b => Signal (a, b) -> Signal b
 snd = Snd
 
 --------------------------------------------------------------------------------
@@ -133,7 +140,7 @@ instance (Show a, Typeable a, Floating a) => Floating (Sig (Expr a))
 -- *
 --------------------------------------------------------------------------------
 
-{- All this to convert between tuples and zip pairs -}
+-- {- All this to convert between tuples and zip pairs -}
 
 class StructS a
   where
@@ -156,20 +163,22 @@ instance StructS (Sig a)
     fromS = unSig
     toS   = Sig
 
-instance (StructS a, StructS b) => StructS (a, b)
+instance (Typeable (Internal a), Typeable (Internal b), StructS a, StructS b)
+    => StructS (a, b)
   where
     type Internal (a, b) = (Internal a, Internal b)
 
     fromS (a, b) = zip (fromS a) (fromS b)
     toS p        = (toS (fst p), toS (snd p))
 
---------------------------------------------------------------------------------
---
+-- --------------------------------------------------------------------------------
+-- --
 
 data Struct a
   where
     Leaf :: a        -> Struct (Leaf a)
     Pair :: Struct a -> Struct b -> Struct (a, b)
+  deriving Typeable
 
 class StructE a
   where
@@ -199,6 +208,8 @@ lift
      , StructS s2
      , StructE (Internal s1)
      , StructE (Internal s2)
+     , Typeable (Internal s1)
+     , Typeable (Internal s2)
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapSig (toE . f . fromE) . fromS
