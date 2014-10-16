@@ -24,70 +24,67 @@ import Data.Typeable
 --------------------------------------------------------------------------------
 
 -- |
+data Leaf a deriving Typeable
+
+-- |
 data Signal a
   where
-    Const :: Typeable a =>  Stream a -> Signal (Leaf a)
-    Lift  :: Typeable b
+    Const :: Typeable a
+            => Stream a
+            -> Signal (Leaf a)
+
+    Lift  :: (Typeable a, Typeable b)
             => (Stream a        -> Stream b)
             -> (Signal (Leaf a) -> Signal (Leaf b))
 
-    Map   :: Typeable b => (Struct a -> Struct b) -> Signal a -> Signal b
+    Map   :: (Typeable a, Typeable b)
+            => (Struct a -> Struct b)
+            -> (Signal a -> Signal b)
 
-    Zip   ::               Signal a      -> Signal b -> Signal (a, b)
-    Fst   :: Typeable a => Signal (a, b) -> Signal a
-    Snd   :: Typeable b => Signal (a, b) -> Signal b
+    Zip   :: (Typeable a, Typeable b) => Signal a      -> Signal b -> Signal (a, b)
+    Fst   :: Typeable a               => Signal (a, b) -> Signal a
+    Snd   :: Typeable b               => Signal (a, b) -> Signal b
 
     Delay :: a -> Signal (Leaf a) -> Signal (Leaf a)
 
     Var   :: Typeable a => Dynamic -> Signal a
   deriving Typeable
 
--- |
-data Leaf a deriving Typeable
+-- | ...
+newtype Sig a = Sig {unSig :: Signal (Leaf a)}
 
 --------------------------------------------------------------------------------
 -- ** "Smart" constructors
 
--- | ...
-newtype Sig a = Sig { unSig :: Signal (Leaf a) }
+constS :: Typeable a => Stream a -> Sig a
+constS  = Sig . Const
 
-constSig :: Typeable a => Stream a -> Sig a
-constSig  = Sig . Const
+liftS  :: (Typeable a, Typeable b) => (Stream a -> Stream b) -> Sig a -> Sig b
+liftS f = Sig . Lift f . unSig
 
-liftSig  :: Typeable b => (Stream a -> Stream b) -> Sig a -> Sig b
-liftSig f = Sig . Lift f . unSig
+mapS   :: (Typeable a, Typeable b) => (Struct a -> Struct b) -> Signal a -> Signal b
+mapS    = Map
 
-mapSig   :: Typeable b => (Struct a -> Struct b) -> Signal a -> Signal b
-mapSig    = Map
+zipS   :: (Typeable a, Typeable b) => Signal a -> Signal b -> Signal (a, b)
+zipS    = Zip
 
-----------------------------------------
+fstS   :: Typeable a => Signal (a, b) -> Signal a
+fstS    = Fst
 
-data WitType a
-  where
-    Wit :: Typeable a => WitType a
-
-witTypeable :: Signal a -> WitType a
-witTypeable (Const _)      = Wit
-witTypeable (Lift _ _)     = Wit
-witTypeable (Map _ a)
-    | Wit <- witTypeable a = Wit
-witTypeable (Zip a b)
-    | Wit <- witTypeable a
-    , Wit <- witTypeable b = Wit
-witTypeable (Fst _)        = Wit
-witTypeable (Snd _)        = Wit
-witTypeable (Delay _ a)
-    | Wit <- witTypeable a = Wit
-witTypeable (Var _)        = Wit
+sndS   :: Typeable b => Signal (a, b) -> Signal b
+sndS    = Snd
 
 --------------------------------------------------------------------------------
 -- ** User Interface
 
 repeat :: (Typeable1 exp, Typeable a) => exp a -> Sig (exp a)
-repeat = constSig . S.repeat
+repeat = constS . S.repeat
 
-map :: (Typeable1 exp, Typeable b) => (exp a -> exp b) -> Sig (exp a) -> Sig (exp b)
-map f = liftSig (S.map f)
+map :: (Typeable1 exp, Typeable a, Typeable b)
+    => (exp a -> exp b)
+    -> Sig (exp a)
+    -> Sig (exp b)
+map f = liftS (S.map f)
 
 zipWith :: (Typeable1 exp, Typeable c, Typeable b, Typeable a)
         => (exp a -> exp b -> exp c)
@@ -96,19 +93,14 @@ zipWith :: (Typeable1 exp, Typeable c, Typeable b, Typeable a)
         -> Sig (exp c)
 zipWith f = curry $ lift $ uncurry f
 
-zip :: Signal a -> Signal b -> Signal (a, b)
-zip = Zip
-
-fst :: Typeable a => Signal (a, b) -> Signal a
-fst = Fst
-
-snd :: Typeable b => Signal (a, b) -> Signal b
-snd = Snd
-
 --------------------------------------------------------------------------------
 -- ** Instances
 
-instance (Show a, Typeable a, Num a) => Num (Sig (Expr a))
+instance ( Show a
+         , Typeable a
+         , Typeable1 expr
+         , Num (expr a))
+    => Num (Sig (expr a))
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -117,14 +109,22 @@ instance (Show a, Typeable a, Num a) => Num (Sig (Expr a))
 
     abs = todo; signum = todo;
 
-instance (Show a, Typeable a, Fractional a) => Fractional (Sig (Expr a))
+instance ( Show a
+         , Typeable a
+         , Typeable1 expr
+         , Fractional (expr a))
+    => Fractional (Sig (expr a))
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Show a, Typeable a, Floating a) => Floating (Sig (Expr a))
+instance ( Show a
+         , Typeable a
+         , Typeable1 expr
+         , Floating (expr a))
+    => Floating (Sig (expr a))
   where
     pi   = repeat pi
     sin  = map sin
@@ -163,16 +163,18 @@ instance StructS (Sig a)
     fromS = unSig
     toS   = Sig
 
-instance (Typeable (Internal a), Typeable (Internal b), StructS a, StructS b)
+instance ( Typeable (Internal a)
+         , Typeable (Internal b)
+         , StructS a, StructS b)
     => StructS (a, b)
   where
     type Internal (a, b) = (Internal a, Internal b)
 
-    fromS (a, b) = zip (fromS a) (fromS b)
-    toS p        = (toS (fst p), toS (snd p))
+    fromS (a, b) = zipS (fromS a) (fromS b)
+    toS p        = (toS (fstS p), toS (sndS p))
 
--- --------------------------------------------------------------------------------
--- --
+--------------------------------------------------------------------------------
+-- ***
 
 data Struct a
   where
@@ -212,4 +214,4 @@ lift
      , Typeable (Internal s2)
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
-lift f = toS . mapSig (toE . f . fromE) . fromS
+lift f = toS . mapS (toE . f . fromE) . fromS
