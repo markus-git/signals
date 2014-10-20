@@ -111,32 +111,53 @@ compileG (Graph nodes root) inp = undefined
                   --
                   -- ToDo: Typeable needed in Struct
                   --       Infinite types from zipping
-            where go :: T' -> Program (CMD Expr) (Sig.Struct t)
+            where go :: T' -> Program (CMD Expr) Dynamic
                   go (Zip' l r) = do
-                    l' <- go l
-                    r' <- go r
-                    return $ BAD.unsafeCoerce $ Sig.Pair l' r'
-                  go (Fst' l  ) = do
-                    (Sig.Pair l' _) <- go l
-                    return $ BAD.unsafeCoerce $ l'
-                  go (Snd' r  ) = do
-                    (Sig.Pair _ r') <- go r
-                    return $ BAD.unsafeCoerce $ r'
-                  go (I    t i) = do
-                    t' <- castN i m
-                    return $ t'
+                    dl' <- go l
+                    dr' <- go r
+                    case (fromDynamic dl', fromDynamic dr') of
+                      (Just (l' :: Sig.Struct apa), Just (r' :: Sig.Struct bepa))
+                        | W <- witT l'
+                        , W <- witT r'
+                        -> return $ toDyn $ Sig.Pair l' r'
 
-    find  :: Unique -> Node
-    find      = fromJust . findNode nodes
+--                    undefined
+                    --return $ toDyn $ Sig.Pair l' r'
 
-    addN  :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
-    addN      = M.insertWith (P.flip P.const)
+
+                  -- go (Fst' l  ) = do
+                  --   (Sig.Pair l' _) <- go l
+                  --   return $ BAD.unsafeCoerce $ l'
+                  -- go (Snd' r  ) = do
+                  --   (Sig.Pair _ r') <- go r
+                  --   return $ BAD.unsafeCoerce $ (r' :: Sig.Struct t)
+                  -- go (I    t i) = do
+                  --   t' <- castN i m
+                  --   return $ t'
+
+    find :: Unique -> Node
+    find = fromJust . findNode nodes
+
+    addN :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
+    addN = M.insertWith (P.flip P.const)
 
     loadN :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
     loadN u m = P.flip compileN m $ find u
 
     castN :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
     castN u m = (fromJust . fromDynamic) <$> loadN u m
+
+----------------------------------------
+
+data WT a where
+  W :: Typeable a => WT a
+
+witT :: Sig.Struct a -> WT a
+witT (Sig.Leaf _) = W
+witT (Sig.Pair l r)
+  | W <- witT l
+  , W <- witT r
+  = W
 
 --------------------------------------------------------------------------------
 -- **
