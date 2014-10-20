@@ -47,7 +47,7 @@ data Signal a
 
     Delay :: a -> Signal (Leaf a) -> Signal (Leaf a)
 
-    Var   :: Typeable a => Dynamic -> Signal a
+    SVar  :: Typeable a => Dynamic -> Signal a
   deriving Typeable
 
 -- | ...
@@ -139,7 +139,6 @@ instance ( Show a
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
-
 -- {- All this to convert between tuples and zip pairs -}
 
 class StructS a
@@ -178,7 +177,7 @@ instance ( Typeable (Internal a)
 
 data Struct a
   where
-    Leaf :: a        -> Struct (Leaf a)
+    Leaf :: a                    -> Struct (Leaf a)
     Pair :: Struct a -> Struct b -> Struct (a, b)
   deriving Typeable
 
@@ -195,7 +194,8 @@ instance StructE (Leaf a)
     fromE (Leaf a) = a
     toE a          = Leaf a
 
-instance (StructE a, StructE b) => StructE (a, b)
+instance (StructE a, StructE b)
+    => StructE (a, b)
   where
     type Normal (a, b) = (Normal a, Normal b)
 

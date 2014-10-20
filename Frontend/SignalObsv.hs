@@ -26,7 +26,7 @@ import Data.Reify
 data TSignal r
   where
     -- ^ Sig. func.
-    TLambda :: r -> r -> TSignal r
+    TLambda :: (Typeable x) => Proxy x -> r -> r -> TSignal r
     TVar    :: TSignal r
 
     -- ^ Sig.
@@ -39,8 +39,8 @@ data TSignal r
               -> r
               -> TSignal r
 
-    TMap    :: Tree () -> (Struct a -> Struct b) -> r -> TSignal r
-    TMap'   :: Tree r  -> (Struct a -> Struct b)      -> TSignal r
+    TMap    :: Tree  () -> (Struct a -> Struct b) -> r -> TSignal r
+    TMap'   :: Tree' r  -> (Struct a -> Struct b)      -> TSignal r
 
     TZip    :: r -> r -> TSignal r
     TFst    :: r      -> TSignal r
@@ -56,8 +56,8 @@ data TSignal r
 --------------------------------------------------------------------------------
 -- **
 
-data Tree e = L e | B (Tree e) (Tree e)
 type T      = Tree ()
+data Tree e = L e | B (Tree e) (Tree e) deriving Show
 
 -- | ...
 structT :: forall a. Typeable a => Proxy a -> T
@@ -66,6 +66,16 @@ structT _ = go $ typeOf (undefined :: a)
     ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
     go r | typeRepTyCon r == ty = let [x,y] = typeRepArgs r in B (go x) (go y)
          | otherwise            = L ()
+
+--------------------------------------------------------------------------------
+-- ** Hackity hack hack, replace with proper linking
+
+type T'      = Tree' T
+data Tree' e = I e Unique
+             | Zip' (Tree' e) (Tree' e)
+             | Fst' (Tree' e)
+             | Snd' (Tree' e)
+  deriving Show
 
 --------------------------------------------------------------------------------
 -- **
@@ -83,15 +93,17 @@ instance MuRef (Signal a)
       (Fst   s)    -> TFst <$> f s
       (Snd   s)    -> TSnd <$> f s
       (Delay a s)  -> TDelay a <$> f s
-      (Var   _)    -> pure $ TVar
+      (SVar  _)    -> pure $ TVar
 
 instance (Typeable a, Typeable b) => MuRef (Signal a -> Signal b)
   where
     type DeRef (Signal a -> Signal b) = TSignal
 
     mapDeRef f sf =
-      let (v, sg) = let a = Var (toDyn sf) in (a, sf a)
-       in TLambda <$> f v <*> f sg
+      let (v, sg) = let a = SVar (toDyn sf) in (a, sf a)
+       in TLambda (Proxy :: Proxy b)
+            <$> f v
+            <*> f sg
 
 instance (Typeable a, Typeable b) => MuRef (Sig a -> Sig b)
   where
@@ -104,13 +116,13 @@ instance (Typeable a, Typeable b) => MuRef (Sig a -> Sig b)
 
 instance Show (TSignal Unique) where
   show node = case node of
-    (TLambda i b) -> "lam. " ++ show i ++ " " ++ show b
-    (TVar)        -> "var. "
+    (TLambda _ i b) -> "lam. " ++ show i ++ " " ++ show b
+    (TVar)          -> "var. "
 
     (TConst _)   -> "const. "
     (TLift  _ s) -> "lift. " ++ show s
 
-    (TMap _ _ s) -> "map. " ++ show s
+    (TMap t _ s) -> "map. `" ++ show t ++ "` " ++ show s
     (TZip s u)   -> "zip. " ++ show s ++ " " ++ show u
     (TFst s)     -> "fst. " ++ show s
     (TSnd s)     -> "snd. " ++ show s
