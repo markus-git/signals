@@ -39,8 +39,16 @@ data TSignal r
               -> r
               -> TSignal r
 
-    TMap    :: Tree  () -> (Struct a -> Struct b) -> r -> TSignal r
-    TMap'   :: Tree' r  -> (Struct a -> Struct b)      -> TSignal r
+    TMap    :: (Typeable a, Typeable b)
+              => Tree  ()
+              -> (Struct a -> Struct b)
+              -> r
+              -> TSignal r
+
+    TMap'   :: (Typeable a, Typeable b)
+              => Tree' r
+              -> (Struct a -> Struct b)
+              -> TSignal r
 
     TZip    :: r -> r -> TSignal r
     TFst    :: r      -> TSignal r

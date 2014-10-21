@@ -6,6 +6,8 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE ConstraintKinds     #-}
 
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Frontend.Signal where
 
 import Expr (Expr, todo)
@@ -177,7 +179,7 @@ instance ( Typeable (Internal a)
 
 data Struct a
   where
-    Leaf :: a                    -> Struct (Leaf a)
+    Leaf :: Typeable a => a -> Struct (Leaf a)
     Pair :: Struct a -> Struct b -> Struct (a, b)
   deriving Typeable
 
@@ -188,7 +190,7 @@ class StructE a
     fromE :: Struct a -> Normal a
     toE   :: Normal a -> Struct a
 
-instance StructE (Leaf a)
+instance Typeable a => StructE (Leaf a)
   where
     type Normal (Leaf a) = a
     fromE (Leaf a) = a
@@ -215,3 +217,21 @@ lift
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapS (toE . f . fromE) . fromS
+
+--------------------------------------------------------------------------------
+
+-- data Apa a
+--   where
+--     AL :: a -> Apa (Leaf a)
+--     AP :: Apa a -> Apa b -> Apa (a, b)
+
+-- data Tree = L
+--           | Z (Tree) (Tree)
+--           | F (Tree)
+--           | S (Tree)
+
+-- -- :: Tree -> Struct ((Leaf a, Leaf a), Leaf b)
+-- f t = t
+--   where
+--   --go :: forall b. Tree -> Apa b
+--     go (Z l r) = AP (go l) (go r)

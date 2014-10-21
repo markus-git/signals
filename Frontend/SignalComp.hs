@@ -7,7 +7,7 @@ module Frontend.SignalComp where
 import           Frontend.Stream (Stream(..))
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal)
+import           Frontend.Signal (Signal, Struct(..))
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..), Tree(..), T, Tree'(..), T')
@@ -47,6 +47,21 @@ compile :: forall a b. (Typeable a, Typeable b)
           =>    (Signal a             -> Signal b)
           -> IO (Program (CMD Expr) a -> Program (CMD Expr) b)
 compile = undefined
+
+--------------------------------------------------------------------------------
+-- **
+
+-- |
+type Node = (Unique, TSignal Unique)
+
+-- |
+type Root = Unique
+
+-- |
+type Id   = Unique
+
+findNode :: [Node] -> Id -> Maybe Node
+findNode nodes i = find ((==) i . P.fst) nodes
 
 --------------------------------------------------------------------------------
 -- Nothing to see here citizen, move along.
@@ -104,36 +119,10 @@ compileG (Graph nodes root) inp = undefined
             return $ toDyn r
 
           (TMap' t (f :: Sig.Struct t1 -> Sig.Struct t2)) -> do
-
             undefined
 
-                  -- This is only the general idea, doesn't work yet
-                  --
-                  -- ToDo: Typeable needed in Struct
-                  --       Infinite types from zipping
-            where go :: T' -> Program (CMD Expr) Dynamic
-                  go (Zip' l r) = do
-                    dl' <- go l
-                    dr' <- go r
-                    case (fromDynamic dl', fromDynamic dr') of
-                      (Just (l' :: Sig.Struct apa), Just (r' :: Sig.Struct bepa))
-                        | W <- witT l'
-                        , W <- witT r'
-                        -> return $ toDyn $ Sig.Pair l' r'
-
---                    undefined
-                    --return $ toDyn $ Sig.Pair l' r'
-
-
-                  -- go (Fst' l  ) = do
-                  --   (Sig.Pair l' _) <- go l
-                  --   return $ BAD.unsafeCoerce $ l'
-                  -- go (Snd' r  ) = do
-                  --   (Sig.Pair _ r') <- go r
-                  --   return $ BAD.unsafeCoerce $ (r' :: Sig.Struct t)
-                  -- go (I    t i) = do
-                  --   t' <- castN i m
-                  --   return $ t'
+            where go :: T' -> Proxy (Struct t) -> Program (CMD Expr) (Struct t)
+                  go = undefined
 
     find :: Unique -> Node
     find = fromJust . findNode nodes
@@ -146,33 +135,6 @@ compileG (Graph nodes root) inp = undefined
 
     castN :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
     castN u m = (fromJust . fromDynamic) <$> loadN u m
-
-----------------------------------------
-
-data WT a where
-  W :: Typeable a => WT a
-
-witT :: Sig.Struct a -> WT a
-witT (Sig.Leaf _) = W
-witT (Sig.Pair l r)
-  | W <- witT l
-  , W <- witT r
-  = W
-
---------------------------------------------------------------------------------
--- **
-
--- |
-type Node = (Unique, TSignal Unique)
-
--- |
-type Root = Unique
-
--- |
-type Id   = Unique
-
-findNode :: [Node] -> Id -> Maybe Node
-findNode nodes i = find ((==) i . P.fst) nodes
 
 --------------------------------------------------------------------------------
 --
