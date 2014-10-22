@@ -1,25 +1,24 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE DeriveDataTypeable  #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE DeriveDataTypeable   #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE InstanceSigs         #-}
 
 module Frontend.Signal where
 
 import Expr
+import Interpretation
 
 import           Frontend.Stream (Stream)
 import qualified Frontend.Stream as S
 
 import           Prelude hiding (fst, snd, zip, zipWith, map, repeat)
 import qualified Prelude as P
-
-import Interpretation
 
 import Data.Dynamic
 import Data.Typeable
@@ -33,118 +32,113 @@ data Signal a
   where
     Const :: Typeable a
             => Stream a
-            -> Signal (Leaf a)
+            -> Signal (Empty a)
 
     Lift  :: (Typeable a, Typeable b)
-            => (Stream a        -> Stream b)
-            -> (Signal (Leaf a) -> Signal (Leaf b))
+            => (Stream a         -> Stream b)
+            -> (Signal (Empty a) -> Signal (Empty b))
 
     Map   :: (Typeable a, Typeable b, Classy a)
             => (Struct a -> Struct b)
             -> (Signal a -> Signal b)
 
     Zip   :: (Typeable a, Typeable b) => Signal a      -> Signal b -> Signal (a, b)
-    Fst   :: Typeable a               => Signal (a, b) -> Signal a
-    Snd   :: Typeable b               => Signal (a, b) -> Signal b
+    Fst   :: (Typeable a)             => Signal (a, b)             -> Signal a
+    Snd   :: (Typeable b)             => Signal (a, b)             -> Signal b
 
-    Delay :: a -> Signal (Leaf a) -> Signal (Leaf a)
+    Delay :: a -> Signal (Empty a) -> Signal (Empty a)
 
-    SVar  :: Typeable a => Dynamic -> Signal a
+    SVar  :: (Typeable a) => Dynamic -> Signal a
   deriving Typeable
 
 -- | ...
-newtype Sig a = Sig {unSig :: Signal (Leaf a)}
+newtype Sig a = Sig {unSig :: Signal (Empty a)}
 
 --------------------------------------------------------------------------------
 -- ** "Smart" constructors
 
-constS :: Typeable a => Stream a -> Sig a
+constS :: (Typeable a) => Stream a -> Sig a
 constS  = Sig . Const
 
-liftS  :: (Typeable a, Typeable b) => (Stream a -> Stream b) -> Sig a -> Sig b
+liftS  :: (Typeable a, Typeable b)
+         => (Stream a -> Stream b)
+         -> (Sig    a -> Sig    b)
 liftS f = Sig . Lift f . unSig
 
-mapS   :: (Typeable a, Typeable b, Classy a) => (Struct a -> Struct b) -> Signal a -> Signal b
+mapS   :: (Typeable a, Typeable b, Classy a)
+         => (Struct a -> Struct b)
+         -> (Signal a -> Signal b)
 mapS    = Map
 
 zipS   :: (Typeable a, Typeable b) => Signal a -> Signal b -> Signal (a, b)
 zipS    = Zip
 
-fstS   :: Typeable a => Signal (a, b) -> Signal a
+fstS   :: (Typeable a) => Signal (a, b) -> Signal a
 fstS    = Fst
 
-sndS   :: Typeable b => Signal (a, b) -> Signal b
+sndS   :: (Typeable b) => Signal (a, b) -> Signal b
 sndS    = Snd
 
 --------------------------------------------------------------------------------
 -- ** User Interface
 
-repeat :: (exp ~ Expr, Typeable a) => exp a -> Sig (exp a)
+{- The use of Expr here is only temporary (due to a Typeable thingy) -}
+
+repeat :: (Typeable a) => Expr a -> Sig (Expr a)
 repeat = constS . S.repeat
 
-map :: (exp ~ Expr, Typeable a, Typeable b)
-    => (exp a -> exp b)
-    -> Sig (exp a)
-    -> Sig (exp b)
+map :: (Typeable a, Typeable b)
+      => (Expr a -> Expr b)
+      -> Sig (Expr a)
+      -> Sig (Expr b)
 map f = liftS (S.map f)
 
-zipWith :: (exp ~ Expr, Typeable c, Typeable b, Typeable a)
-        => (exp a -> exp b -> exp c)
-        -> Sig a
-        -> Sig b
-        -> Sig c
-zipWith f = curry $ lift $ uncurry f
+-- zipWith :: (Typeable a, Typeable b, Typeable c)
+--           => (Expr a -> Expr b -> Expr c)
+--           -> Sig (Expr a)
+--           -> Sig (Expr b)
+--           -> Sig (Expr c)
+-- zipWith f a b = lift (\(a, b) -> f a b) (a, b)
 
 --------------------------------------------------------------------------------
 -- ** Instances
 
-instance ( Show (Expr a)
-         , Typeable a
-         , Typeable1 expr
-         , Num (expr a)
-         , expr ~ Expr)
-    => Num (Sig (expr a))
-  where
-    fromInteger = repeat . fromInteger
-    (+)         = zipWith (+)
-    (*)         = zipWith (*)
-    (-)         = zipWith (-)
+-- instance (Show a, Typeable a, Num a) => Num (Sig (Expr a))
+--   where
+--     fromInteger = repeat . fromInteger
+--     (+)         = zipWith (+)
+--     (*)         = zipWith (*)
+--     (-)         = zipWith (-)
 
-    abs = todo; signum = todo;
+--     abs = todo; signum = todo;
 
-instance ( Show (Expr a)
-         , Typeable a
-         , Typeable1 expr
-         , Fractional (expr a)
-         , expr ~ Expr)
-    => Fractional (Sig (expr a))
-  where
-    fromRational = repeat . fromRational
-    (/)          = zipWith (/)
+-- instance (Show a, Typeable a, Fractional a) => Fractional (Sig (Expr a))
+--   where
+--     fromRational = repeat . fromRational
+--     (/)          = zipWith (/)
 
-    recip = todo;
+--     recip = todo;
 
-instance ( Show (Expr a)
-         , Typeable a
-         , Typeable1 expr
-         , Floating (expr a)
-         , expr ~ Expr)
-    => Floating (Sig (expr a))
-  where
-    pi   = repeat pi
-    sin  = map sin
-    (**) = zipWith (**)
+-- instance (Show a, Typeable a, Floating a) => Floating (Sig (Expr a))
+--   where
+--     pi   = repeat pi
+--     sin  = map sin
+--     (**) = zipWith (**)
 
-    exp   = todo; sqrt  = todo; log     = todo;
-    tan   = todo; cos   = todo; asin    = todo;
-    atan  = todo; acos  = todo; sinh    = todo;
-    tanh  = todo; cosh  = todo; asinh   = todo;
-    atanh = todo; acosh = todo; logBase = todo;
+--     exp   = todo; sqrt  = todo; log     = todo;
+--     tan   = todo; cos   = todo; asin    = todo;
+--     atan  = todo; acos  = todo; sinh    = todo;
+--     tanh  = todo; cosh  = todo; asinh   = todo;
+--     atanh = todo; acosh = todo; logBase = todo;
 
 --------------------------------------------------------------------------------
--- *
+-- * Generalised lifting of Signals
 --------------------------------------------------------------------------------
+
 -- {- All this to convert between tuples and zip pairs -}
+
+--------------------------------------------------------------------------------
+-- *** Conversion between signals and tuples
 
 class StructS a
   where
@@ -153,23 +147,25 @@ class StructS a
     fromS :: a -> Signal (Internal a)
     toS   :: Signal (Internal a) -> a
 
-instance StructS (Signal (Leaf a))
+instance StructS (Signal (Empty a))
   where
-    type Internal (Signal (Leaf a)) = Leaf a
+    type Internal (Signal (Empty a)) = Empty a
 
     fromS = id
     toS   = id
 
 instance StructS (Sig a)
   where
-    type Internal (Sig a) = Leaf a
+    type Internal (Sig a) = Empty a
 
     fromS = unSig
     toS   = Sig
 
 instance ( Typeable (Internal a)
          , Typeable (Internal b)
-         , StructS a, StructS b)
+         , StructS a
+         , StructS b
+         )
     => StructS (a, b)
   where
     type Internal (a, b) = (Internal a, Internal b)
@@ -178,7 +174,7 @@ instance ( Typeable (Internal a)
     toS p        = (toS (fstS p), toS (sndS p))
 
 --------------------------------------------------------------------------------
--- ***
+-- *** Conversion between struct's and tuples
 
 class StructE a
   where
@@ -187,14 +183,14 @@ class StructE a
     fromE :: Struct a -> Normal a
     toE   :: Normal a -> Struct a
 
-instance Typeable a => StructE (Leaf a)
+instance Typeable a => StructE (Empty a)
   where
-    type Normal (Leaf a) = Expr a
+    type Normal (Empty a) = Expr a
+
     fromE (Leaf a) = a
     toE a          = Leaf a
 
-instance (StructE a, StructE b)
-    => StructE (a, b)
+instance (StructE a, StructE b) => StructE (a, b)
   where
     type Normal (a, b) = (Normal a, Normal b)
 
@@ -202,16 +198,13 @@ instance (StructE a, StructE b)
     toE (a, b)       = Pair (toE a) (toE b)
 
 --------------------------------------------------------------------------------
--- ***
+-- *** The lifting operator
 
 lift
-  :: ( Classy (Internal s1)
-     , StructS s1
-     , StructS s2
-     , StructE (Internal s1)
-     , StructE (Internal s2)
-     , Typeable (Internal s1)
-     , Typeable (Internal s2)
+  :: ( StructS            s1,  StructS            s2
+     , StructE  (Internal s1), StructE  (Internal s2)
+     , Typeable (Internal s1), Typeable (Internal s2)
+     , Classy   (Internal s1)
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapS (toE . f . fromE) . fromS

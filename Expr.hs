@@ -24,42 +24,17 @@ data Expr a
     Mul :: Num a        => Expr a -> Expr a -> Expr a
     Div :: Fractional a => Expr a -> Expr a -> Expr a
     Exp :: Floating a   => Expr a -> Expr a -> Expr a
-    Sin :: Floating a   => Expr a -> Expr a
+    Sin :: Floating a   => Expr a           -> Expr a
     Mod :: Integral a   => Expr a -> Expr a -> Expr a
 
     -- ^ Bool. operations
-    Not ::          Expr Bool -> Expr Bool
+    Not ::          Expr Bool           -> Expr Bool
     Eq  :: Eq a  => Expr a    -> Expr a -> Expr Bool
     LEq :: Ord a => Expr a    -> Expr a -> Expr Bool
   deriving Typeable
 
 -- | Variable indetifiers
 type VarId = String
-
---------------------------------------------------------------------------------
--- ** I don't know where to put these
-
--- |
-data Leaf a deriving Typeable
-
--- |
-data Struct a
-  where
-    Leaf :: Typeable a => Expr a -> Struct (Leaf a)
-    Pair :: Struct a -> Struct b -> Struct (a, b)
-  deriving Typeable
-
-class Classy a
-  where
-    varStruct :: VarId -> Struct a
-
-instance (Typeable a) => Classy (Leaf a)
-  where
-    varStruct = Leaf . Var
-
-instance (Classy a, Classy b) => Classy (a, b)
-  where
-    varStruct i = Pair (varStruct (i ++ "_1")) (varStruct (i ++ "_2"))
 
 --------------------------------------------------------------------------------
 -- ** Instances
@@ -116,3 +91,36 @@ instance (Show a, Floating a) => Floating (Expr a)
     atanh = todo; acosh = todo; logBase = todo;
 
 todo = error "todo in expr" -- I'll add these later
+
+--------------------------------------------------------------------------------
+-- * Tree's of expressions
+--------------------------------------------------------------------------------
+
+{- I don't know where to put these... -}
+
+-- | 0-tuple value
+data Empty a
+  deriving Typeable
+
+-- | ...
+data Struct a
+  where
+    Leaf :: Typeable a => Expr a   -> Struct (Empty a)
+    Pair :: Struct a   -> Struct b -> Struct (a, b)
+  deriving Typeable
+
+--------------------------------------------------------------------------------
+-- ** ToDo: Come up with a better name
+
+class Classy a
+  where
+    varStruct :: VarId -> Struct a
+
+instance (Typeable a) => Classy (Empty a)
+  where
+    varStruct = Leaf . Var
+
+instance (Classy a, Classy b) => Classy (a, b)
+  where
+    varStruct i = Pair (varStruct (i ++ "_1"))
+                       (varStruct (i ++ "_2"))
