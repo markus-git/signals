@@ -24,6 +24,35 @@ import Interpretation
 import Backend.C.Monad
 
 --------------------------------------------------------------------------------
+-- * Evaluation
+--------------------------------------------------------------------------------
+
+instance EvalExp Expr
+  where
+    type LitPred Expr = Show
+
+    litExp  = Val
+    evalExp = evalExpr'
+
+-- |
+evalExpr' :: Expr a -> a
+evalExpr' (Val a) = a
+evalExpr' (Var _) = error "cannot eval var"
+
+-- ^ Math. ops.
+evalExpr' (Add a b) = evalExpr' a + evalExpr' b
+evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
+evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
+evalExpr' (Div a b) = evalExpr' a / evalExpr' b
+evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
+evalExpr' (Sin   a) = sin $ evalExpr' a
+
+-- ^ Bool. ops.
+evalExpr' (Not   a) = not $ evalExpr' a
+evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
+evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
+
+--------------------------------------------------------------------------------
 -- * Compilation of Expressions
 --------------------------------------------------------------------------------
 
@@ -34,8 +63,9 @@ instance CompExp C Expr
   where
     type VarPred Expr = Any
 
-    varExp  = Var
-    compExp = compExp'
+    varExp   = Var
+    compExp  = compExp'
+    compSExp = compSExp'
 
 -- |
 compExp' :: Expr a -> C C.Exp
@@ -84,6 +114,7 @@ compExp' (LEq a b) = do
   b' <- compExp' b
   return [cexp| $a' <= $b' |]
 
+compSExp' s = todo
 --------------------------------------------------------------------------------
 -- * Compilation of Commands
 --------------------------------------------------------------------------------

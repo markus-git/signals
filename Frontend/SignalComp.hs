@@ -4,13 +4,15 @@
 
 module Frontend.SignalComp where
 
-import           Frontend.Stream (Stream(..))
+import Expr
+
+import           Frontend.Stream (Stream)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Struct(..))
+import           Frontend.Signal (Signal)
 import qualified Frontend.Signal as Sig
 
-import           Frontend.SignalObsv (TSignal(..), Tree(..), T, Tree'(..), T')
+import           Frontend.SignalObsv (TSignal(..))
 import qualified Frontend.SignalObsv as SigO
 
 import           Data.Map (Map)
@@ -23,7 +25,7 @@ import Frontend.Signal     (Signal)
 import Frontend.SignalObsv (TSignal(..))
 
 import qualified Backend.C            -- HACK HACK! Move CompExp instance
-import qualified Unsafe.Coerce as BAD -- HACK HACK! Needs ghc >7.8 for Typeable
+import qualified Unsafe.Coerce as BAD -- HACK HACK! Needs ghc >7.8 for Typeable Prog.
 
 import Control.Applicative ((<$>))
 import Control.Monad.Operational
@@ -46,7 +48,9 @@ import qualified Prelude as P
 compile :: forall a b. (Typeable a, Typeable b)
           =>    (Signal a             -> Signal b)
           -> IO (Program (CMD Expr) a -> Program (CMD Expr) b)
-compile = undefined
+compile f = do
+  g <- reifyGraph f
+  return $ \input -> compileG g input
 
 --------------------------------------------------------------------------------
 -- **
@@ -73,17 +77,20 @@ findNode nodes i = find ((==) i . P.fst) nodes
 
 compileG :: forall a b. (Typeable a, Typeable b)
            => Graph TSignal
-           -> Program (CMD Expr) (Expr a)
-           -> Program (CMD Expr) (Expr b)
-compileG (Graph nodes root) inp = undefined
+           -> Program (CMD Expr) a
+           -> Program (CMD Expr) b
+compileG (Graph nodes root) inp =
+  do x <- castN root M.empty
+     v <- getRef x            :: Program (CMD Expr) (Expr b)
+     return (fromJust (cast v :: Maybe b))
   where
     compileN :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
     compileN (i, n) m
       | Just d <- M.lookup i m = return d
       | otherwise              = case n of
           (TVar) -> do
-            v <- inp
-            r <- newRef v
+            v <- inp                         :: Program (CMD Expr) a
+            r <- newRef $ fromJust $ (cast v :: Maybe (Expr a))
             return $ toDyn r
 
           (TLambda (_ :: Proxy t) x y) -> do
@@ -118,11 +125,16 @@ compileG (Graph nodes root) inp = undefined
             setRef r (fromJust $ cast v :: Expr t2)
             return $ toDyn r
 
-          (TMap' t (f :: Sig.Struct t1 -> Sig.Struct t2)) -> do
-            undefined
+          (TMap (f :: Struct t1 -> Struct t2) r) -> do
+            let u = "a"             :: VarId
+            let o = f (varStruct u) :: Struct t2
 
-            where go :: T' -> Proxy (Struct t) -> Program (CMD Expr) (Struct t)
-                  go = undefined
+            s <- compS o
+            r <- initRef :: Program (CMD Expr) (Ref (Expr t2))
+            return $ toDyn r
+            where
+              compS :: Struct t2 -> Program (CMD Expr) (Struct (Ref (Expr t2)))
+              compS = undefined
 
     find :: Unique -> Node
     find = fromJust . findNode nodes
@@ -135,43 +147,3 @@ compileG (Graph nodes root) inp = undefined
 
     castN :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
     castN u m = (fromJust . fromDynamic) <$> loadN u m
-
---------------------------------------------------------------------------------
---
-
-linkMap :: [Node] -> Root -> Map Id T'
-linkMap nodes root = foldr (\a -> M.union (go a)) M.empty maps
-  where
-    maps :: [Node]
-    maps  = [node | node@(_, TMap {}) <- nodes]
-
-    -- ToDo: StateT over Maybe (view patterns?)
-    go :: Node -> Map Id T'
-    go (u, TMap t sf r) =
-      let t' = execState (apa (find r)) M.empty
-       in M.singleton u (fromJust $ M.lookup r t')
-
-    apa :: Node -> State (Map Id T') T'
-    apa (u, node) =
-      do m <- M.lookup u <$> get
-         case m of
-           Just t  -> return t
-           Nothing -> case node of
-             (TZip s u) -> do
-               s' <- apa (find s)
-               u' <- apa (find u)
-               done (Zip' s' u')
-             (TFst s) -> do
-               s' <- apa (find s)
-               done (Fst' s')
-             (TSnd s) -> do
-               s' <- apa (find s)
-               done (Snd' s')
-             (TMap t _ _) -> done $ I t u
-             _            -> done $ I (L ()) u
-
-      where done s = do modify (M.insert u s)
-                        return s
-
-    find :: Id -> Node
-    find = fromJust . findNode nodes

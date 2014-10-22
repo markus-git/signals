@@ -4,7 +4,10 @@
 
 module Interpretation where
 
+import Expr (Expr, Struct, VarId)
+
 import Data.Constraint
+
 import Language.C.Syntax (Exp)
 
 --------------------------------------------------------------------------------
@@ -39,8 +42,11 @@ class CompExp m exp
     -- | Compilation of expressions
     compExp :: exp a -> m Exp
 
--- | Variable indetifiers
-type VarId = String
+    -- |
+    compSExp :: Struct a -> m Exp
+
+--------------------------------------------------------------------------------
+-- **
 
 -- | General interface for compiling constructs
 class CompCMD m cmd

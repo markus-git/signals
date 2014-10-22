@@ -12,6 +12,7 @@ import Interpretation
 import Control.Monad.Operational
 import Data.Constraint
 import Data.Dynamic
+import Data.Typeable
 
 --------------------------------------------------------------------------------
 -- * Commands

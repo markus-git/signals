@@ -6,8 +6,6 @@
 
 module Expr where
 
-import Interpretation
-
 import Data.Typeable (Typeable)
 
 --------------------------------------------------------------------------------
@@ -35,45 +33,45 @@ data Expr a
     LEq :: Ord a => Expr a    -> Expr a -> Expr Bool
   deriving Typeable
 
+-- | Variable indetifiers
+type VarId = String
+
 --------------------------------------------------------------------------------
--- ** Evaluation
-
-instance EvalExp Expr
-  where
-    type LitPred Expr = Show
-
-    litExp  = Val
-    evalExp = evalExpr'
+-- ** I don't know where to put these
 
 -- |
-evalExpr' :: Expr a -> a
-evalExpr' (Val a) = a
-evalExpr' (Var _) = error "cannot eval var"
+data Leaf a deriving Typeable
 
--- ^ Math. ops.
-evalExpr' (Add a b) = evalExpr' a + evalExpr' b
-evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
-evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
-evalExpr' (Div a b) = evalExpr' a / evalExpr' b
-evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
-evalExpr' (Sin   a) = sin $ evalExpr' a
+-- |
+data Struct a
+  where
+    Leaf :: Typeable a => Expr a -> Struct (Leaf a)
+    Pair :: Struct a -> Struct b -> Struct (a, b)
+  deriving Typeable
 
--- ^ Bool. ops.
-evalExpr' (Not   a) = not $ evalExpr' a
-evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
-evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
+class Classy a
+  where
+    varStruct :: VarId -> Struct a
+
+instance (Typeable a) => Classy (Leaf a)
+  where
+    varStruct = Leaf . Var
+
+instance (Classy a, Classy b) => Classy (a, b)
+  where
+    varStruct i = Pair (varStruct (i ++ "_1")) (varStruct (i ++ "_2"))
 
 --------------------------------------------------------------------------------
 -- ** Instances
 
 instance (Show a, Eq a) => Eq (Expr a)     -- bad
   where
-    a == b = evalExp $ Eq  a b
-    a /= b = evalExp $ Not $ Eq a b
+    a == b = todo
+    a /= b = todo
 
 instance (Show a, Ord a) => Ord (Expr a)   -- bad
   where
-    a <= b = evalExp $ LEq a b
+    a <= b = todo
 
 instance (Show a, Real a) => Real (Expr a) -- bad
   where
@@ -91,7 +89,7 @@ instance (Show a, Integral a) => Integral (Expr a)
 
 instance (Show a, Num a) => Num (Expr a)
   where
-    fromInteger = litExp . fromInteger
+    fromInteger = Val . fromInteger
     (+)         = Add
     (-)         = Sub
     (*)         = Mul
@@ -100,14 +98,14 @@ instance (Show a, Num a) => Num (Expr a)
 
 instance (Show a, Fractional a) => Fractional (Expr a)
   where
-    fromRational = litExp . fromRational
+    fromRational = Val . fromRational
     (/)          = Div
 
     recip = todo;
 
 instance (Show a, Floating a) => Floating (Expr a)
   where
-    pi   = litExp pi
+    pi   = Val pi
     sin  = Sin
     (**) = Exp
 

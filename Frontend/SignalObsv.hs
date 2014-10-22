@@ -7,7 +7,9 @@
 
 module Frontend.SignalObsv where
 
-import           Frontend.Signal (Signal(..), Sig(..), Struct)
+import Expr
+
+import           Frontend.Signal (Signal(..), Sig(..))
 import qualified Frontend.Signal as Sig
 
 import           Frontend.Stream (Stream)
@@ -39,15 +41,9 @@ data TSignal r
               -> r
               -> TSignal r
 
-    TMap    :: (Typeable a, Typeable b)
-              => Tree  ()
-              -> (Struct a -> Struct b)
+    TMap    :: (Typeable a, Typeable b, Classy a)
+              => (Struct a -> Struct b)
               -> r
-              -> TSignal r
-
-    TMap'   :: (Typeable a, Typeable b)
-              => Tree' r
-              -> (Struct a -> Struct b)
               -> TSignal r
 
     TZip    :: r -> r -> TSignal r
@@ -64,30 +60,6 @@ data TSignal r
 --------------------------------------------------------------------------------
 -- **
 
-type T      = Tree ()
-data Tree e = L e | B (Tree e) (Tree e) deriving Show
-
--- | ...
-structT :: forall a. Typeable a => Proxy a -> T
-structT _ = go $ typeOf (undefined :: a)
-  where
-    ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
-    go r | typeRepTyCon r == ty = let [x,y] = typeRepArgs r in B (go x) (go y)
-         | otherwise            = L ()
-
---------------------------------------------------------------------------------
--- ** Hackity hack hack, replace with proper linking
-
-type T'      = Tree' T
-data Tree' e = I e Unique
-             | Zip' (Tree' e) (Tree' e)
-             | Fst' (Tree' e)
-             | Snd' (Tree' e)
-  deriving Show
-
---------------------------------------------------------------------------------
--- **
-
 instance MuRef (Signal a)
   where
     type DeRef (Signal a) = TSignal
@@ -95,8 +67,7 @@ instance MuRef (Signal a)
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
-      (Map   sf (s :: Signal x))
-                   -> TMap (structT (Proxy::Proxy x)) sf <$> f s
+      (Map   sf s) -> TMap sf <$> f s
       (Zip   s u)  -> TZip <$> f s <*> f u
       (Fst   s)    -> TFst <$> f s
       (Snd   s)    -> TSnd <$> f s
@@ -130,7 +101,7 @@ instance Show (TSignal Unique) where
     (TConst _)   -> "const. "
     (TLift  _ s) -> "lift. " ++ show s
 
-    (TMap t _ s) -> "map. `" ++ show t ++ "` " ++ show s
+    (TMap _ s)   -> "map. " ++ show s
     (TZip s u)   -> "zip. " ++ show s ++ " " ++ show u
     (TFst s)     -> "fst. " ++ show s
     (TSnd s)     -> "snd. " ++ show s
