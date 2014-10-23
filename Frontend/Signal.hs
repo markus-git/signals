@@ -93,12 +93,12 @@ map :: (Typeable a, Typeable b)
       -> Sig (Expr b)
 map f = liftS (S.map f)
 
--- zipWith :: (Typeable a, Typeable b, Typeable c)
---           => (Expr a -> Expr b -> Expr c)
---           -> Sig (Expr a)
---           -> Sig (Expr b)
---           -> Sig (Expr c)
--- zipWith f a b = lift (\(a, b) -> f a b) (a, b)
+zipWith :: (Typeable a, Typeable b, Typeable c)
+          => (Expr a -> Expr b -> Expr c)
+          -> Sig (Expr a)
+          -> Sig (Expr b)
+          -> Sig (Expr c)
+zipWith f = curry $ lift $ uncurry f
 
 --------------------------------------------------------------------------------
 -- ** Instances
@@ -185,8 +185,9 @@ class StructE a
 
 instance Typeable a => StructE (Empty a)
   where
-    type Normal (Empty a) = Expr a
+    type Normal (Empty a) = a
 
+    fromE :: Struct a -> Normal (Empty a)
     fromE (Leaf a) = a
     toE a          = Leaf a
 
