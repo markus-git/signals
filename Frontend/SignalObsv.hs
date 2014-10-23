@@ -7,13 +7,9 @@
 
 module Frontend.SignalObsv where
 
-import Expr
-
-import           Frontend.Signal (Signal(..), Sig(..))
-import qualified Frontend.Signal as Sig
-
-import           Frontend.Stream (Stream)
-import qualified Frontend.Stream as Str
+import Expr            (Expr, Classy, Struct(..))
+import Frontend.Signal (Signal(..), Sig(..))
+import Frontend.Stream (Stream)
 
 import Control.Applicative hiding (Const)
 import Data.Dynamic
@@ -22,22 +18,22 @@ import Data.Typeable
 import Data.Reify
 
 --------------------------------------------------------------------------------
--- *
+-- * Graph representation of Signals
 --------------------------------------------------------------------------------
 
 data TSignal r
   where
-    -- ^ Sig. func.
+    -- ^ Signal functions
     TLambda :: (Typeable x) => Proxy x -> r -> r -> TSignal r
     TVar    :: TSignal r
 
-    -- ^ Sig.
+    -- ^ Signal
     TConst  :: Typeable a
-              => Stream a
+              => Stream (Expr a)
               -> TSignal r
 
     TLift   :: (Typeable a, Typeable b)
-              => (Stream a -> Stream b)
+              => (Stream (Expr a) -> Stream (Expr b))
               -> r
               -> TSignal r
 
@@ -50,7 +46,7 @@ data TSignal r
     TFst    :: r      -> TSignal r
     TSnd    :: r      -> TSignal r
 
-    TDelay  :: a -> r -> TSignal r
+    TDelay  :: Expr a -> r -> TSignal r
 
     -- ^ Buffers
     TVBuff  ::               r -> TSignal r
@@ -58,7 +54,7 @@ data TSignal r
   deriving Typeable
 
 --------------------------------------------------------------------------------
--- **
+-- ** MuRef instances for 'Signal' types
 
 instance MuRef (Signal a)
   where
@@ -67,10 +63,10 @@ instance MuRef (Signal a)
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
-      (Map   sf s) -> TMap sf <$> f s
-      (Zip   s u)  -> TZip <$> f s <*> f u
-      (Fst   s)    -> TFst <$> f s
-      (Snd   s)    -> TSnd <$> f s
+      (Map   sf s) -> TMap  sf <$> f s
+      (Zip   s u)  -> TZip     <$> f s <*> f u
+      (Fst   s)    -> TFst     <$> f s
+      (Snd   s)    -> TSnd     <$> f s
       (Delay a s)  -> TDelay a <$> f s
       (SVar  _)    -> pure $ TVar
 
@@ -84,6 +80,17 @@ instance (Typeable a, Typeable b) => MuRef (Signal a -> Signal b)
             <$> f v
             <*> f sg
 
+--------------------------------------------------------------------------------
+-- ** MuRef instances for 'Sig' types
+
+{- Since 'Sig' is a simple newtype wrapper, we'll reuse the above instances -}
+
+instance MuRef (Sig a)
+  where
+    type DeRef (Sig a) = TSignal
+
+    mapDeRef f node = mapDeRef f (unSig node)
+
 instance (Typeable a, Typeable b) => MuRef (Sig a -> Sig b)
   where
     type DeRef (Sig a -> Sig b) = TSignal
@@ -91,7 +98,8 @@ instance (Typeable a, Typeable b) => MuRef (Sig a -> Sig b)
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
 
 --------------------------------------------------------------------------------
--- ** Testing
+-- * Testing
+--------------------------------------------------------------------------------
 
 instance Show (TSignal Unique) where
   show node = case node of

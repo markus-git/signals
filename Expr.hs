@@ -99,13 +99,13 @@ todo = error "todo in expr" -- I'll add these later
 {- I don't know where to put these... -}
 
 -- | 0-tuple value
-data Empty a
-  deriving Typeable
+-- data Empty a
+--   deriving Typeable
 
 -- | ...
 data Struct a
   where
-    Leaf :: Typeable a => Expr a   -> Struct (Empty a)
+    Leaf :: Typeable a => Expr a   -> Struct (Expr a)
     Pair :: Struct a   -> Struct b -> Struct (a, b)
   deriving Typeable
 
@@ -116,7 +116,7 @@ class Classy a
   where
     varStruct :: VarId -> Struct a
 
-instance (Typeable a) => Classy (Empty a)
+instance (Typeable a) => Classy (Expr a)
   where
     varStruct = Leaf . Var
 

@@ -31,12 +31,12 @@ import Data.Typeable
 data Signal a
   where
     Const :: Typeable a
-            => Stream a
-            -> Signal (Empty a)
+            => Stream (Expr a)
+            -> Signal (Expr a)
 
     Lift  :: (Typeable a, Typeable b)
-            => (Stream a         -> Stream b)
-            -> (Signal (Empty a) -> Signal (Empty b))
+            => (Stream (Expr a) -> Stream (Expr b))
+            -> (Signal (Expr a) -> Signal (Expr b))
 
     Map   :: (Typeable a, Typeable b, Classy a)
             => (Struct a -> Struct b)
@@ -46,23 +46,28 @@ data Signal a
     Fst   :: (Typeable a)             => Signal (a, b)             -> Signal a
     Snd   :: (Typeable b)             => Signal (a, b)             -> Signal b
 
-    Delay :: a -> Signal (Empty a) -> Signal (Empty a)
+    Delay :: Expr a -> Signal (Expr a) -> Signal (Expr a)
 
     SVar  :: (Typeable a) => Dynamic -> Signal a
   deriving Typeable
 
 -- | ...
-newtype Sig a = Sig {unSig :: Signal (Empty a)}
+--
+-- The use of Expr here is only temporary (due to a Typeable thingy),
+-- with GHC >7.8.* exp can be in the type instead
+newtype Sig a = Sig {unSig :: Signal (Expr a)}
 
 --------------------------------------------------------------------------------
 -- ** "Smart" constructors
 
-constS :: (Typeable a) => Stream a -> Sig a
+constS :: (Typeable a)
+         => Stream (Expr a)
+         -> Sig a
 constS  = Sig . Const
 
 liftS  :: (Typeable a, Typeable b)
-         => (Stream a -> Stream b)
-         -> (Sig    a -> Sig    b)
+         => (Stream (Expr a) -> Stream (Expr b))
+         -> (Sig a -> Sig b)
 liftS f = Sig . Lift f . unSig
 
 mapS   :: (Typeable a, Typeable b, Classy a)
@@ -82,54 +87,52 @@ sndS    = Snd
 --------------------------------------------------------------------------------
 -- ** User Interface
 
-{- The use of Expr here is only temporary (due to a Typeable thingy) -}
-
-repeat :: (Typeable a) => Expr a -> Sig (Expr a)
+repeat :: (Typeable a) => Expr a -> Sig a
 repeat = constS . S.repeat
 
 map :: (Typeable a, Typeable b)
       => (Expr a -> Expr b)
-      -> Sig (Expr a)
-      -> Sig (Expr b)
+      -> Sig a
+      -> Sig b
 map f = liftS (S.map f)
 
 zipWith :: (Typeable a, Typeable b, Typeable c)
           => (Expr a -> Expr b -> Expr c)
-          -> Sig (Expr a)
-          -> Sig (Expr b)
-          -> Sig (Expr c)
+          -> Sig a
+          -> Sig b
+          -> Sig c
 zipWith f = curry $ lift $ uncurry f
 
 --------------------------------------------------------------------------------
 -- ** Instances
 
--- instance (Show a, Typeable a, Num a) => Num (Sig (Expr a))
---   where
---     fromInteger = repeat . fromInteger
---     (+)         = zipWith (+)
---     (*)         = zipWith (*)
---     (-)         = zipWith (-)
+instance (Show a, Typeable a, Num a) => Num (Sig a)
+  where
+    fromInteger = repeat . fromInteger
+    (+)         = zipWith (+)
+    (*)         = zipWith (*)
+    (-)         = zipWith (-)
 
---     abs = todo; signum = todo;
+    abs = todo; signum = todo;
 
--- instance (Show a, Typeable a, Fractional a) => Fractional (Sig (Expr a))
---   where
---     fromRational = repeat . fromRational
---     (/)          = zipWith (/)
+instance (Show a, Typeable a, Fractional a) => Fractional (Sig a)
+  where
+    fromRational = repeat . fromRational
+    (/)          = zipWith (/)
 
---     recip = todo;
+    recip = todo;
 
--- instance (Show a, Typeable a, Floating a) => Floating (Sig (Expr a))
---   where
---     pi   = repeat pi
---     sin  = map sin
---     (**) = zipWith (**)
+instance (Show a, Typeable a, Floating a) => Floating (Sig a)
+  where
+    pi   = repeat pi
+    sin  = map sin
+    (**) = zipWith (**)
 
---     exp   = todo; sqrt  = todo; log     = todo;
---     tan   = todo; cos   = todo; asin    = todo;
---     atan  = todo; acos  = todo; sinh    = todo;
---     tanh  = todo; cosh  = todo; asinh   = todo;
---     atanh = todo; acosh = todo; logBase = todo;
+    exp   = todo; sqrt  = todo; log     = todo;
+    tan   = todo; cos   = todo; asin    = todo;
+    atan  = todo; acos  = todo; sinh    = todo;
+    tanh  = todo; cosh  = todo; asinh   = todo;
+    atanh = todo; acosh = todo; logBase = todo;
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
@@ -147,16 +150,16 @@ class StructS a
     fromS :: a -> Signal (Internal a)
     toS   :: Signal (Internal a) -> a
 
-instance StructS (Signal (Empty a))
+instance StructS (Signal (Expr a))
   where
-    type Internal (Signal (Empty a)) = Empty a
+    type Internal (Signal (Expr a)) = Expr a
 
     fromS = id
     toS   = id
 
 instance StructS (Sig a)
   where
-    type Internal (Sig a) = Empty a
+    type Internal (Sig a) = Expr a
 
     fromS = unSig
     toS   = Sig
@@ -183,11 +186,10 @@ class StructE a
     fromE :: Struct a -> Normal a
     toE   :: Normal a -> Struct a
 
-instance Typeable a => StructE (Empty a)
+instance Typeable a => StructE (Expr a)
   where
-    type Normal (Empty a) = a
+    type Normal (Expr a) = Expr a
 
-    fromE :: Struct a -> Normal (Empty a)
     fromE (Leaf a) = a
     toE a          = Leaf a
 
