@@ -91,20 +91,12 @@ compileGraph (Graph nodes root) input = do
             r <- newRef v
             return $ toDyn r
 
+            -- If I make "Proxy t -> Proxy (Expr t)" then functions
+            -- will be limited, more than for TConst and TLift
           (TLambda (_ :: Proxy t) s u) -> do
-            r  <- initRef :: Program (CMD Expr) (Ref (Expr Float))
-            s' <- load  s (add i (toDyn r) m)
-        --  u' <- load' u (add s s'        m)
-            u' <- load  u (add s s'        m)
-
-            let ud = case fromDynamic u' of
-                       Just x  -> x
-                       Nothing -> error $ "TLambda ~ type error"
-                                    ++ "\n\t :" ++ show (typeOf ud)
-
-            v  <- getRef ud
-            setRef r v
-            return $ toDyn r
+            s' <- load  s m
+            u' <- load' u $ add s s' m :: Program (CMD Expr) (Ref (Expr Float))
+            return $ toDyn u'
 
           (TConst s) -> do
             s' <- Str.runStream s
@@ -117,6 +109,10 @@ compileGraph (Graph nodes root) input = do
             v  <- Str.runStream $ f $ Str.Stream $ return $ getRef s'
             setRef r v
             return $ toDyn r
+
+          (TMap (f :: Struct t0 -> Struct t1) s) -> do
+
+            undefined
 
       where
        find  :: Unique -> Node
@@ -131,13 +127,5 @@ compileGraph (Graph nodes root) input = do
        load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
        load' u m = (fromJust . fromDynamic) <$> load u m
 
---           (TMap (f :: Struct t1 -> Struct t2) r) -> do
---             let u = "a"             :: VarId
---             let o = f (varStruct u) :: Struct t2
-
---             s <- compS o
---             r <- initRef :: Program (CMD Expr) (Ref (Expr t2))
---             return $ toDyn r
---             where
---               compS :: Struct t2 -> Program (CMD Expr) (Struct (Ref (Expr t2)))
---               compS = undefined
+--------------------------------------------------------------------------------
+-- ***

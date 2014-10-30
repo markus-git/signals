@@ -153,7 +153,7 @@ compCMD' (Get ptr) = do
 
 -- ^ Mutable refrences
 compCMD' (InitRef) = do
-  sym <- gensym "r"
+  sym <- gensym "i"
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   return $ Ref sym
 compCMD' (NewRef exp) = do
@@ -164,7 +164,7 @@ compCMD' (NewRef exp) = do
   return $ Ref sym
 compCMD' (GetRef ref) = do
   let ref' = unRef ref
-  sym <- gensym "r"
+  sym <- gensym "g"
   addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref'; |]
   return $ Var sym
