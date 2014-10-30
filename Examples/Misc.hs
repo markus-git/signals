@@ -4,37 +4,68 @@ import Core
 import Expr
 import Interpretation
 
-import           Frontend.Signal (Sig)
+import           Frontend.Signal     (Sig)
 import qualified Frontend.Signal     as S
 
 import qualified Frontend.SignalObsv as SO
 import qualified Frontend.SignalComp as SC
 
+import qualified Backend.C           as B
+
+import Text.PrettyPrint.Mainland
+
+import Control.Monad.Operational (Program)
 import Data.Reify
+import Data.Typeable
 
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
 
-ex1 :: Sig (Expr Int) -> Sig (Expr Int)
-ex1 s = S.zipWith (+) s s
+ex1 :: Sig Float -> Sig Float
+ex1 s = S.map (+1) s
 
-ex2 :: Sig (Expr Int) -> Sig (Expr Int)
+ex2 :: Sig Float -> Sig Float
 ex2 s = let (x, _) = f s
             (_, y) = f s
             z      = g (x, y)
          in x + z
   where
-    f :: Sig (Expr Int) -> (Sig (Expr Int), Sig (Expr Int))
+    f :: Sig Float -> (Sig Float, Sig Float)
     f = S.lift (\a -> (a + a, a * a))
 
-    g :: (Sig (Expr Int), Sig (Expr Int)) -> Sig (Expr Int)
+    g :: (Sig Float, Sig Float) -> Sig Float
     g = S.lift (\(a, b) -> b - a)
 
 --------------------------------------------------------------------------------
 
-test2 = do
-  g <- reifyGraph ex2
-  case g of
-    (Graph nodes root) -> do let m = SC.linkMap nodes root
-                             putStrLn $ show m
+genT :: IO Doc
+genT = do
+  f <- test
+  B.cgen $ mkFunction "misc" f
+
+test :: IO (Program (CMD Expr) ())
+test = do
+  prg <- compile ex1
+  return $ do
+    ptr <- open "test"
+    let getty = fget ptr
+        setty = fput ptr
+
+    v <- prg getty
+    setty v
+
+    close ptr
+
+
+
+----------------------------------------
+
+type Prg a = Program (CMD Expr) (Expr a)
+
+compile :: (Typeable a, Typeable b)
+          =>    (Sig a -> Sig b)
+          -> IO (Prg a -> Prg b)
+compile f = do
+  g <- reifyGraph f
+  return $ \i -> SC.compileGraph g i

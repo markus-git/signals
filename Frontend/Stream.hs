@@ -25,7 +25,11 @@ import qualified Prelude as P
 data Stream a
   where
     Stream :: Program (CMD Expr) (Program (CMD Expr) a) -> Stream a
-  deriving Typeable
+
+--------------------------------------------------------------------------------
+-- ** Instances
+
+deriving instance Typeable Stream
 
 --------------------------------------------------------------------------------
 -- ** User Interface

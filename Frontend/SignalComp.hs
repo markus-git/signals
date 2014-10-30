@@ -48,12 +48,14 @@ import qualified Prelude as P
 compile :: forall a b. (Typeable a, Typeable b)
           =>    (Signal a             -> Signal b)
           -> IO (Program (CMD Expr) a -> Program (CMD Expr) b)
-compile f = do
+compile f = undefined
+            {-
   g <- reifyGraph f
   return $ \input -> compileGraph g input
+-}
 
 --------------------------------------------------------------------------------
--- **
+-- ** Helper types / functions
 
 -- |
 type Node = (Unique, TSignal Unique)
@@ -71,11 +73,14 @@ findNode nodes i = find ((==) i . P.fst) nodes
 -- ToDo: Reader, Writer compiler
 -- ToDo: Some other restriction than "Any" on Expr will lead to problems..
 
-compileGraph :: (Typeable a, Typeable b)
+compileGraph :: forall a b . (Typeable a, Typeable b)
                => Graph TSignal
-               -> Program (CMD Expr) a
-               -> Program (CMD Expr) b
-compileGraph (Graph nodes root) input = undefined
+               -> Program (CMD Expr) (Expr a)
+               -> Program (CMD Expr) (Expr b)
+compileGraph (Graph nodes root) input = do
+    d <- compileNode (fromJust $ findNode nodes root) M.empty
+    let v = fromJust (fromDynamic d)
+    getRef v
   where
     compileNode :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
     compileNode (i, n) m
@@ -86,56 +91,45 @@ compileGraph (Graph nodes root) input = undefined
             r <- newRef v
             return $ toDyn r
 
+          (TLambda (_ :: Proxy t) s u) -> do
+            r  <- initRef :: Program (CMD Expr) (Ref (Expr Float))
+            s' <- load  s (add i (toDyn r) m)
+        --  u' <- load' u (add s s'        m)
+            u' <- load  u (add s s'        m)
 
--- compileG :: forall a b. (Typeable a, Typeable b)
---            => Graph TSignal
---            -> Program (CMD Expr) a
---            -> Program (CMD Expr) b
--- compileG (Graph nodes root) inp =
---   do x <- castN root M.empty
---      v <- getRef x            :: Program (CMD Expr) (Expr b)
---      return (fromJust (cast v :: Maybe b))
---   where
---     compileN :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
---     compileN (i, n) m
---       | Just d <- M.lookup i m = return d
---       | otherwise              = case n of
---           (TVar) -> do
---             v <- inp                         :: Program (CMD Expr) a
---             r <- newRef $ fromJust $ (cast v :: Maybe (Expr a))
---             return $ toDyn r
+            let ud = case fromDynamic u' of
+                       Just x  -> x
+                       Nothing -> error $ "TLambda ~ type error"
+                                    ++ "\n\t :" ++ show (typeOf ud)
 
---           (TLambda (_ :: Proxy t) x y) -> do
---             r  <- initRef :: Program (CMD Expr) (Ref (Expr t))
---             x' <- loadN x (addN i (toDyn r) m)
---             y' <- castN y (addN x x'        m)
+            v  <- getRef ud
+            setRef r v
+            return $ toDyn r
 
---             v  <- getRef y'
---             setRef r v
---             return $ toDyn r
+          (TConst s) -> do
+            s' <- Str.runStream s
+            r  <- newRef s'
+            return $ toDyn r
 
---           (TConst (x :: Stream t)) -> do
---             x' <- Str.runStream x             :: Program (CMD Expr) t
---             r  <- newRef $ fromJust $ cast x' :: Program (CMD Expr) (Ref (Expr t))
---             return $ toDyn r
+          (TLift (f :: Stream (Expr t0) -> Stream (Expr t1)) s) -> do
+            r  <- initRef                     :: Program (CMD Expr) (Ref (Expr t1))
+            s' <- load' s (add i (toDyn r) m) :: Program (CMD Expr) (Ref (Expr t0))
+            v  <- Str.runStream $ f $ Str.Stream $ return $ getRef s'
+            setRef r v
+            return $ toDyn r
 
---           (TLift (f :: Stream t1 -> Stream t2) x) -> do
---             r  <- initRef --                   :: Program (CMD Expr) (Ref t2)
---             x' <- castN x (addN i undefined m) :: Program (CMD Expr) (Ref t1)
+      where
+       find  :: Unique -> Node
+       find  = fromJust . findNode nodes
 
---             -- I really need to change to type of getRef...
---             let apa :: Program (CMD Expr) t1
---                 apa = BAD.unsafeCoerce
---                          ( getRef
---                          $ fromJust
---                          $ cast x' :: Program (CMD Expr) (Expr t1))
+       add   :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
+       add   = M.insertWith (P.flip P.const)
 
---                 bepa :: Program (CMD Expr) t2
---                 bepa = Str.runStream $ f $ Str.Stream $ return apa
+       load  :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
+       load u m = P.flip compileNode m $ find u
 
---             v <- bepa
---             setRef r (fromJust $ cast v :: Expr t2)
---             return $ toDyn r
+       load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
+       load' u m = (fromJust . fromDynamic) <$> load u m
 
 --           (TMap (f :: Struct t1 -> Struct t2) r) -> do
 --             let u = "a"             :: VarId
@@ -147,15 +141,3 @@ compileGraph (Graph nodes root) input = undefined
 --             where
 --               compS :: Struct t2 -> Program (CMD Expr) (Struct (Ref (Expr t2)))
 --               compS = undefined
-
---     find :: Unique -> Node
---     find = fromJust . findNode nodes
-
---     addN :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
---     addN = M.insertWith (P.flip P.const)
-
---     loadN :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
---     loadN u m = P.flip compileN m $ find u
-
---     castN :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
---     castN u m = (fromJust . fromDynamic) <$> loadN u m
