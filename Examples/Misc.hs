@@ -39,13 +39,13 @@ ex2 s = let (x, _) = f s
 
 --------------------------------------------------------------------------------
 
-genT :: IO Doc
-genT = do
-  f <- test
+test :: IO Doc
+test = do
+  f <- testF
   B.cgen $ mkFunction "misc" f
 
-test :: IO (Program (CMD Expr) ())
-test = do
+testF :: IO (Program (CMD Expr) ())
+testF = do
   prg <- compile ex1
   return $ do
     ptr <- open "test"
@@ -56,10 +56,6 @@ test = do
     setty v
 
     close ptr
-
-
-
-----------------------------------------
 
 type Prg a = Program (CMD Expr) (Expr a)
 
