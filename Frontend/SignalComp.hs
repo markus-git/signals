@@ -25,7 +25,6 @@ import Frontend.Signal     (Signal)
 import Frontend.SignalObsv (TSignal(..))
 
 import qualified Backend.C            -- HACK HACK! Move CompExp instance
-import qualified Unsafe.Coerce as BAD -- HACK HACK! Needs ghc >7.8 for Typeable Prog.
 
 import Control.Applicative ((<$>))
 import Control.Monad.Operational
@@ -79,7 +78,9 @@ compileGraph :: forall a b . (Typeable a, Typeable b)
                -> Program (CMD Expr) (Expr b)
 compileGraph (Graph nodes root) input = do
     d <- compileNode (fromJust $ findNode nodes root) M.empty
-    let v = fromJust (fromDynamic d)
+    let v = case fromDynamic d of
+              Just x  -> x
+              Nothing -> error $ "..."
     getRef v
   where
     compileNode :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
@@ -92,7 +93,7 @@ compileGraph (Graph nodes root) input = do
             return $ toDyn r
 
             -- If I make "Proxy t -> Proxy (Expr t)" then functions
-            -- will be limited, more than for TConst and TLift
+            -- will be limited, more so than for TConst and TLift
           (TLambda (_ :: Proxy t) s u) -> do
             s' <- load  s m
             u' <- load' u $ add s s' m :: Program (CMD Expr) (Ref (Expr Float))
@@ -111,21 +112,77 @@ compileGraph (Graph nodes root) input = do
             return $ toDyn r
 
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
+            Ex s' <- compileStruct (find s) m
 
-            undefined
+            let x = case wt s' of
+                      Wt -> case cast s' of
+                              Just y  -> f y
+                              Nothing -> error "..."
 
-      where
-       find  :: Unique -> Node
-       find  = fromJust . findNode nodes
+            flattenStruct x
+            return $ toDyn x
 
-       add   :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
-       add   = M.insertWith (P.flip P.const)
+    compileStruct :: Node -> Map Id Dynamic -> Program (CMD Expr) Ex
+    compileStruct (i, n) m = case n of
+          (TZip l r) -> do
+            Ex l' <- compileStruct (find l) m
+            Ex r' <- compileStruct (find r) m
+            return $ Ex $ Pair l' r'
+          (TFst l)   -> do
+            Ex l' <- compileStruct (find l) m
+            case l' of
+              Pair x _ -> return $ Ex x
+          (TSnd r)   -> do
+            Ex r' <- compileStruct (find r) m
+            case r' of
+              Pair _ x -> return $ Ex x
+          (TMap (f :: Struct t0 -> Struct t1) s) -> do
+            n' <- load' i m :: Program (CMD Expr) (Struct t1)
+            return $ Ex n'
+          _          -> do
+            n' <- load' i m :: Program (CMD Expr) (Ref (Expr Float))
+            r  <- getRef n' -- This is probably wrong
+            return $ Ex $ Leaf r
 
-       load  :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
-       load u m = P.flip compileNode m $ find u
+    flattenStruct :: Struct t -> Program (CMD Expr) ()
+    flattenStruct (Leaf e)   = newRef e >> return ()
+    flattenStruct (Pair l r) = do
+      flattenStruct l
+      flattenStruct r
+      return ()
 
-       load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
-       load' u m = (fromJust . fromDynamic) <$> load u m
+    find  :: Unique -> Node
+    find  = fromJust . findNode nodes
+
+    add   :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
+    add   = M.insertWith (P.flip P.const)
+
+    load  :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
+    load u m = P.flip compileNode m $ find u
+
+    load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
+    load' u m = do dyn <- load u m
+                   case fromDynamic dyn of
+                     Just n  -> return n
+                     Nothing -> error $ "load failed on: " ++ show u
+
+                --(fromJust . fromDynamic) <$> load u m
+
 
 --------------------------------------------------------------------------------
--- ***
+--
+
+data Ex
+  where
+    Ex :: Struct a -> Ex
+
+data Wt a
+  where
+    Wt :: Typeable a => Wt a
+
+wt :: Struct a -> Wt a
+wt (Leaf _) = Wt
+wt (Pair l r)
+   | Wt <- wt l
+   , Wt <- wt r
+   = Wt

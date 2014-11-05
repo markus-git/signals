@@ -23,8 +23,9 @@ import Data.Typeable
 --------------------------------------------------------------------------------
 
 ex1 :: Sig Float -> Sig Float
-ex1 s = S.map (+1) s
+ex1 s = S.map (+1) $ S.map (+2) s
 
+-- doesn't work yet..
 ex2 :: Sig Float -> Sig Float
 ex2 s = let (x, _) = f s
             (_, y) = f s
@@ -46,13 +47,13 @@ test = do
 
 testF :: IO (Program (CMD Expr) ())
 testF = do
-  prg <- compile ex1
+  prg <- compile ex2
   return $ do
     ptr <- open "test"
-    let getty = fget ptr
+    let getty = prg $ fget ptr
         setty = fput ptr
 
-    v <- prg getty
+    v <- getty
     setty v
 
     close ptr
@@ -64,4 +65,5 @@ compile :: (Typeable a, Typeable b)
           -> IO (Prg a -> Prg b)
 compile f = do
   g <- reifyGraph f
+  putStrLn $ "\nGraph: " ++ show g ++ "\n"
   return $ \i -> SC.compileGraph g i

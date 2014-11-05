@@ -7,7 +7,7 @@
 
 module Frontend.SignalObsv where
 
-import Expr            (Expr, Classy, Struct(..))
+import Expr            (Expr, Struct(..))
 import Frontend.Signal (Signal(..), Sig(..))
 import Frontend.Stream (Stream)
 
@@ -37,7 +37,7 @@ data TSignal r
               -> r
               -> TSignal r
 
-    TMap    :: (Typeable a, Typeable b, Classy a)
+    TMap    :: (Typeable a, Typeable b)
               => (Struct a -> Struct b)
               -> r
               -> TSignal r

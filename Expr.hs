@@ -93,34 +93,18 @@ instance (Show a, Floating a) => Floating (Expr a)
 todo = error "todo in expr" -- I'll add these later
 
 --------------------------------------------------------------------------------
--- * Tree's of expressions
+-- * Trees over expressions
 --------------------------------------------------------------------------------
 
 {- I don't know where to put these... -}
 
 -- | 0-tuple value
--- data Empty a
---   deriving Typeable
+data Empty a
+  deriving Typeable
 
 -- | ...
 data Struct a
   where
-    Leaf :: Typeable a => Expr a   -> Struct (Expr a)
-    Pair :: Struct a   -> Struct b -> Struct (a, b)
+    Leaf :: Typeable a => Expr a -> Struct (Expr a)
+    Pair :: Struct a -> Struct b -> Struct (a, b)
   deriving Typeable
-
---------------------------------------------------------------------------------
--- ** ToDo: Come up with a better name
-
-class Classy a
-  where
-    varStruct :: VarId -> Struct a
-
-instance (Typeable a) => Classy (Expr a)
-  where
-    varStruct = Leaf . Var
-
-instance (Classy a, Classy b) => Classy (a, b)
-  where
-    varStruct i = Pair (varStruct (i ++ "_1"))
-                       (varStruct (i ++ "_2"))

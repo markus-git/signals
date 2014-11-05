@@ -38,7 +38,7 @@ data Signal a
             => (Stream (Expr a) -> Stream (Expr b))
             -> (Signal (Expr a) -> Signal (Expr b))
 
-    Map   :: (Typeable a, Typeable b, Classy a)
+    Map   :: (Typeable a, Typeable b)
             => (Struct a -> Struct b)
             -> (Signal a -> Signal b)
 
@@ -70,7 +70,7 @@ liftS  :: (Typeable a, Typeable b)
          -> (Sig a -> Sig b)
 liftS f = Sig . Lift f . unSig
 
-mapS   :: (Typeable a, Typeable b, Classy a)
+mapS   :: (Typeable a, Typeable b)
          => (Struct a -> Struct b)
          -> (Signal a -> Signal b)
 mapS    = Map
@@ -207,7 +207,6 @@ lift
   :: ( StructS            s1,  StructS            s2
      , StructE  (Internal s1), StructE  (Internal s2)
      , Typeable (Internal s1), Typeable (Internal s2)
-     , Classy   (Internal s1)
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapS (toE . f . fromE) . fromS
