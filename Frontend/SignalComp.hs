@@ -79,10 +79,17 @@ compileGraph :: forall a b . (Typeable a, Typeable b)
                -> Program (CMD Expr) (Expr b)
 compileGraph (Graph nodes root) input = do
     d <- compileNode (fromJust $ findNode nodes root) M.empty
-    let v = case fromDynamic d of
-              Just x  -> x
-              Nothing -> error $ "..."
-    getRef v
+
+    let x :: Maybe (Ref (Expr b))
+        x = fromDynamic d
+
+        y :: Maybe (Struct (Expr b))
+        y = fromDynamic d
+
+    case (x, y) of
+      (Just r, _) -> getRef r
+      (_, Just s) -> case s of (Leaf v) -> return v
+      (_, _) -> error $ show $ dynTypeRep d
   where
     compileNode :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
     compileNode (i, n) m
@@ -99,12 +106,18 @@ compileGraph (Graph nodes root) input = do
             s' <- load s m
             u' <- load u $ add s s' m
 
-            let x :: t
-                x = case fromDynamic u' of
-                      Just r  -> r
-                      Nothing -> error "!!"
+            -- the proxy type "t" here represents the desired return value
+            -- of the function. Which will either be a reference to such a
+            -- value, or a struct of the value.
+            let x :: Maybe (Ref t)
+                x = fromDynamic u'
 
-            return $ toDyn x
+                y :: Maybe (Struct t)
+                y = fromDynamic u'
+
+            case (x, y) of
+              (Just r, _) -> return $ toDyn r
+              (_, Just r) -> return $ toDyn r
 
           (TConst s) -> do
             s' <- Str.runStream s
