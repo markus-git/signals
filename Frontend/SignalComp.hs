@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
 
 module Frontend.SignalComp where
 
@@ -95,9 +96,15 @@ compileGraph (Graph nodes root) input = do
             -- If I make "Proxy t -> Proxy (Expr t)" then functions
             -- will be limited, more so than for TConst and TLift
           (TLambda (_ :: Proxy t) s u) -> do
-            s' <- load  s m
-            u' <- load' u $ add s s' m :: Program (CMD Expr) (Ref (Expr Float))
-            return $ toDyn u'
+            s' <- load s m
+            u' <- load u $ add s s' m
+
+            let x :: t
+                x = case fromDynamic u' of
+                      Just r  -> r
+                      Nothing -> error "!!"
+
+            return $ toDyn x
 
           (TConst s) -> do
             s' <- Str.runStream s
@@ -112,44 +119,38 @@ compileGraph (Graph nodes root) input = do
             return $ toDyn r
 
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
-            Ex s' <- compileStruct (find s) m
+            Ex r <- compileStruct (find s) m
+            s'   <- r2s r
 
-            let x = case wt s' of
+            -- hm...
+            let y = case ws s' of
                       Wt -> case cast s' of
-                              Just y  -> f y
-                              Nothing -> error "..."
+                              Just x  -> f x
+                              Nothing -> error "!"
 
-            flattenStruct x
-            return $ toDyn x
+            return $ toDyn y
 
     compileStruct :: Node -> Map Id Dynamic -> Program (CMD Expr) Ex
     compileStruct (i, n) m = case n of
           (TZip l r) -> do
             Ex l' <- compileStruct (find l) m
             Ex r' <- compileStruct (find r) m
-            return $ Ex $ Pair l' r'
-          (TFst l)   -> do
+            return $ Ex $ Pair' l' r'
+          (TFst l) -> do
             Ex l' <- compileStruct (find l) m
             case l' of
-              Pair x _ -> return $ Ex x
-          (TSnd r)   -> do
+              Pair' x _ -> return $ Ex x
+          (TSnd r) -> do
             Ex r' <- compileStruct (find r) m
             case r' of
-              Pair _ x -> return $ Ex x
+              Pair' _ x -> return $ Ex x
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
             n' <- load' i m :: Program (CMD Expr) (Struct t1)
-            return $ Ex n'
-          _          -> do
+            r' <- s2r n'
+            return $ Ex r'
+          _  -> do
             n' <- load' i m :: Program (CMD Expr) (Ref (Expr Float))
-            r  <- getRef n' -- This is probably wrong
-            return $ Ex $ Leaf r
-
-    flattenStruct :: Struct t -> Program (CMD Expr) ()
-    flattenStruct (Leaf e)   = newRef e >> return ()
-    flattenStruct (Pair l r) = do
-      flattenStruct l
-      flattenStruct r
-      return ()
+            return $ Ex $ Leaf' n'
 
     find  :: Unique -> Node
     find  = fromJust . findNode nodes
@@ -164,7 +165,7 @@ compileGraph (Graph nodes root) input = do
     load' u m = do dyn <- load u m
                    case fromDynamic dyn of
                      Just n  -> return n
-                     Nothing -> error $ "load failed on: " ++ show u
+                     Nothing -> error $ "couldn't load: " ++ show u
 
                 --(fromJust . fromDynamic) <$> load u m
 
@@ -172,17 +173,47 @@ compileGraph (Graph nodes root) input = do
 --------------------------------------------------------------------------------
 --
 
+-- via support number
+-- 0317245810
+
 data Ex
   where
-    Ex :: Struct a -> Ex
+    Ex :: Rx a -> Ex
 
 data Wt a
   where
     Wt :: Typeable a => Wt a
 
-wt :: Struct a -> Wt a
-wt (Leaf _) = Wt
-wt (Pair l r)
-   | Wt <- wt l
-   , Wt <- wt r
+ws :: Struct a -> Wt a
+ws (Leaf _) = Wt
+ws (Pair l r)
+   | Wt <- ws l
+   , Wt <- ws r
    = Wt
+
+wr :: Rx a -> Wt a
+wr (Leaf' _) = Wt
+wr (Pair' l r)
+   | Wt <- wr l
+   , Wt <- wr r
+   = Wt
+
+data Rx a
+  where
+    Leaf' :: Typeable a => Ref (Expr a) -> Rx (Expr a)
+    Pair' :: Rx a -> Rx b -> Rx (a, b)
+  deriving Typeable
+
+r2s :: Rx a -> Program (CMD Expr) (Struct a)
+r2s (Leaf' r)   = getRef r >>= return . Leaf
+r2s (Pair' l r) = do
+  l' <- r2s l
+  r' <- r2s r
+  return $ Pair l' r'
+
+s2r :: Struct a -> Program (CMD Expr) (Rx a)
+s2r (Leaf e)   = newRef e >>= return . Leaf'
+s2r (Pair l r) = do
+  l' <- s2r l
+  r' <- s2r r
+  return $ Pair' l' r'
