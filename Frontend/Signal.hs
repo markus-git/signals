@@ -46,7 +46,7 @@ data Signal a
     Fst   :: (Typeable a)             => Signal (a, b)             -> Signal a
     Snd   :: (Typeable b)             => Signal (a, b)             -> Signal b
 
-    Delay :: Expr a -> Signal (Expr a) -> Signal (Expr a)
+    Delay :: (Typeable a) => Expr a -> Signal (Expr a) -> Signal (Expr a)
 
     SVar  :: (Typeable a) => Dynamic -> Signal a
   deriving Typeable
@@ -102,6 +102,11 @@ zipWith :: (Typeable a, Typeable b, Typeable c)
           -> Sig b
           -> Sig c
 zipWith f = curry $ lift $ uncurry f
+
+----------------------------------------
+
+delay :: (Typeable a) => Expr a -> Sig a -> Sig a
+delay e = Sig . Delay e . unSig
 
 --------------------------------------------------------------------------------
 -- ** Instances

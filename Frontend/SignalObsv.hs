@@ -46,7 +46,10 @@ data TSignal r
     TFst    :: r      -> TSignal r
     TSnd    :: r      -> TSignal r
 
-    TDelay  :: Expr a -> r -> TSignal r
+    TDelay  :: (Typeable a)
+               => Expr a
+               -> r
+               -> TSignal r
 
     -- ^ Buffers
     TVBuff  ::               r -> TSignal r

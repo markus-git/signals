@@ -19,9 +19,10 @@ import qualified Frontend.SignalObsv as SigO
 import           Data.Map (Map)
 import qualified Data.Map as M
 
-import Core (CMD, Ref, newRef, setRef, getRef, initRef)
-import Expr (Expr(..))
-import Interpretation (VarPred)
+import Core                (CMD, Ref, newRef, setRef, getRef, initRef
+                               , Arr, newArr, setArr, getArr)
+import Expr                (Expr(..))
+import Interpretation      (VarPred)
 import Frontend.Signal     (Signal)
 import Frontend.SignalObsv (TSignal(..))
 
@@ -46,13 +47,9 @@ import qualified Prelude as P
 --------------------------------------------------------------------------------
 
 compile :: forall a b. (Typeable a, Typeable b)
-          =>    (Signal a             -> Signal b)
-          -> IO (Program (CMD Expr) a -> Program (CMD Expr) b)
-compile f = undefined
-            {-
-  g <- reifyGraph f
-  return $ \input -> compileGraph g input
--}
+          =>    (Signal (Expr a)             -> Signal (Expr b))
+          -> IO (Program (CMD Expr) (Expr a) -> Program (CMD Expr) (Expr b))
+compile f = reifyGraph f >>= return . compileGraph
 
 --------------------------------------------------------------------------------
 -- ** Helper types / functions
@@ -175,23 +172,57 @@ compileGraph (Graph nodes root) input = do
     load u m = P.flip compileNode m $ find u
 
     load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
-    load' u m = do dyn <- load u m
-                   case fromDynamic dyn of
-                     Just n  -> return n
-                     Nothing -> error $ "couldn't load: " ++ show u
-
-                --(fromJust . fromDynamic) <$> load u m
+    load' u m = (fromJust . fromDynamic) <$> load u m -- I'm a very brave man
 
 
 --------------------------------------------------------------------------------
---
+-- * Optimization
+--------------------------------------------------------------------------------
 
--- via support number
--- 0317245810
+--------------------------------------------------------------------------------
+-- ** Buffers
+
+-- |
+data Buffer a = Buffer
+  { getBuff :: Expr Int -> Program (CMD Expr) (Expr a)
+  , putBuff :: Expr a   -> Program (CMD Expr) ()
+  }
+
+instance Show (Buffer a) where show _ = "buffer"
+
+newBuff :: Expr Int -> Expr a -> Program (CMD Expr) (Buffer a)
+newBuff size init = do
+  arr <- newArr size init
+  ir  <- newRef 0
+  let get j = do
+        i <- getRef ir
+        getArr ((size + i + j - 1) `mod` size) arr
+  let put a = do
+        i <- getRef ir
+        setRef ir ((i + 1) `mod` size)
+        setArr i a arr
+  return $ Buffer get put
+
+getBuffer :: Expr Int -> Buffer a -> Program (CMD Expr) (Expr a)
+getBuffer = flip getBuff
+
+putBuffer :: Expr a -> Buffer a -> Program (CMD Expr) ()
+putBuffer = flip putBuff
+
+
+--------------------------------------------------------------------------------
+-- Stuff I'm note sure about yet
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- Existensial type
 
 data Ex
   where
     Ex :: Rx a -> Ex
+
+--------------------------------------------------------------------------------
+-- Witness
 
 data Wt a
   where
@@ -210,6 +241,9 @@ wr (Pair' l r)
    | Wt <- wr l
    , Wt <- wr r
    = Wt
+
+--------------------------------------------------------------------------------
+-- Struct with references at the bottom
 
 data Rx a
   where
