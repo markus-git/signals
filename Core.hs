@@ -38,6 +38,12 @@ data CMD exp a
     GetArr :: Num (exp n) => exp n          -> Arr (exp a) -> CMD exp (exp a)
     SetArr :: Num (exp n) => exp n -> exp a -> Arr (exp a) -> CMD exp ()
 
+    -- ^ Control structures | Todo: Move to seperate data class
+    If :: Program (CMD exp) (exp Bool)
+       -> Program (CMD exp) ()
+       -> Program (CMD exp) ()
+       -> CMD exp ()
+
 -- |
 newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
 
@@ -97,6 +103,15 @@ getArr n = singleton . GetArr n
 setArr :: (Num (exp n), VarPred exp a)
     => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
 setArr n a = singleton . SetArr n a
+
+--------------------------------------------------------------------------------
+-- **
+
+iff :: Program (CMD exp) (exp Bool)
+    -> Program (CMD exp) ()
+    -> Program (CMD exp) ()
+    -> Program (CMD exp) ()
+iff b t f = singleton $ If b t f
 
 --------------------------------------------------------------------------------
 -- * Constructs

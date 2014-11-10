@@ -179,8 +179,8 @@ compCMD' (NewArr size init) = do
   sym <- gensym "a"
   v   <- compExp size
   i   <- compExp init -- todo: use this with memset
-  addLocal [cdecl| float $id:sym[ $i ]; |]
-  addStm   [cstm| memset($id:sym, 0, sizeof( $id:sym )); |]
+  addLocal [cdecl| float $id:sym[ $v ]; |]
+  addStm   [cstm| memset($id:sym, $i, sizeof( $id:sym )); |]
   return $ Arr sym
 compCMD' (GetArr expi arr) = do
   let arr' = unArr arr
@@ -194,6 +194,15 @@ compCMD' (SetArr expi expv arr) = do
   v <- compExp expv
   i <- compExp expi
   addStm [cstm| $id:arr'[ $i ] = $v; |]
+
+-- ^ Control structures
+{-
+compCMD' (If b t f) = do
+  b' <- compile b
+  t' <- compile t
+  f' <- compile f
+  addStm [cstm| if ($(b')) {($(t'))} else {($(f'))} |]
+-}
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body
