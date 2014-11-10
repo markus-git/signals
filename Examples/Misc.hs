@@ -63,7 +63,4 @@ type Prg a = Program (CMD Expr) (Expr a)
 compile :: (Typeable a, Typeable b)
           =>    (Sig a -> Sig b)
           -> IO (Prg a -> Prg b)
-compile f = do
-  g <- reifyGraph f
-  putStrLn $ "\nGraph: " ++ show g ++ "\n"
-  return $ \i -> SC.compileGraph g i
+compile f = SC.compile (S.unSig . f . S.Sig)

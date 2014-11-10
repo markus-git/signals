@@ -3,14 +3,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 
+{-# LANGUAGE BangPatterns #-}
+
 module Frontend.SignalComp where
 
 import Expr
+import Interpretation
 
 import           Frontend.Stream (Stream)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal)
+import           Frontend.Signal (Signal, Sig)
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -34,12 +37,13 @@ import Control.Monad.State
 import Data.Dynamic
 import Data.Foldable (find)
 import Data.Functor.Identity
+import Data.List  (mapAccumL)
 import Data.Maybe (fromJust)
 import Data.Reify
 import Data.Proxy
 import Data.Typeable
 
-import           Prelude hiding (const, fst, snd, map, repeat, zipWith)
+import           Prelude
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
@@ -49,16 +53,25 @@ import qualified Prelude as P
 compile :: forall a b. (Typeable a, Typeable b)
           =>    (Signal (Expr a)             -> Signal (Expr b))
           -> IO (Program (CMD Expr) (Expr a) -> Program (CMD Expr) (Expr b))
-compile f = reifyGraph f >>= return . compileGraph
+compile f = do
+  graph <- reifyGraph f
+  return $ \i -> do (buff, graph') <- delayChains graph
+                    compileGraph graph' buff i
 
 --------------------------------------------------------------------------------
 -- ** Helper types / functions
 
 -- |
-type Node = (Unique, TSignal Unique)
+type Prg a = Program (CMD Expr) a
 
 -- |
-type Id   = Unique
+type Node  = (Unique, TSignal Unique)
+
+-- |
+type Chain = [Node]
+
+-- |
+type Id    = Unique
 
 findNode :: [Node] -> Id -> Maybe Node
 findNode nodes i = find ((==) i . P.fst) nodes
@@ -71,10 +84,11 @@ findNode nodes i = find ((==) i . P.fst) nodes
 -- ToDo: Some other restriction than "Any" on Expr will lead to problems..
 
 compileGraph :: forall a b . (Typeable a, Typeable b)
-               => Graph TSignal
-               -> Program (CMD Expr) (Expr a)
-               -> Program (CMD Expr) (Expr b)
-compileGraph (Graph nodes root) input = do
+             => Graph TSignal
+             -> Map Unique (Buffer a)
+             -> Prg (Expr a)
+             -> Prg (Expr b)
+compileGraph (Graph nodes root) buffers input = do
     d <- compileNode (fromJust $ findNode nodes root) M.empty
 
     let x :: Maybe (Ref (Expr b))
@@ -88,7 +102,7 @@ compileGraph (Graph nodes root) input = do
       (_, Just s) -> case s of (Leaf v) -> return v
       (_, _) -> error $ show $ dynTypeRep d
   where
-    compileNode :: Node -> Map Id Dynamic -> Program (CMD Expr) Dynamic
+    compileNode :: Node -> Map Id Dynamic -> Prg Dynamic
     compileNode (i, n) m
       | Just d <- M.lookup i m = return d
       | otherwise              = case n of
@@ -122,8 +136,8 @@ compileGraph (Graph nodes root) input = do
             return $ toDyn r
 
           (TLift (f :: Stream (Expr t0) -> Stream (Expr t1)) s) -> do
-            r  <- initRef                     :: Program (CMD Expr) (Ref (Expr t1))
-            s' <- load' s (add i (toDyn r) m) :: Program (CMD Expr) (Ref (Expr t0))
+            r  <- initRef                     :: Prg (Ref (Expr t1))
+            s' <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0))
             v  <- Str.runStream $ f $ Str.Stream $ return $ getRef s'
             setRef r v
             return $ toDyn r
@@ -140,7 +154,28 @@ compileGraph (Graph nodes root) input = do
 
             return $ toDyn y
 
-    compileStruct :: Node -> Map Id Dynamic -> Program (CMD Expr) Ex
+          (TVBuff s) -> do
+            let buff = case M.lookup s buffers of
+                         Just b  -> b
+                         Nothing -> error $ "couldn't find buffer: " ++ show s
+                                         ++ "in " ++ show buffers
+            v <- input
+            putBuff buff v
+            r <- newRef v
+            return $ toDyn r
+          (TDBuff i s) -> do
+            let buff = case M.lookup s buffers of
+                         Just b  -> b
+                         Nothing -> error $ "couldn't find buffer: " ++ show s
+                                         ++ " in " ++ show buffers
+            v <- getBuff buff i
+            r <- newRef v
+            return $ toDyn r
+
+          (TDelay _ _) -> do
+            error "why are you here?.."
+
+    compileStruct :: Node -> Map Id Dynamic -> Prg Ex
     compileStruct (i, n) m = case n of
           (TZip l r) -> do
             Ex l' <- compileStruct (find l) m
@@ -155,11 +190,11 @@ compileGraph (Graph nodes root) input = do
             case r' of
               Pair' _ x -> return $ Ex x
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
-            n' <- load' i m :: Program (CMD Expr) (Struct t1)
+            n' <- load' i m :: Prg (Struct t1)
             r' <- s2r n'
             return $ Ex r'
           _  -> do
-            n' <- load' i m :: Program (CMD Expr) (Ref (Expr Float))
+            n' <- load' i m :: Prg (Ref (Expr Float))
             return $ Ex $ Leaf' n'
 
     find  :: Unique -> Node
@@ -190,7 +225,7 @@ data Buffer a = Buffer
 
 instance Show (Buffer a) where show _ = "buffer"
 
-newBuff :: Expr Int -> Expr a -> Program (CMD Expr) (Buffer a)
+newBuff :: Expr Int -> Expr a -> Prg (Buffer a)
 newBuff size init = do
   arr <- newArr size init
   ir  <- newRef 0
@@ -203,12 +238,64 @@ newBuff size init = do
         setArr i a arr
   return $ Buffer get put
 
-getBuffer :: Expr Int -> Buffer a -> Program (CMD Expr) (Expr a)
+getBuffer :: Expr Int -> Buffer a -> Prg (Expr a)
 getBuffer = flip getBuff
 
-putBuffer :: Expr a -> Buffer a -> Program (CMD Expr) ()
+putBuffer :: Expr a -> Buffer a -> Prg ()
 putBuffer = flip putBuff
 
+--------------------------------------------------------------------------------
+-- *** Finding buffers
+
+delayChains :: (Typeable a)
+            => Graph TSignal
+            -> Prg ( Map Unique (Buffer a)
+                   , Graph TSignal)
+delayChains (Graph gnodes groot) = do
+    (chains, buffers) <- fmap unzip $ buffer $ chains gnodes
+    let nodes = update chains gnodes
+        maps  = M.fromList $ zip (map (fst . head) chains) buffers
+    return (maps, Graph nodes groot)
+
+chains :: [Node] -> [Chain]
+chains nodes = fmap (flip chain delays) vars
+      where
+        chain :: Node -> [Node] -> Chain
+        chain n@(i, _) xs = n : go i xs
+          where
+            go _ [] = []
+            go u (n@(i, TDelay _ r):ns)
+               | u == r    = n : go i xs
+               | otherwise = go u ns
+
+        vars   = [x | x@(_, TVar)       <- nodes]
+        delays = [x | x@(_, TDelay _ _) <- nodes]
+
+buffer :: (Typeable a) => [Chain] -> Prg [(Chain, Buffer a)]
+buffer chains = sequence $ fmap (create . update) chains
+      where
+        update :: (Typeable a) => Chain -> (Chain, [Expr a])
+        update ((u, TVar):xs) =
+            let (chain, delays) = unzip $ snd $ mapAccumL f 1 xs
+             in ((u, TVBuff u) : chain, delays)
+          where f n (i, TDelay a _) = (n + 1, ( (i, TDBuff n u)
+                                              , case cast a of
+                                                  Just x  -> x
+                                                  Nothing -> error "typ buff err."))
+
+create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
+create (ns, as) = do
+          buff <- newBuff (Val $ length as) (head as)
+          return (ns, buff)
+
+update :: [Chain] -> [Node] -> [Node]
+update = flip $ foldr (flip $ foldr replace)
+      where
+        replace :: Node -> [Node] -> [Node]
+        replace _ [] = []
+        replace y (x:xs)
+          | fst y == fst x = y : xs
+          | otherwise      = x : replace y xs
 
 --------------------------------------------------------------------------------
 -- Stuff I'm note sure about yet
@@ -264,3 +351,35 @@ s2r (Pair l r) = do
   l' <- s2r l
   r' <- s2r r
   return $ Pair' l' r'
+
+--------------------------------------------------------------------------------
+-- Testing
+--------------------------------------------------------------------------------
+
+fir :: [Expr Float] -> Sig Float -> Sig Float
+fir as = sums . muls as . delays ds
+  where
+    ds = replicate (length as) 0
+
+    sums :: [Sig Float] -> Sig Float
+    sums = foldr1 (+)
+
+    muls :: [Expr Float] -> [Sig Float] -> [Sig Float]
+    muls as = zipWith (*) (map Sig.repeat as)
+
+    delays :: [Expr Float] -> Sig Float -> [Sig Float]
+    delays as s = tail $ scanl (flip Sig.delay) s as
+
+tGraph :: IO (Graph TSignal)
+tGraph = reifyGraph $ fir [1.1, 1.2, 1.3]
+
+-- chains : Ok
+
+tBuffer = do
+  (Graph gnodes groot) <- tGraph
+  return $ do
+    let c   = chains gnodes
+        cb  = buffer c
+        cb' = unzip <$> cb
+    (cs, b) <- cb' :: Program (CMD Expr) ([Chain], [Buffer Float])
+    return "!"

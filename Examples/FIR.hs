@@ -1,47 +1,63 @@
 module FIR where
 
-import Expr
 import Core
+import Expr
+import Interpretation
 
-import Backend.C
-
-import Frontend.Signal (Signal)
+import           Frontend.Signal     (Sig)
 import qualified Frontend.Signal     as S
-import qualified Frontend.SignalComp as SC (runSignal)
 
-import Control.Monad.Operational
+import qualified Frontend.SignalObsv as SO
+import qualified Frontend.SignalComp as SC
+
+import qualified Backend.C           as B
+
 import Text.PrettyPrint.Mainland
+
+import Control.Monad.Operational (Program)
+import Data.Reify
+import Data.Typeable
 
 --------------------------------------------------------------------------------
 -- * FIR Filter Example
 --------------------------------------------------------------------------------
 
-fir :: [Expr Float] -> Signal (Expr Float) -> Signal (Expr Float)
+fir :: [Expr Float] -> Sig Float -> Sig Float
 fir as = sums . muls as . delays ds
-  where ds = Prelude.replicate (Prelude.length as) 0
+  where ds = replicate (length as) 0
 
-sums :: [Signal (Expr Float)] -> Signal (Expr Float)
-sums = Prelude.foldr1 (+)
+sums :: [Sig Float] -> Sig Float
+sums = foldr1 (+)
 
-muls :: [Expr Float] -> [Signal (Expr Float)] -> [Signal (Expr Float)]
-muls as = Prelude.zipWith (*) (Prelude.map S.repeat as)
+muls :: [Expr Float] -> [Sig Float] -> [Sig Float]
+muls as = zipWith (*) (map S.repeat as)
 
-delays :: [Expr Float] -> Signal (Expr Float) -> [Signal (Expr Float)]
-delays as s = Prelude.tail $ Prelude.scanl (Prelude.flip S.delay) s as
+delays :: [Expr Float] -> Sig Float -> [Sig Float]
+delays as s = tail $ scanl (flip S.delay) s as
 
 --------------------------------------------------------------------------------
 
-ex_fir :: IO (Program (CMD Expr) ())
-ex_fir = do
-  prg <- SC.runSignal (fir [1.1, 1.2, 1.3])
+test :: IO Doc
+test = do
+  f <- testF
+  B.cgen $ mkFunction "misc" f
+
+testF :: IO (Program (CMD Expr) ())
+testF = do
+  prg <- compile (fir [1.1, 1.2, 1.3])
   return $ do
     ptr <- open "test"
-    let getty = prg (fget ptr)
+    let getty = prg $ fget ptr
         setty = fput ptr
+
     v <- getty
     setty v
+
     close ptr
 
---------------------------------------------------------------------------------
+type Prg a = Program (CMD Expr) (Expr a)
 
-test = ex_fir >>= cgen . mkFunction "test"
+compile :: (Typeable a, Typeable b)
+          =>    (Sig a -> Sig b)
+          -> IO (Prg a -> Prg b)
+compile f = SC.compile (S.unSig . f . S.Sig)

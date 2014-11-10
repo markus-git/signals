@@ -52,8 +52,8 @@ data TSignal r
                -> TSignal r
 
     -- ^ Buffers
-    TVBuff  ::               r -> TSignal r
-    TDBuff  :: Num n => n -> r -> TSignal r
+    TVBuff  ::             r -> TSignal r
+    TDBuff  :: Expr Int -> r -> TSignal r
   deriving Typeable
 
 --------------------------------------------------------------------------------
