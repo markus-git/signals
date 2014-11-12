@@ -43,6 +43,9 @@ data CMD exp a
        -> Program (CMD exp) ()
        -> Program (CMD exp) ()
        -> CMD exp ()
+    While :: Program (CMD exp) (exp Bool)
+          -> Program (CMD exp) ()
+          -> CMD exp ()
 
 -- |
 newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
@@ -112,6 +115,11 @@ iff :: Program (CMD exp) (exp Bool)
     -> Program (CMD exp) ()
     -> Program (CMD exp) ()
 iff b t f = singleton $ If b t f
+
+while :: Program (CMD exp) (exp Bool)
+      -> Program (CMD exp) ()
+      -> Program (CMD exp) ()
+while b t = singleton $ While b t
 
 --------------------------------------------------------------------------------
 -- * Constructs

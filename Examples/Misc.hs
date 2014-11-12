@@ -47,14 +47,16 @@ test = do
 
 testF :: IO (Program (CMD Expr) ())
 testF = do
-  prg <- compile ex2
+  prg <- compile ex1
   return $ do
     ptr <- open "test"
     let getty = prg $ fget ptr
         setty = fput ptr
 
-    v <- getty
-    setty v
+    while (return $ litExp True)
+          (do v <- getty
+              setty v
+          )
 
     close ptr
 

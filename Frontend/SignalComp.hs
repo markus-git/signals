@@ -258,44 +258,44 @@ delayChains (Graph gnodes groot) = do
     return (maps, Graph nodes groot)
 
 chains :: [Node] -> [Chain]
-chains nodes = fmap (flip chain delays) vars
+chains nodes = filter ((>1) . length) $ fmap (flip chain delays) vars
+  where
+    chain :: Node -> [Node] -> Chain
+    chain n@(i, _) xs = n : go i xs
       where
-        chain :: Node -> [Node] -> Chain
-        chain n@(i, _) xs = n : go i xs
-          where
-            go _ [] = []
-            go u (n@(i, TDelay _ r):ns)
-               | u == r    = n : go i xs
-               | otherwise = go u ns
+        go _ [] = []
+        go u (n@(i, TDelay _ r):ns)
+           | u == r    = n : go i xs
+           | otherwise = go u ns
 
-        vars   = [x | x@(_, TVar)       <- nodes]
-        delays = [x | x@(_, TDelay _ _) <- nodes]
+    vars   = [x | x@(_, TVar)       <- nodes]
+    delays = [x | x@(_, TDelay _ _) <- nodes]
 
 buffer :: (Typeable a) => [Chain] -> Prg [(Chain, Buffer a)]
 buffer chains = sequence $ fmap (create . update) chains
-      where
-        update :: (Typeable a) => Chain -> (Chain, [Expr a])
-        update ((u, TVar):xs) =
-            let (chain, delays) = unzip $ snd $ mapAccumL f 1 xs
-             in ((u, TVBuff u) : chain, delays)
-          where f n (i, TDelay a _) = (n + 1, ( (i, TDBuff n u)
-                                              , case cast a of
-                                                  Just x  -> x
-                                                  Nothing -> error "typ buff err."))
+  where
+    update :: (Typeable a) => Chain -> (Chain, [Expr a])
+    update ((u, TVar):xs) =
+        let (chain, delays) = unzip $ snd $ mapAccumL f 1 xs
+         in ((u, TVBuff u) : chain, delays)
+      where f n (i, TDelay a _) = (n + 1, ( (i, TDBuff n u)
+                                          , case cast a of
+                                              Just x  -> x
+                                              Nothing -> error "typ buff err."))
 
-create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
-create (ns, as) = do
-          buff <- newBuff (Val $ length as) (head as)
-          return (ns, buff)
+    create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
+    create (ns, as) = do
+      buff <- newBuff (Val $ length as) (head as)
+      return (ns, buff)
 
 update :: [Chain] -> [Node] -> [Node]
 update = flip $ foldr (flip $ foldr replace)
-      where
-        replace :: Node -> [Node] -> [Node]
-        replace _ [] = []
-        replace y (x:xs)
-          | fst y == fst x = y : xs
-          | otherwise      = x : replace y xs
+  where
+    replace :: Node -> [Node] -> [Node]
+    replace _ [] = []
+    replace y (x:xs)
+      | fst y == fst x = y : xs
+      | otherwise      = x : replace y xs
 
 --------------------------------------------------------------------------------
 -- Stuff I'm note sure about yet

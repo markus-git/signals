@@ -196,13 +196,23 @@ compCMD' (SetArr expi expv arr) = do
   addStm [cstm| $id:arr'[ $i ] = $v; |]
 
 -- ^ Control structures
-{-
 compCMD' (If b t f) = do
-  b' <- compile b
-  t' <- compile t
-  f' <- compile f
-  addStm [cstm| if ($(b')) {($(t'))} else {($(f'))} |]
--}
+  b'  <- compile b  :: C (Expr Bool)
+  b'' <- compExp b' :: C C.Exp
+  addStm [cstm| if ($(b'')) {} |]
+  t'  <- compile t
+  addStm [cstm| {} |]
+  f'  <- compile f
+  addStm [cstm| {} |]
+  return ()
+compCMD' (While b t) = do
+  b'  <- compile b
+  b'' <- compExp b'
+  addStm [cstm| while ($(b'')) {} |]
+  t'  <- compile t
+  addStm [cstm| {} |]
+  return ()
+
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body
