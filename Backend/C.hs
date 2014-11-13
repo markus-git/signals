@@ -148,23 +148,23 @@ compCMD' (Get ptr) = do
   let ptr' = unPtr ptr
   sym <- gensym "v"
   addLocal [cdecl| float $id:sym; |]
-  addStm   [cstm| $id:sym = atof(fgetc($id:ptr')); |]
+  addStm   [cstm| fscanf($id:ptr', "%f", $id:sym); |]
   return $ Var sym
 
 -- ^ Mutable refrences
 compCMD' (InitRef) = do
-  sym <- gensym "i"
+  sym <- gensym "ir"
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   return $ Ref sym
 compCMD' (NewRef exp) = do
-  sym <- gensym "r"
+  sym <- gensym "nr"
   v   <- compExp exp
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   addStm   [cstm| $id:sym = $v; |]
   return $ Ref sym
 compCMD' (GetRef ref) = do
   let ref' = unRef ref
-  sym <- gensym "g"
+  sym <- gensym "gr"
   addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref'; |]
   return $ Var sym
@@ -176,7 +176,7 @@ compCMD' (SetRef ref exp) = do
 -- ^ Mutable arrays
 compCMD' (NewArr size init) = do
   addInclude "<string.h>"
-  sym <- gensym "a"
+  sym <- gensym "na"
   v   <- compExp size
   i   <- compExp init -- todo: use this with memset
   addLocal [cdecl| float $id:sym[ $v ]; |]
@@ -184,7 +184,7 @@ compCMD' (NewArr size init) = do
   return $ Arr sym
 compCMD' (GetArr expi arr) = do
   let arr' = unArr arr
-  sym <- gensym "v"
+  sym <- gensym "ga"
   i   <- compExp expi
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   addStm   [cstm| $id:sym = $id:arr'[ $i ]; |]
@@ -199,19 +199,21 @@ compCMD' (SetArr expi expv arr) = do
 compCMD' (If b t f) = do
   b'  <- compile b  :: C (Expr Bool)
   b'' <- compExp b' :: C C.Exp
-  addStm [cstm| if ($(b'')) {} |]
-  t'  <- compile t
-  addStm [cstm| {} |]
-  f'  <- compile f
-  addStm [cstm| {} |]
+
+  (_, ct) <- inNewBlock $ compile t
+  (_, cf) <- inNewBlock $ compile f
+
+  addStm [cstm| if ($(b'')) {$items:ct} else {$items:cf} |]
   return ()
 compCMD' (While b t) = do
-  b'  <- compile b
-  b'' <- compExp b'
-  addStm [cstm| while ($(b'')) {} |]
-  t'  <- compile t
-  addStm [cstm| {} |]
+  b'  <- compile b  :: C (Expr Bool)
+  b'' <- compExp b' :: C C.Exp
+
+  (_, ct) <- inNewBlock $ compile t
+
+  addStm [cstm| while ($(b'')) {$items:ct} |]
   return ()
+
 
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a

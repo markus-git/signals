@@ -3,8 +3,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 
-{-# LANGUAGE BangPatterns #-}
-
 module Frontend.SignalComp where
 
 import Expr
@@ -354,7 +352,7 @@ r2s (Pair' l r) = do
   return $ Pair l' r'
 
 s2r :: Struct a -> Program (CMD Expr) (Rx a)
-s2r (Leaf e)       = anewRef e >>= return . Leaf'
+s2r (Leaf e)       = newRef e >>= return . Leaf'
 s2r (Pair l r)     = do
   l' <- s2r l
   r' <- s2r r
