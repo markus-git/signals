@@ -36,6 +36,17 @@ delays :: [Expr Float] -> Sig Float -> [Sig Float]
 delays as s = tail $ scanl (flip S.delay) s as
 
 --------------------------------------------------------------------------------
+-- * IIR Filter Examples
+--------------------------------------------------------------------------------
+
+iir :: [Expr Float] -> [Expr Float] -> Sig Float -> Sig Float
+iir as bs s = o
+  where
+    u = fir bs  s
+    l = fir as' o  where as' = map negate as
+    o = u + l
+
+--------------------------------------------------------------------------------
 
 test :: IO Doc
 test = do
@@ -50,10 +61,29 @@ testF = do
     let getty = prg $ fget ptr
         setty = fput ptr
 
-    v <- getty
-    setty v
+    while (return $ litExp True)
+          (do v <- getty
+              setty v
+          )
 
     close ptr
+
+testFF :: IO (Program (CMD Expr) ())
+testFF = do
+  prg <- compile (iir [2.1, 2.2] [1.1, 1.2, 1.3])
+  return $ do
+    ptr <- open "test"
+    let getty = prg $ fget ptr
+        setty = fput ptr
+
+    while (return $ litExp True)
+          (do v <- getty
+              setty v
+          )
+
+    close ptr
+
+--------
 
 type Prg a = Program (CMD Expr) (Expr a)
 

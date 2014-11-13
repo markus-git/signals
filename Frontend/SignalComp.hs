@@ -46,6 +46,10 @@ import Data.Typeable
 import           Prelude
 import qualified Prelude as P
 
+---------------------------------------- Testing
+import qualified Core as C
+----------------------------------------
+
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
@@ -172,7 +176,11 @@ compileGraph (Graph nodes root) buffers input = do
             r <- newRef v
             return $ toDyn r
 
-          (TDelay _ _) -> do
+          (TDelay v s) -> do
+             -- Make global
+            r <- newRef $ litExp True
+            r <- newRef $ v
+
             error "why are you here?.."
 
     compileStruct :: Node -> Map Id Dynamic -> Prg Ex
@@ -339,15 +347,15 @@ data Rx a
   deriving Typeable
 
 r2s :: Rx a -> Program (CMD Expr) (Struct a)
-r2s (Leaf' r)   = getRef r >>= return . Leaf
+r2s (Leaf' r) = return . Leaf . Var $ C.unRef r
 r2s (Pair' l r) = do
   l' <- r2s l
   r' <- r2s r
   return $ Pair l' r'
 
 s2r :: Struct a -> Program (CMD Expr) (Rx a)
-s2r (Leaf e)   = newRef e >>= return . Leaf'
-s2r (Pair l r) = do
+s2r (Leaf e)       = anewRef e >>= return . Leaf'
+s2r (Pair l r)     = do
   l' <- s2r l
   r' <- s2r r
   return $ Pair' l' r'
