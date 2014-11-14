@@ -49,6 +49,8 @@ evalExpr' (Sin   a) = sin $ evalExpr' a
 
 -- ^ Bool. ops.
 evalExpr' (Not   a) = not $ evalExpr' a
+evalExpr' (And a b) = evalExpr' a && evalExpr' b
+evalExpr' (Or  a b) = evalExpr' a || evalExpr' b
 evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
 evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
 
@@ -105,6 +107,14 @@ compExp' (Mod a b) = do
 compExp' (Not  a)  = do
   a' <- compExp' a
   return [cexp| ! $a' |]
+compExp' (And a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| ($a' && $b') |]
+compExp' (Or a b)  = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| ($a' || $b') |]
 compExp' (Eq a b)  = do
   a' <- compExp' a
   b' <- compExp' b
@@ -208,7 +218,9 @@ compCMD' (If b t f) = do
   (_, ct) <- inNewBlock $ compile t
   (_, cf) <- inNewBlock $ compile f
 
-  addStm [cstm| if ($(b'')) {$items:ct} else {$items:cf} |]
+  case null cf of
+    True  -> addStm [cstm| if ($(b'')) {$items:ct} |]
+    False -> addStm [cstm| if ($(b'')) {$items:ct} else {$items:cf} |]
   return ()
 compCMD' (While b t) = do
   b'  <- compile b  :: C (Expr Bool)

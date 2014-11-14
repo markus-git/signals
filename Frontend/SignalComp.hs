@@ -242,7 +242,10 @@ newBuff size init = do
         getArr ((size + i + j - 1) `mod` size) arr
   let put a = do
         i <- unsafeGetRef ir
-        setRef ir ((i + 1) `mod` size)
+        setRef ir (i + 1)
+        iff (return $ eq i (size + 1))
+            (setRef ir 0)
+            (return ())
         setArr i a arr
   return $ Buffer get put
 

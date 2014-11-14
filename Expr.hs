@@ -28,7 +28,10 @@ data Expr a
     Mod :: Integral a   => Expr a -> Expr a -> Expr a
 
     -- ^ Bool. operations
-    Not ::          Expr Bool           -> Expr Bool
+    Not :: Expr Bool              -> Expr Bool
+    And :: Expr Bool -> Expr Bool -> Expr Bool
+    Or  :: Expr Bool -> Expr Bool -> Expr Bool
+
     Eq  :: Eq a  => Expr a    -> Expr a -> Expr Bool
     LEq :: Ord a => Expr a    -> Expr a -> Expr Bool
   deriving Typeable
@@ -91,6 +94,21 @@ instance (Show a, Floating a) => Floating (Expr a)
     atanh = todo; acosh = todo; logBase = todo;
 
 todo = error "todo in expr" -- I'll add these later
+
+--------------------------------------------------------------------------------
+-- **
+
+eq :: Eq a => Expr a -> Expr a -> Expr Bool
+eq = Eq
+
+leq :: Ord a => Expr a -> Expr a -> Expr Bool
+leq = LEq
+
+lt :: Ord a => Expr a -> Expr a -> Expr Bool
+lt l r = (LEq l r) `And` (Not $ Eq r l)
+
+gt :: Ord a => Expr a -> Expr a -> Expr Bool
+gt = flip lt
 
 --------------------------------------------------------------------------------
 -- * Trees over expressions
