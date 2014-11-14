@@ -7,6 +7,9 @@ import Interpretation
 import           Frontend.Signal     (Sig)
 import qualified Frontend.Signal     as S
 
+import           Frontend.Stream     (Stream(..))
+import qualified Frontend.Stream     as Str
+
 import qualified Frontend.SignalObsv as SO
 import qualified Frontend.SignalComp as SC
 
@@ -55,35 +58,15 @@ test = do
 
 testF :: IO (Program (CMD Expr) ())
 testF = do
-  prg <- compile (fir [1.1, 1.2, 1.3])
+  prg <- SC.compile (fir [1.1, 1.2, 1.3])
   return $ do
-    ptr <- open "test"
-    let getty = prg $ fget ptr
-        setty = fput ptr
+    ptr   <- open "test"
+    let (Stream init) = prg $ fget ptr
+    let setty = fput ptr
+    getty <- init
 
-    v <- getty
-    setty v
+    while (return $ litExp True)
+          (do v <- getty
+              setty v)
 
     close ptr
-
-testFF :: IO (Program (CMD Expr) ())
-testFF = do
-  prg <- compile (iir [2.1, 2.2] [1.1, 1.2, 1.3])
-  return $ do
-    ptr <- open "test"
-    let getty = prg $ fget ptr
-        setty = fput ptr
-
-    v <- getty
-    setty v
-
-    close ptr
-
---------
-
-type Prg a = Program (CMD Expr) (Expr a)
-
-compile :: (Typeable a, Typeable b)
-          =>    (Sig a -> Sig b)
-          -> IO (Prg a -> Prg b)
-compile f = SC.compile (S.unSig . f . S.Sig)

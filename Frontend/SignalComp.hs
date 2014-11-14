@@ -11,7 +11,7 @@ import Expr
 import Interpretation
 ----------------------------------------
 
-import           Frontend.Stream (Stream)
+import           Frontend.Stream (Stream(..))
 import qualified Frontend.Stream as Str
 
 import           Frontend.Signal (Signal, Sig)
@@ -30,7 +30,7 @@ import Interpretation      (VarPred)
 import Frontend.Signal     (Signal)
 import Frontend.SignalObsv (TSignal(..))
 
-import qualified Backend.C            -- HACK HACK! Move CompExp instance
+import qualified Backend.C -- HACK HACK! Move CompExp instance
 
 import Control.Applicative ((<$>))
 import Control.Monad.Operational
@@ -51,18 +51,17 @@ import qualified Prelude as P
 -- *
 --------------------------------------------------------------------------------
 
-compile :: forall a b. (Typeable a, Typeable b)
-          =>    (Signal (Expr a)             -> Signal (Expr b))
-          -> IO (Program (CMD Expr) (Expr a) -> Program (CMD Expr) (Expr b))
-compile f = do --reifyGraph >>= \g -> compileGraph g
+type Pro a = Program (CMD Expr) (Expr a)
+type Str a = Stream             (Expr a)
 
-  graph <- reifyGraph f
-  return $ \i -> do (buff, graph') <- delayChains graph
-                    r <- initRef :: Program (CMD Expr) (Ref (Expr b))
-                    while (return $ litExp True)
-                          (do v <- compileGraph graph' buff i
-                              setRef r v)
-                    unsafeGetRef r
+compile :: forall a b. (Typeable a, Typeable b)
+          =>    (Sig a -> Sig b)
+          -> IO (Pro a -> Str b)
+compile f = do
+  g <- reifyGraph f
+  return $ \i -> Stream $ do
+    (b, g') <- delayChains g
+    return $ compileGraph g' b i
 
 --------------------------------------------------------------------------------
 -- ** Helper types / functions
@@ -92,8 +91,8 @@ findNode nodes i = find ((==) i . P.fst) nodes
 compileGraph :: forall a b . (Typeable a, Typeable b)
              => Graph TSignal
              -> Map Unique (Buffer a)
-             -> Prg (Expr a)
-             -> Prg (Expr b)
+             -> Pro a
+             -> Pro b
 compileGraph (Graph nodes root) buffers input = do
     d <- compileNode (fromJust $ findNode nodes root) M.empty
 
