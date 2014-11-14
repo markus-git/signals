@@ -54,10 +54,15 @@ import qualified Prelude as P
 compile :: forall a b. (Typeable a, Typeable b)
           =>    (Signal (Expr a)             -> Signal (Expr b))
           -> IO (Program (CMD Expr) (Expr a) -> Program (CMD Expr) (Expr b))
-compile f = do
+compile f = do --reifyGraph >>= \g -> compileGraph g
+
   graph <- reifyGraph f
   return $ \i -> do (buff, graph') <- delayChains graph
-                    compileGraph graph' buff i
+                    r <- initRef :: Program (CMD Expr) (Ref (Expr b))
+                    while (return $ litExp True)
+                          (do v <- compileGraph graph' buff i
+                              setRef r v)
+                    unsafeGetRef r
 
 --------------------------------------------------------------------------------
 -- ** Helper types / functions
@@ -239,7 +244,7 @@ newBuff size init = do
   ir  <- newRef 0
   let get j = do
         i <- unsafeGetRef ir
-        getArr ((size + i + j - 1) `mod` size) arr
+        getArr ((i + j - 1) `mod` size) arr
   let put a = do
         i <- unsafeGetRef ir
         setRef ir (i + 1)

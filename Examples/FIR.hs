@@ -61,10 +61,8 @@ testF = do
     let getty = prg $ fget ptr
         setty = fput ptr
 
-    while (return $ litExp True)
-          (do v <- getty
-              setty v
-          )
+    v <- getty
+    setty v
 
     close ptr
 
@@ -76,10 +74,8 @@ testFF = do
     let getty = prg $ fget ptr
         setty = fput ptr
 
-    while (return $ litExp True)
-          (do v <- getty
-              setty v
-          )
+    v <- getty
+    setty v
 
     close ptr
 

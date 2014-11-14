@@ -163,18 +163,18 @@ compCMD' (Get ptr) = do
 
 -- ^ Mutable refrences
 compCMD' (InitRef) = do
-  sym <- gensym "ir"
+  sym <- gensym "r"
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   return $ Ref sym
 compCMD' (NewRef exp) = do
-  sym <- gensym "nr"
+  sym <- gensym "r"
   v   <- compExp exp
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   addStm   [cstm| $id:sym = $v; |]
   return $ Ref sym
 compCMD' (GetRef ref) = do
   let ref' = unRef ref
-  sym <- gensym "gr"
+  sym <- gensym "r"
   addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref'; |]
   return $ Var sym
@@ -186,7 +186,7 @@ compCMD' (SetRef ref exp) = do
 -- ^ Mutable arrays
 compCMD' (NewArr size init) = do
   addInclude "<string.h>"
-  sym <- gensym "na"
+  sym <- gensym "a"
   v   <- compExp size
   i   <- compExp init -- todo: use this with memset
   addLocal [cdecl| float $id:sym[ $v ]; |]
@@ -194,7 +194,7 @@ compCMD' (NewArr size init) = do
   return $ Arr sym
 compCMD' (GetArr expi arr) = do
   let arr' = unArr arr
-  sym <- gensym "ga"
+  sym <- gensym "a"
   i   <- compExp expi
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
   addStm   [cstm| $id:sym = $id:arr'[ $i ]; |]
