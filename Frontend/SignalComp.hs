@@ -5,8 +5,11 @@
 
 module Frontend.SignalComp where
 
+----------------------------------------
+import Core
 import Expr
 import Interpretation
+----------------------------------------
 
 import           Frontend.Stream (Stream)
 import qualified Frontend.Stream as Str
@@ -43,10 +46,6 @@ import Data.Typeable
 
 import           Prelude
 import qualified Prelude as P
-
----------------------------------------- Testing
-import qualified Core as C
-----------------------------------------
 
 --------------------------------------------------------------------------------
 -- *
@@ -110,8 +109,10 @@ compileGraph (Graph nodes root) buffers input = do
       | otherwise              = case n of
           (TVar) -> do
             v <- input
-            r <- newRef v
-            return $ toDyn r
+            case v of
+              (Var r) -> error "1"
+              _       -> do r <- newRef v
+                            return $ toDyn r
 
             -- If I make "Proxy t -> Proxy (Expr t)" then functions
             -- will be limited, more so than for TConst and TLift
@@ -161,18 +162,19 @@ compileGraph (Graph nodes root) buffers input = do
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ "in " ++ show buffers
-            v <- input
+            v <- input :: Program (CMD Expr) (Expr a)
             putBuff buff v
-            r <- newRef v
-            return $ toDyn r
+            case v of
+              (Var r) -> return $ toDyn $ (Ref r :: Ref (Expr a))
+              _       -> do r <- newRef v
+                            return $ toDyn r
           (TDBuff i s) -> do
             let buff = case M.lookup s buffers of
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ " in " ++ show buffers
-            v <- getBuff buff i
-            r <- newRef v
-            return $ toDyn r
+            (Var v) <- getBuff buff i :: Program (CMD Expr) (Expr a)
+            return $ toDyn $ (Ref v   :: Ref (Expr a))
 
           (TDelay v s) -> do
              -- Make global
@@ -236,10 +238,10 @@ newBuff size init = do
   arr <- newArr size init
   ir  <- newRef 0
   let get j = do
-        i <- getRef ir
+        i <- unsafeGetRef ir
         getArr ((size + i + j - 1) `mod` size) arr
   let put a = do
-        i <- getRef ir
+        i <- unsafeGetRef ir
         setRef ir ((i + 1) `mod` size)
         setArr i a arr
   return $ Buffer get put
@@ -345,7 +347,8 @@ data Rx a
   deriving Typeable
 
 r2s :: Rx a -> Program (CMD Expr) (Struct a)
-r2s (Leaf' r) = return . Leaf . Var $ C.unRef r
+--r2s (Leaf' r) = return . Leaf . Var $ C.unRef r
+r2s (Leaf' r)   = unsafeGetRef r >>= return . Leaf
 r2s (Pair' l r) = do
   l' <- r2s l
   r' <- r2s r

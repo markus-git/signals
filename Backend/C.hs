@@ -195,6 +195,11 @@ compCMD' (SetArr expi expv arr) = do
   i <- compExp expi
   addStm [cstm| $id:arr'[ $i ] = $v; |]
 
+-- Unsafe
+compCMD' (UnsafeGetRef ref) = do
+  let ref' = unRef ref
+  return $ Var ref'
+
 -- ^ Control structures
 compCMD' (If b t f) = do
   b'  <- compile b  :: C (Expr Bool)

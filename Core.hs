@@ -38,6 +38,9 @@ data CMD exp a
     GetArr :: Num (exp n) => exp n          -> Arr (exp a) -> CMD exp (exp a)
     SetArr :: Num (exp n) => exp n -> exp a -> Arr (exp a) -> CMD exp ()
 
+    -- no new var. is assigned.
+    UnsafeGetRef :: Ref (exp a) -> CMD exp (exp a)
+
     -- ^ Control structures | Todo: Move to seperate data class
     If :: Program (CMD exp) (exp Bool)
        -> Program (CMD exp) ()
@@ -106,6 +109,12 @@ getArr n = singleton . GetArr n
 setArr :: (Num (exp n), VarPred exp a)
     => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
 setArr n a = singleton . SetArr n a
+
+----------------------------------------
+-- Unsafe
+
+unsafeGetRef :: VarPred exp a => Ref (exp a) -> Program (CMD exp) (exp a)
+unsafeGetRef = singleton . UnsafeGetRef
 
 --------------------------------------------------------------------------------
 -- **
