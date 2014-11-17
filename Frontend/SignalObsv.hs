@@ -52,7 +52,7 @@ data TSignal r
                -> TSignal r
 
     -- ^ Buffers
-    TVBuff  ::             r -> TSignal r
+    TVBuff  :: r -> (r, TSignal r) -> TSignal r
     TDBuff  :: Expr Int -> r -> TSignal r
   deriving Typeable
 

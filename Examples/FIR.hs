@@ -58,7 +58,7 @@ test = do
 
 testF :: IO (Program (CMD Expr) ())
 testF = do
-  prg <- SC.compile (fir [1.1, 1.2, 1.3])
+  prg <- SC.compile (iir [1.1, 1.2, 1.3] [2.1, 2.2, 2.3])
   return $ do
     ptr   <- open "test"
     let (Stream init) = prg $ fget ptr
