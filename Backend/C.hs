@@ -11,6 +11,7 @@ import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Exception
 import Control.Monad.Operational
+import Data.Typeable (TypeRep)
 
 import Language.C.Quote.C
 import qualified Language.C.Syntax as C
@@ -132,6 +133,12 @@ compSExp' s = todo
 -- * Compilation of Commands
 --------------------------------------------------------------------------------
 
+compTypeRep :: TypeRep -> C.Type
+compTypeRep trep = case show trep of
+    "Bool"  -> [cty| int   |]
+    "Int"   -> [cty| int   |]  -- todo: should only use fix-width Haskell ints
+    "Float" -> [cty| float |]
+
 instance CompCMD C (CMD Expr)
   where
     compCMD = compCMD'
@@ -148,37 +155,42 @@ compCMD' (Open path) = do
   addInclude "<stdlib.h>"
   sym <- gensym "v"
   addLocal [cdecl| typename FILE * $id:sym; |]
-  addStm   [cstm| $id:sym = fopen($id:path, "a+"); |]
+  addStm   [cstm| $id:sym = fopen($id:path', "r+"); |]
   return $ Ptr sym
+  where
+    path' = "\"" ++ path ++ "\""
 compCMD' (Close ptr) = do
   let ptr' = unPtr ptr
   addStm [cstm| fclose($id:ptr'); |]
 compCMD' (Put ptr exp) = do
   let ptr' = unPtr ptr
   v <- compExp exp
-  addStm [cstm| fprintf($id:ptr', "%f", $v); |]
+  addStm [cstm| fprintf($id:ptr', "%f ", $v); |]
 compCMD' (Get ptr) = do
   let ptr' = unPtr ptr
   sym <- gensym "v"
   addLocal [cdecl| float $id:sym; |]
-  addStm   [cstm| fscanf($id:ptr', "%f", $id:sym); |]
+  addStm   [cstm| fscanf($id:ptr', "%f", &$id:sym); |]
   return $ Var sym
 
 -- ^ Mutable refrences
-compCMD' (InitRef) = do
+compCMD' (InitRef trep) = do
+  let t = compTypeRep trep
   sym <- gensym "r"
-  addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  addLocal [cdecl| $ty:t $id:sym; |]
   return $ Ref sym
-compCMD' (NewRef exp) = do
+compCMD' (NewRef trep exp) = do
+  let t = compTypeRep trep
   sym <- gensym "r"
   v   <- compExp exp
-  addLocal [cdecl| float $id:sym; |] -- todo: get real type
+  addLocal [cdecl| $ty:t $id:sym; |]
   addStm   [cstm| $id:sym = $v; |]
   return $ Ref sym
-compCMD' (GetRef ref) = do
-  let ref' = unRef ref
+compCMD' (GetRef trep ref) = do
+  let t    = compTypeRep trep
+      ref' = unRef ref
   sym <- gensym "r"
-  addLocal [cdecl| float $id:sym; |]
+  addLocal [cdecl| $ty:t $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref'; |]
   return $ Var sym
 compCMD' (SetRef ref exp) = do
@@ -192,7 +204,7 @@ compCMD' (NewArr size init) = do
   sym <- gensym "a"
   v   <- compExp size
   i   <- compExp init -- todo: use this with memset
-  addLocal [cdecl| float $id:sym[ $v ]; |]
+  addLocal [cdecl| float $id:sym[ $v ]; |] -- todo: get real type
   addStm   [cstm| memset($id:sym, $i, sizeof( $id:sym )); |]
   return $ Arr sym
 compCMD' (GetArr expi arr) = do

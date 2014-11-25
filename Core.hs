@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs                  #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE DeriveDataTypeable     #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 
 module Core where
 
@@ -25,13 +26,13 @@ data CMD exp a
     Open  :: FilePath         -> CMD exp Ptr
     Close :: Ptr              -> CMD exp ()
     Put   :: Ptr -> exp Float -> CMD exp ()
-    Get   :: Ptr              -> CMD exp (exp Float)
+    Get   :: Ptr              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
 
     -- ^ Mutable references (IORef in Haskell)
-    InitRef ::                         CMD exp (Ref (exp a))
-    NewRef  :: exp a                -> CMD exp (Ref (exp a))
-    GetRef  :: Ref (exp a)          -> CMD exp (exp a)
-    SetRef  :: Ref (exp a) -> exp a -> CMD exp ()
+    InitRef :: TypeRep                     -> CMD exp (Ref (exp a))
+    NewRef  :: TypeRep     -> exp a        -> CMD exp (Ref (exp a))
+    GetRef  :: TypeRep     -> Ref (exp a) -> CMD exp (exp a)
+    SetRef  :: Ref (exp a) -> exp a        -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
     NewArr :: Num (exp n) => exp n -> exp a                -> CMD exp (Arr (exp a))
@@ -80,19 +81,19 @@ fget = singleton . Get
 --------------------------------------------------------------------------------
 -- *** Variables
 
-initRef :: VarPred exp a => Program (CMD exp) (Ref (exp a))
-initRef = singleton InitRef
+initRef :: forall exp a . (VarPred exp a, Typeable a) => Program (CMD exp) (Ref (exp a))
+initRef = singleton (InitRef (typeOf (undefined :: a)))
 
-newRef  :: VarPred exp a => exp a -> Program (CMD exp) (Ref (exp a))
-newRef  = singleton . NewRef
+newRef  :: forall exp a . (VarPred exp a, Typeable a) => exp a -> Program (CMD exp) (Ref (exp a))
+newRef e = singleton (NewRef (typeOf (undefined :: a)) e)
 
-getRef  :: VarPred exp a => Ref (exp a) -> Program (CMD exp) (exp a)
-getRef  = singleton . GetRef
+getRef :: forall exp a . (VarPred exp a, Typeable a) => Ref (exp a) -> Program (CMD exp) (exp a)
+getRef r = singleton (GetRef (typeOf (undefined :: a)) r)
 
 setRef  :: VarPred exp a => Ref (exp a) -> exp a -> Program (CMD exp) ()
 setRef r = singleton . SetRef r
 
-modifyRef :: VarPred exp a => Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
+modifyRef :: (VarPred exp a, Typeable a) => Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
 modifyRef r f = getRef r >>= setRef r . f
 
 --------------------------------------------------------------------------------
