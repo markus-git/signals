@@ -172,6 +172,14 @@ compCMD' (Get ptr) = do
   addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| fscanf($id:ptr', "%f", &$id:sym); |]
   return $ Var sym
+compCMD' (Eof ptr) = do
+  let ptr' = unPtr ptr
+--       bool = "bool"
+  addInclude "<stdbool.h>"
+  sym <- gensym "v"
+  addLocal [cdecl| int $id:sym; |]
+  addStm   [cstm| $id:sym = feof($id:ptr'); |]
+  return $ Var sym
 
 -- ^ Mutable refrences
 compCMD' (InitRef trep) = do
@@ -245,8 +253,7 @@ compCMD' (While b t) = do
 
   addStm [cstm| while ($(b'')) {$items:ct} |]
   return ()
-
-
+compCMD' Break = addStm [cstm| break; |]
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body

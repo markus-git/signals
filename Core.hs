@@ -27,6 +27,7 @@ data CMD exp a
     Close :: Ptr              -> CMD exp ()
     Put   :: Ptr -> exp Float -> CMD exp ()
     Get   :: Ptr              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
+    Eof   :: Ptr              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
     InitRef :: TypeRep                     -> CMD exp (Ref (exp a))
@@ -50,6 +51,7 @@ data CMD exp a
     While :: Program (CMD exp) (exp Bool)
           -> Program (CMD exp) ()
           -> CMD exp ()
+    Break :: CMD exp ()
 
 -- |
 newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
@@ -77,6 +79,9 @@ fput p = singleton . Put p
 
 fget :: Ptr -> Program (CMD exp) (exp Float)
 fget = singleton . Get
+
+feof :: Ptr -> Program (CMD exp) (exp Bool)
+feof = singleton . Eof
 
 --------------------------------------------------------------------------------
 -- *** Variables
@@ -130,6 +135,9 @@ while :: Program (CMD exp) (exp Bool)
       -> Program (CMD exp) ()
       -> Program (CMD exp) ()
 while b t = singleton $ While b t
+
+break :: Program (CMD exp) ()
+break = singleton Break
 
 --------------------------------------------------------------------------------
 -- * Constructs
