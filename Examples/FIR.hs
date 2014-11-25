@@ -1,5 +1,7 @@
 module FIR where
 
+import Prelude hiding (break)
+
 import Core
 import Expr
 import Interpretation
@@ -54,19 +56,29 @@ iir as bs s = o
 test :: IO Doc
 test = do
   f <- testF
-  B.cgen $ mkFunction "misc" f
+  B.cgen $ mkFunction "main" f
+
+main :: IO ()
+main = do
+    code <- test
+    writeFile "fir.c" $ show code
 
 testF :: IO (Program (CMD Expr) ())
 testF = do
   prg <- SC.compile (iir [1.1, 1.2, 1.3] [2.1, 2.2, 2.3])
   return $ do
-    ptr   <- open "test"
-    let (Stream init) = prg $ fget ptr
-    let setty = fput ptr
+    inp  <- open "input"
+    outp <- open "output"
+    let (Stream init) = prg $ do
+          i <- fget inp
+          iff (feof inp) break (return ())
+          return i
+    let setty = fput outp
     getty <- init
 
     while (return $ litExp True)
           (do v <- getty
               setty v)
 
-    close ptr
+    close inp
+    close outp
