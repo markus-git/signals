@@ -71,8 +71,11 @@ instance CompExp C Expr
 
 -- |
 compExp' :: Expr a -> C C.Exp
-compExp' (Var v)   = return [cexp| $id:v |]
-compExp' (Val v)   = let s = show v in return [cexp| $id:s |]
+compExp' (Var v) = return [cexp| $id:v |]
+compExp' (Val v) = case show v of
+    "True"  -> addInclude "<stdbool.h>" >> return [cexp| true |]
+    "False" -> addInclude "<stdbool.h>" >> return [cexp| false |]
+    v'      -> return [cexp| $id:v' |]
 
 -- ^ Math. ops.
 compExp' (Add a b) = do
