@@ -23,17 +23,17 @@ import Data.Typeable
 data CMD exp a
   where
     -- ^ File management    (IOHandler in Haskell)
-    Open  :: FilePath         -> CMD exp Ptr
+    Open  :: FilePath         -> CMD exp Ptr -- todo: allow specifying read/write mode
     Close :: Ptr              -> CMD exp ()
     Put   :: Ptr -> exp Float -> CMD exp ()
     Get   :: Ptr              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
     Eof   :: Ptr              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
-    InitRef :: TypeRep                     -> CMD exp (Ref (exp a))
-    NewRef  :: TypeRep     -> exp a        -> CMD exp (Ref (exp a))
+    InitRef :: TypeRep                    -> CMD exp (Ref (exp a))
+    NewRef  :: TypeRep     -> exp a       -> CMD exp (Ref (exp a))
     GetRef  :: TypeRep     -> Ref (exp a) -> CMD exp (exp a)
-    SetRef  :: Ref (exp a) -> exp a        -> CMD exp ()
+    SetRef  :: Ref (exp a) -> exp a       -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
     NewArr :: Num (exp n) => exp n -> exp a                -> CMD exp (Arr (exp a))
