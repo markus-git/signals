@@ -129,6 +129,7 @@ compExp' (LEq a b) = do
   return [cexp| $a' <= $b' |]
 
 compSExp' s = todo
+
 --------------------------------------------------------------------------------
 -- * Compilation of Commands
 --------------------------------------------------------------------------------
@@ -158,7 +159,7 @@ compCMD' (Open path) = do
   addStm   [cstm| $id:sym = fopen($id:path', "r+"); |]
   return $ Ptr sym
   where
-    path' = "\"" ++ path ++ "\""
+    path' = show path
 compCMD' (Close ptr) = do
   let ptr' = unPtr ptr
   addStm [cstm| fclose($id:ptr'); |]
@@ -215,6 +216,15 @@ compCMD' (NewArr size init) = do
   addLocal [cdecl| float $id:sym[ $v ]; |] -- todo: get real type
   addStm   [cstm| memset($id:sym, $i, sizeof( $id:sym )); |]
   return $ Arr sym
+-- compCMD' (NewArr size init) = do
+--   addInclude "<string.h>"
+--   sym <- gensym "a"
+--   v   <- compExp size
+--   i   <- compExp init -- todo: use this with memset
+--   addLocal [cdecl| float* $id:sym = calloc($v, sizeof(float)); |] -- todo: get real type
+--   addFinalStm [cstm| free($id:sym); |]
+--   addInclude "<stdlib.h>"
+--   return $ Arr sym
 compCMD' (GetArr expi arr) = do
   let arr' = unArr arr
   sym <- gensym "a"
