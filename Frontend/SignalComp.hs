@@ -262,17 +262,16 @@ newBuff size init = do
   ir  <- newRef 0
   let get' j = do
         i <- unsafeGetRef ir
-        getArr ((i + j - 1) `mod` size) arr
+        getArr ((size + i - j) `mod` size) arr
   let get = do
         i <- unsafeGetRef ir
         todo
   let put a = do
         i <- unsafeGetRef ir
-        setRef ir (i + 1)
-        iff (return $ eq i (size + 1))
-            (setRef ir 0)
-            (return ())
         setArr i a arr
+        iff (return $ eq i (size-1))
+            (setRef ir 0)
+            (setRef ir (i+1))
   return $ Buffer get' get put
 
 getBufferAt :: Expr Int -> Buffer a -> Prg (Expr a)
