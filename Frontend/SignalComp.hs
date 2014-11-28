@@ -184,7 +184,6 @@ compileGraph (Graph nodes root) buffers input = do
                                   _       -> newRef v >>= return . toDyn
               (_, Just s) -> do let v = case s of
                                           (Leaf v) -> v
-                                          _        -> error "?"
                                 putBuff buff v
                                 case v of
                                   (Var r) -> return $ toDyn (Ref r :: Ref (Expr a))
