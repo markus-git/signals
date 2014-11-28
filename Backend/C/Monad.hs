@@ -131,7 +131,7 @@ inNewBlock act = do
     finalstms <- reverse <$> gets _finalStms
     modify $ \s -> s { _locals    = oldLocals
                      , _stms      = oldStms
-                     , _finalStms = finalstms
+                     , _finalStms = oldFinalStms
                      }
     return (x, map C.BlockDecl locals ++
                map C.BlockStm  stms   ++
