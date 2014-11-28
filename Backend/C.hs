@@ -312,3 +312,13 @@ cgen' :: CompCMD C cmd => Flags -> Program cmd a -> IO Doc
 cgen' flags ma = do
     (_,cenv) <- runC (compile ma) (defaultCEnv flags)
     return $ ppr $ cenvToCUnit cenv
+
+genMain :: CompCMD C cmd => Program cmd a -> IO Doc
+genMain prog = do
+    (_,cenv) <- runC main (defaultCEnv Flags)
+    return $ ppr $ cenvToCUnit cenv
+  where
+    main = do
+      (params,items) <- inNewFunction $ compile prog >> addStm [cstm| return 0; |]
+      addGlobal [cedecl| int main($params:params){ $items:items }|]
+
