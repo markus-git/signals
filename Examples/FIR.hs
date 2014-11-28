@@ -24,6 +24,23 @@ import Data.Reify
 import Data.Typeable
 
 --------------------------------------------------------------------------------
+-- * Misc
+--------------------------------------------------------------------------------
+
+for :: Expr Int -> Expr Int -> (Expr Int -> Program (CMD Expr) ()) -> Program (CMD Expr) ()
+for lo hi body = do
+    ir <- newRef lo
+    while
+        (do i <- unsafeGetRef ir; return (leq i hi))
+        (do i <- unsafeGetRef ir
+            a <- body i
+            setRef ir (i+1)
+            return a
+        )
+  -- unsafeGetRef is fine because writing to the reference is the last thing that happens in each
+  -- iteration
+
+--------------------------------------------------------------------------------
 -- * FIR Filter Example
 --------------------------------------------------------------------------------
 
@@ -72,6 +89,7 @@ testF = do
     let (Stream init) = prg $ do
           i <- fget inp
           iff (feof inp) break (return ())
+            -- Apparently EOF can only be detected after one has tried to read past the end
           return i
     let setty = fput outp
     getty <- init

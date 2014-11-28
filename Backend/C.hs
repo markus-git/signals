@@ -238,8 +238,8 @@ compCMD' (If b t f) = do
   b'  <- compile b  :: C (Expr Bool)
   b'' <- compExp b' :: C C.Exp
 
-  (_, ct) <- inNewBlock $ compile t
-  (_, cf) <- inNewBlock $ compile f
+  ct <- inNewBlock_ $ compile t
+  cf <- inNewBlock_ $ compile f
 
   case null cf of
     True  -> addStm [cstm| if ($(b'')) {$items:ct} |]
@@ -249,10 +249,11 @@ compCMD' (While b t) = do
   b'  <- compile b  :: C (Expr Bool)
   b'' <- compExp b' :: C C.Exp
 
-  (_, ct) <- inNewBlock $ compile t
+  ct <- inNewBlock_ $ compile t
 
   addStm [cstm| while ($(b'')) {$items:ct} |]
   return ()
+    -- todo: the b program should be re-executed at the end of each iteration
 compCMD' Break = addStm [cstm| break; |]
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
