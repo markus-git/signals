@@ -8,6 +8,7 @@ module Backend.C.Monad where
 import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Exception
+import Data.List
 
 import Language.C.Quote.C
 import qualified Language.C.Syntax as C
@@ -54,6 +55,10 @@ newtype C a = C { unC :: StateT CEnv (ExceptionT IO) a }
 runC :: C a -> CEnv -> IO (a, CEnv)
 runC m s = runExceptionT (runStateT (unC m) s) >>= liftException
 
+fastDefEq :: C.Definition -> C.Definition -> Bool
+fastDefEq (C.FuncDef (C.OldFunc _ i _ _ _ _ _) _) (C.FuncDef (C.OldFunc _ j _ _ _ _ _) _) = i==j
+fastDefEq _ _ = False
+
 -- | Extract a compilation unit from the 'CEnv' state
 cenvToCUnit :: CEnv -> [C.Definition]
 cenvToCUnit env =
@@ -67,8 +72,8 @@ cenvToCUnit env =
         toInclude :: String -> C.Definition
         toInclude inc = [cedecl|$esc:("#include " ++ inc)|]
     typedefs   = reverse $ _typedefs env
-    prototypes = reverse $ _prototypes env
-    globals    = reverse $ _globals env
+    prototypes = reverse $ nubBy fastDefEq $ _prototypes env
+    globals    = reverse $ nubBy fastDefEq $ _globals env
 
 gensym :: String -> C String
 gensym s = do
