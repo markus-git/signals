@@ -265,12 +265,41 @@ compCMD' (While b t) = do
   return ()
     -- todo: the b program should be re-executed at the end of each iteration
 compCMD' Break = addStm [cstm| break; |]
+compCMD' GetTime = do
+    addInclude "<sys/time.h>"
+    addInclude "<sys/resource.h>"
+    addGlobal getTimeDef
+    sym <- gensym "t"
+    addLocal [cdecl| double $id:sym; |]
+    addStm   [cstm| $id:sym = get_time(); |]
+    return $ Var sym
+compCMD' (Printf format a) = do
+    addInclude "<stdio.h>"
+    let format' = show format
+    a' <- compExp a
+    addStm [cstm| printf($id:format', $exp:a'); |]
 
 compConstruct :: CompCMD C cmd => Construct cmd a -> C a
 compConstruct (Function fun body) = inFunction fun $ compile body
 
 compile :: CompCMD C cmd => Program cmd a -> C a
 compile = interpretWithMonad compCMD
+
+--------------------------------------------------------------------------------
+-- * Helpers
+--------------------------------------------------------------------------------
+
+getTimeDef :: C.Definition
+getTimeDef = [cedecl|
+// From http://stackoverflow.com/questions/2349776/how-can-i-benchmark-c-code-easily
+double get_time()
+{
+    struct timeval t;
+    struct timezone tzp;
+    gettimeofday(&t, &tzp);
+    return t.tv_sec + t.tv_usec*1e-6;
+}
+|]
 
 --------------------------------------------------------------------------------
 -- * Run Functions

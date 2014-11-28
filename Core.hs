@@ -53,6 +53,10 @@ data CMD exp a
           -> CMD exp ()
     Break :: CMD exp ()
 
+    -- ^ Misc.
+    Printf  :: String -> exp a -> CMD exp ()
+    GetTime :: CMD exp (exp Double)
+
 -- |
 newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
 
@@ -138,6 +142,12 @@ while b t = singleton $ While b t
 
 break :: Program (CMD exp) ()
 break = singleton Break
+
+printf :: String -> exp a -> Program (CMD exp) ()
+printf format = singleton . Printf format
+
+getTime :: Program (CMD exp) (exp Double)
+getTime = singleton GetTime
 
 --------------------------------------------------------------------------------
 -- * Constructs
