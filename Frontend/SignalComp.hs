@@ -261,7 +261,7 @@ newBuff size init = do
   ir  <- newRef 0
   let get' j = do
         i <- unsafeGetRef ir
-        getArr ((size + i - j) `mod` size) arr
+        getArr ((i + (size - j)) `mod` size) arr
   let get = do
         i <- unsafeGetRef ir
         todo
