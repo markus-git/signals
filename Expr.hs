@@ -67,17 +67,21 @@ instance (Show a, Integral a) => Integral (Expr a)
 
 instance (Show a, Num a) => Num (Expr a)
   where
-    fromInteger = Val . fromInteger
-    (+)         = Add
-    (-)         = Sub
-    (*)         = Mul
+    fromInteger   = Val . fromInteger
+    Val a + Val b = Val (a+b)
+    a     + b     = Add a b
+    Val a - Val b = Val (a-b)
+    a     - b     = Sub a b
+    Val a * Val b = Val (a*b)
+    a     * b     = Mul a b
 
     signum = todo; abs = todo;
 
 instance (Show a, Fractional a) => Fractional (Expr a)
   where
-    fromRational = Val . fromRational
-    (/)          = Div
+    fromRational  = Val . fromRational
+    Val a / Val b = Val (a/b)
+    a     / b     = Div a b
 
     recip = todo;
 
@@ -85,7 +89,8 @@ instance (Show a, Floating a) => Floating (Expr a)
   where
     pi   = Val pi
     sin  = Sin
-    (**) = Exp
+    Val a ** Val b = Val (a**b)
+    a     ** b     = Exp a b
 
     exp   = todo; sqrt  = todo; log     = todo;
     tan   = todo; cos   = todo; asin    = todo;
