@@ -316,7 +316,7 @@ buffer chains = sequence $ fmap (create . update) chains
     update (x@(u, _):xs) =
         let (chain, delays) = unzip $ snd $ mapAccumL f 1 xs
          in ((u, TVBuff u x) : chain, delays)
-      where f n (i, TDelay a _) = (n + 1, ( (i, TDBuff n u)
+      where f n (i, TDelay a _) = (Backend.C.simplify (n + 1), ( (i, TDBuff n u)
                                           , case cast a of
                                               Just x  -> x
                                               Nothing -> error "typ buff err."))

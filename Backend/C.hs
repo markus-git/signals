@@ -55,6 +55,36 @@ evalExpr' (Or  a b) = evalExpr' a || evalExpr' b
 evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
 evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
 
+
+
+-- | Check if an expression is closed
+simplify :: Expr a -> Expr a
+
+simplify (Add a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'+b')
+simplify (Sub a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'-b')
+simplify (Mul a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'*b')
+simplify (Div a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'/b')
+simplify (Exp a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'**b')
+simplify (Mod a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a' `mod` b')
+simplify (And a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'&&b')
+simplify (Or  a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'||b')
+simplify (Eq  a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'==b')
+simplify (LEq a b) | Val a' <- simplify a, Val b' <- simplify b = Val (a'<=b')
+simplify (Sin a)   | Val a' <- simplify a = Val (sin a')
+simplify (Not a)   | Val a' <- simplify a = Val (not a')
+
+-- simplify (Add a b) | Val 0 <- simplify a = b
+-- simplify (Add a b) | Val 0 <- simplify b = a
+-- simplify (Sub a b) | Val 0 <- simplify a = b
+-- simplify (Sub a b) | Val 0 <- simplify b = a
+-- simplify (Mul a b) | Val 0 <- simplify a = a
+-- simplify (Mul a b) | Val 0 <- simplify b = b
+-- simplify (Mul a b) | Val 1 <- simplify a = b
+-- simplify (Mul a b) | Val 1 <- simplify b = a
+-- simplify (Div a b) | Val 1 <- simplify b = a
+
+simplify e = e
+
 --------------------------------------------------------------------------------
 -- * Compilation of Expressions
 --------------------------------------------------------------------------------
@@ -67,7 +97,7 @@ instance CompExp C Expr
     type VarPred Expr = Any
 
     varExp   = Var
-    compExp  = compExp'
+    compExp  = compExp' . simplify
     compSExp = compSExp'
 
 -- |
