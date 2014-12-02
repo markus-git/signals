@@ -65,19 +65,27 @@ instance (Show a, Integral a) => Integral (Expr a)
 
     quotRem = todo; toInteger = todo;
 
-instance (Show a, Num a) => Num (Expr a)
+instance (Show a, Num a, Eq a) => Num (Expr a)
   where
     fromInteger   = Val . fromInteger
     Val a + Val b = Val (a+b)
+    Val 0 + b     = b
+    a     + Val 0 = a
     a     + b     = Add a b
     Val a - Val b = Val (a-b)
+    Val 0 - b     = b
+    a     - Val 0 = a
     a     - b     = Sub a b
     Val a * Val b = Val (a*b)
+    Val 0 * b     = Val 0
+    a     * Val 0 = Val 0
+    Val 1 * b     = b
+    a     * Val 1 = a
     a     * b     = Mul a b
 
     signum = todo; abs = todo;
 
-instance (Show a, Fractional a) => Fractional (Expr a)
+instance (Show a, Fractional a, Eq a) => Fractional (Expr a)
   where
     fromRational  = Val . fromRational
     Val a / Val b = Val (a/b)
@@ -85,7 +93,7 @@ instance (Show a, Fractional a) => Fractional (Expr a)
 
     recip = todo;
 
-instance (Show a, Floating a) => Floating (Expr a)
+instance (Show a, Floating a, Eq a) => Floating (Expr a)
   where
     pi   = Val pi
     sin  = Sin

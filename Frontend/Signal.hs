@@ -111,7 +111,7 @@ delay e = Sig . Delay e . unSig
 --------------------------------------------------------------------------------
 -- ** Instances
 
-instance (Show a, Typeable a, Num a) => Num (Sig a)
+instance (Show a, Typeable a, Num a, Eq a) => Num (Sig a)
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -120,14 +120,14 @@ instance (Show a, Typeable a, Num a) => Num (Sig a)
 
     abs = todo; signum = todo;
 
-instance (Show a, Typeable a, Fractional a) => Fractional (Sig a)
+instance (Show a, Typeable a, Fractional a, Eq a) => Fractional (Sig a)
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Show a, Typeable a, Floating a) => Floating (Sig a)
+instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
   where
     pi   = repeat pi
     sin  = map sin
