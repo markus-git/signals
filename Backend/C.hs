@@ -46,7 +46,8 @@ evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
 evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
 evalExpr' (Div a b) = evalExpr' a / evalExpr' b
 evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
-evalExpr' (Sin   a) = sin $ evalExpr' a
+evalExpr' (Sin a)   = sin $ evalExpr' a
+evalExpr' (I2N a)   = fromInteger $ fromIntegral $ evalExpr' a
 
 -- ^ Bool. ops.
 evalExpr' (Not   a) = not $ evalExpr' a
@@ -106,6 +107,9 @@ compExp' (Mod a b) = do
   a' <- compExp' a
   b' <- compExp' b
   return [cexp| $a' % $b'|]
+compExp' (I2N a) = do
+  a' <- compExp' a
+  return [cexp| $a' |]
 
 -- ^ Bool. ops.
 compExp' (Not  a)  = do

@@ -26,6 +26,7 @@ data Expr a
     Exp :: Floating a   => Expr a -> Expr a -> Expr a
     Sin :: Floating a   => Expr a           -> Expr a
     Mod :: Integral a   => Expr a -> Expr a -> Expr a
+    I2N :: (Integral a, Num b) => Expr a -> Expr b
 
     -- ^ Bool. operations
     Not :: Expr Bool              -> Expr Bool
@@ -105,6 +106,9 @@ instance (Show a, Floating a, Eq a) => Floating (Expr a)
     atan  = todo; acos  = todo; sinh    = todo;
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
+
+i2n :: (Integral a, Num b) => Expr a -> Expr b
+i2n = I2N
 
 todo = error "todo in expr" -- I'll add these later
 
