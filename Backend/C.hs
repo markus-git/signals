@@ -161,29 +161,24 @@ compCMD' (Open path) = do
   sym <- gensym "v"
   addLocal [cdecl| typename FILE * $id:sym; |]
   addStm   [cstm| $id:sym = fopen($id:path', "r+"); |]
-  return $ Ptr sym
+  return $ HandleComp sym
   where
     path' = show path
-compCMD' (Close ptr) = do
-  let ptr' = unPtr ptr
-  addStm [cstm| fclose($id:ptr'); |]
-compCMD' (Put ptr exp) = do
-  let ptr' = unPtr ptr
+compCMD' (Close (HandleComp h)) = do
+  addStm [cstm| fclose($id:h); |]
+compCMD' (Put (HandleComp h) exp) = do
   v <- compExp exp
-  addStm [cstm| fprintf($id:ptr', "%f ", $v); |]
-compCMD' (Get ptr) = do
-  let ptr' = unPtr ptr
+  addStm [cstm| fprintf($id:h, "%f ", $v); |]
+compCMD' (Get (HandleComp h)) = do
   sym <- gensym "v"
   addLocal [cdecl| float $id:sym; |]
-  addStm   [cstm| fscanf($id:ptr', "%f", &$id:sym); |]
+  addStm   [cstm| fscanf($id:h, "%f", &$id:sym); |]
   return $ Var sym
-compCMD' (Eof ptr) = do
-  let ptr' = unPtr ptr
---       bool = "bool"
+compCMD' (Eof (HandleComp h)) = do
   addInclude "<stdbool.h>"
   sym <- gensym "v"
   addLocal [cdecl| int $id:sym; |]
-  addStm   [cstm| $id:sym = feof($id:ptr'); |]
+  addStm   [cstm| $id:sym = feof($id:h); |]
   return $ Var sym
 
 -- ^ Mutable refrences
@@ -191,25 +186,23 @@ compCMD' (InitRef trep) = do
   let t = compTypeRep trep
   sym <- gensym "r"
   addLocal [cdecl| $ty:t $id:sym; |]
-  return $ Ref sym
+  return $ RefComp sym
 compCMD' (NewRef trep exp) = do
   let t = compTypeRep trep
   sym <- gensym "r"
   v   <- compExp exp
   addLocal [cdecl| $ty:t $id:sym; |]
   addStm   [cstm| $id:sym = $v; |]
-  return $ Ref sym
-compCMD' (GetRef trep ref) = do
-  let t    = compTypeRep trep
-      ref' = unRef ref
+  return $ RefComp sym
+compCMD' (GetRef trep (RefComp ref)) = do
+  let t = compTypeRep trep
   sym <- gensym "r"
   addLocal [cdecl| $ty:t $id:sym; |]
-  addStm   [cstm| $id:sym = $id:ref'; |]
+  addStm   [cstm| $id:sym = $id:ref; |]
   return $ Var sym
-compCMD' (SetRef ref exp) = do
-  let ref' = unRef ref
+compCMD' (SetRef (RefComp ref) exp) = do
   v <- compExp exp
-  addStm [cstm| $id:ref' = $v; |]
+  addStm [cstm| $id:ref = $v; |]
 
 -- ^ Mutable arrays
 compCMD' (NewArr size init) = do
@@ -219,7 +212,7 @@ compCMD' (NewArr size init) = do
   i   <- compExp init -- todo: use this with memset
   addLocal [cdecl| float $id:sym[ $v ]; |] -- todo: get real type
   addStm   [cstm| memset($id:sym, $i, sizeof( $id:sym )); |]
-  return $ Arr sym
+  return $ ArrComp sym
 -- compCMD' (NewArr size init) = do
 --   addInclude "<string.h>"
 --   sym <- gensym "a"
@@ -229,23 +222,19 @@ compCMD' (NewArr size init) = do
 --   addFinalStm [cstm| free($id:sym); |]
 --   addInclude "<stdlib.h>"
 --   return $ Arr sym
-compCMD' (GetArr expi arr) = do
-  let arr' = unArr arr
+compCMD' (GetArr expi (ArrComp arr)) = do
   sym <- gensym "a"
   i   <- compExp expi
   addLocal [cdecl| float $id:sym; |] -- todo: get real type
-  addStm   [cstm| $id:sym = $id:arr'[ $i ]; |]
+  addStm   [cstm| $id:sym = $id:arr[ $i ]; |]
   return $ Var sym
-compCMD' (SetArr expi expv arr) = do
-  let arr' = unArr arr
+compCMD' (SetArr expi expv (ArrComp arr)) = do
   v <- compExp expv
   i <- compExp expi
-  addStm [cstm| $id:arr'[ $i ] = $v; |]
+  addStm [cstm| $id:arr[ $i ] = $v; |]
 
 -- Unsafe
-compCMD' (UnsafeGetRef ref) = do
-  let ref' = unRef ref
-  return $ Var ref'
+compCMD' (UnsafeGetRef (RefComp ref)) = return $ Var ref
 
 -- ^ Control structures
 compCMD' (If b t f) = do

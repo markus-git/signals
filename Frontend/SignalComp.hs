@@ -114,7 +114,7 @@ compileGraph (Graph nodes root) buffers input = do
           (TVar) -> do
             v <- input
             case v of
-              (Var r) -> return $ toDyn (Ref r :: Ref (Expr a))
+              (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
               _       -> do r <- newRef v
                             return $ toDyn r
 
@@ -180,13 +180,13 @@ compileGraph (Graph nodes root) buffers input = do
               (Just r, _) -> do v <- getRef r
                                 putBuff buff v
                                 case v of
-                                  (Var r) -> return $ toDyn (Ref r :: Ref (Expr a))
+                                  (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
                                   _       -> newRef v >>= return . toDyn
               (_, Just s) -> do let v = case s of
                                           (Leaf v) -> v
                                 putBuff buff v
                                 case v of
-                                  (Var r) -> return $ toDyn (Ref r :: Ref (Expr a))
+                                  (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
                                   _       -> newRef v >>= return . toDyn
 
           (TDBuff i s) -> do
@@ -195,7 +195,7 @@ compileGraph (Graph nodes root) buffers input = do
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ " in " ++ show buffers
             (Var v) <- getBuff' buff i :: Program (CMD Expr) (Expr a)
-            return $ toDyn $ (Ref v   :: Ref (Expr a))
+            return $ toDyn $ (RefComp v :: Ref (Expr a))
 
           (TDelay v s) -> do
              -- Make global

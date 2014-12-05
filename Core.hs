@@ -14,6 +14,10 @@ import Control.Monad.Operational
 import Data.Constraint
 import Data.Dynamic
 import Data.Typeable
+import Data.IORef
+import Data.Array.IO.Safe
+import qualified System.IO as IO
+import qualified Text.Printf as Printf
 
 --------------------------------------------------------------------------------
 -- * Commands
@@ -23,11 +27,11 @@ import Data.Typeable
 data CMD exp a
   where
     -- ^ File management    (IOHandler in Haskell)
-    Open  :: FilePath         -> CMD exp Ptr -- todo: allow specifying read/write mode
-    Close :: Ptr              -> CMD exp ()
-    Put   :: Ptr -> exp Float -> CMD exp ()
-    Get   :: Ptr              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
-    Eof   :: Ptr              -> CMD exp (exp Bool)
+    Open  :: FilePath            -> CMD exp Handle -- todo: allow specifying read/write mode
+    Close :: Handle              -> CMD exp ()
+    Put   :: Handle -> exp Float -> CMD exp ()
+    Get   :: Handle              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
+    Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
     InitRef :: TypeRep                    -> CMD exp (Ref (exp a))
@@ -36,9 +40,9 @@ data CMD exp a
     SetRef  :: Ref (exp a) -> exp a       -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
-    NewArr :: Num (exp n) => exp n -> exp a                -> CMD exp (Arr (exp a))
-    GetArr :: Num (exp n) => exp n          -> Arr (exp a) -> CMD exp (exp a)
-    SetArr :: Num (exp n) => exp n -> exp a -> Arr (exp a) -> CMD exp ()
+    NewArr :: Integral n => exp n -> exp a                -> CMD exp (Arr (exp a))
+    GetArr :: Integral n => exp n          -> Arr (exp a) -> CMD exp (exp a)
+    SetArr :: Integral n => exp n -> exp a -> Arr (exp a) -> CMD exp ()
 
     -- no new var. is assigned.
     UnsafeGetRef :: Ref (exp a) -> CMD exp (exp a)
@@ -54,17 +58,26 @@ data CMD exp a
     Break :: CMD exp ()
 
     -- ^ Misc.
-    Printf  :: String -> exp a -> CMD exp ()
+    Printf  :: Show a => String -> exp a -> CMD exp ()
     GetTime :: CMD exp (exp Double)
 
 -- |
-newtype Ptr   = Ptr {unPtr :: String} deriving Typeable
+data Handle
+    = HandleComp String
+    | HandleEval IO.Handle
+  deriving Typeable
 
 -- |
-newtype Ref a = Ref {unRef :: String} deriving Typeable
+data Ref a
+    = RefComp String
+    | RefEval (IORef a)
+  deriving Typeable
 
 -- |
-newtype Arr a = Arr {unArr :: String} deriving Typeable
+data Arr a
+    = ArrComp String
+    | ArrEval (IOArray Int a)
+  deriving Typeable
 
 --------------------------------------------------------------------------------
 -- ** User Interface
@@ -72,19 +85,19 @@ newtype Arr a = Arr {unArr :: String} deriving Typeable
 --------------------------------------------------------------------------------
 -- *** File Handling
 
-open :: FilePath -> Program (CMD exp) Ptr
+open :: FilePath -> Program (CMD exp) Handle
 open = singleton . Open
 
-close :: Ptr -> Program (CMD exp) ()
+close :: Handle -> Program (CMD exp) ()
 close = singleton . Close
 
-fput :: Ptr -> exp Float -> Program (CMD exp) ()
+fput :: Handle -> exp Float -> Program (CMD exp) ()
 fput p = singleton . Put p
 
-fget :: Ptr -> Program (CMD exp) (exp Float)
+fget :: Handle -> Program (CMD exp) (exp Float)
 fget = singleton . Get
 
-feof :: Ptr -> Program (CMD exp) (exp Bool)
+feof :: Handle -> Program (CMD exp) (exp Bool)
 feof = singleton . Eof
 
 --------------------------------------------------------------------------------
@@ -108,15 +121,15 @@ modifyRef r f = getRef r >>= setRef r . f
 --------------------------------------------------------------------------------
 -- *** Arrays
 
-newArr :: (Num (exp n), VarPred exp a)
+newArr :: (Integral n, VarPred exp a)
     => exp n -> exp a -> Program (CMD exp) (Arr (exp a))
 newArr n = singleton . NewArr n
 
-getArr :: (Num (exp n), VarPred exp a)
+getArr :: (Integral n, VarPred exp a)
     => exp n -> Arr (exp a) -> Program (CMD exp) (exp a)
 getArr n = singleton . GetArr n
 
-setArr :: (Num (exp n), VarPred exp a)
+setArr :: (Integral n, VarPred exp a)
     => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
 setArr n a = singleton . SetArr n a
 
@@ -147,7 +160,7 @@ while b t = singleton $ While b t
 break :: Program (CMD exp) ()
 break = singleton Break
 
-printf :: String -> exp a -> Program (CMD exp) ()
+printf :: Show a => String -> exp a -> Program (CMD exp) ()
 printf format = singleton . Printf format
 
 getTime :: Program (CMD exp) (exp Double)
@@ -172,5 +185,65 @@ mkFunction fun body = singleton $ Function fun body
 -- * Run Functions
 --------------------------------------------------------------------------------
 
-runCMD :: (EvalExp exp, LitPred exp Float) => CMD exp a -> IO a
-runCMD = undefined
+readWord :: IO.Handle -> IO String
+readWord h = return "34"
+readWord h = do
+    eof <- IO.hIsEOF h
+    if eof
+      then return ""
+      else do
+          c  <- IO.hGetChar h
+          cs <- readWord h
+          return (c:cs)
+
+runCMD :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => CMD exp a -> IO a
+
+runCMD (Open path)            = fmap HandleEval $ IO.openFile path IO.ReadWriteMode
+runCMD (Close (HandleEval h)) = IO.hClose h
+runCMD (Put (HandleEval h) a) = IO.hPrint h (evalExp a)
+runCMD (Get (HandleEval h))   = do
+    w <- readWord h
+    case reads w of
+        [(f,"")] -> return $ litExp f
+        _        -> error "runCMD: Get: no parse"
+runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
+
+runCMD (InitRef _)            = fmap RefEval $ newIORef (error "Reading uninitialized reference")
+runCMD (NewRef _ a)           = fmap RefEval $ newIORef a
+runCMD (GetRef _ (RefEval r)) = readIORef r
+runCMD (SetRef (RefEval r) a) = writeIORef r a
+
+runCMD (NewArr i a)               = fmap ArrEval $ newArray (0, fromIntegral (evalExp i) - 1) a
+runCMD (GetArr i (ArrEval arr))   = readArray arr (fromIntegral (evalExp i))
+runCMD (SetArr i a (ArrEval arr)) = writeArray arr (fromIntegral (evalExp i)) a
+
+runCMD (UnsafeGetRef (RefEval r)) = readIORef r
+
+runCMD (If c t f) = do
+    c' <- runProgram c
+    if evalExp c'
+      then runProgram t
+      else runProgram f
+
+runCMD (While cond body) = do
+    cond' <- runProgram cond
+    if evalExp cond'
+      then runProgram body >> runCMD (While cond body)
+      else return ()
+
+runCMD Break = error "runCMD: Break not implemented"
+
+runCMD (Printf format a) = Printf.printf format (show $ evalExp a)
+
+-- runCMD (Close _) = error "SDF"
+-- runCMD (Put _ _) = error "SDF"
+-- runCMD (Get _) = error "SDF"
+-- runCMD (GetRef _ _) = error "SDF"
+-- runCMD (SetRef _ _) = error "SDF"
+-- runCMD (UnsafeGetRef _) = error "SDF"
+
+
+
+runProgram :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => Program (CMD exp) a -> IO a
+runProgram = interpretWithMonad runCMD
+
