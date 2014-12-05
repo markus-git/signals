@@ -123,8 +123,12 @@ setArr n a = singleton . SetArr n a
 ----------------------------------------
 -- Unsafe
 
+-- | Like 'getRef' but assumes that the reference will not be modified later in the program
 unsafeGetRef :: VarPred exp a => Ref (exp a) -> Program (CMD exp) (exp a)
 unsafeGetRef = singleton . UnsafeGetRef
+  -- TODO It would be possible to make a conservative analysis to find out if uses of `unsafeGetRef`
+  --      are safe. Even better, the compiler could automatically treat `getRef` as `unsafeGetRef`
+  --      whenever possible.
 
 --------------------------------------------------------------------------------
 -- **
