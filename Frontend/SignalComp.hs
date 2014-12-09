@@ -194,8 +194,10 @@ compileGraph (Graph nodes root) buffers input = do
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ " in " ++ show buffers
-            (Var v) <- getBuff' buff i :: Program (CMD Expr) (Expr a)
-            return $ toDyn $ (RefComp v :: Ref (Expr a))
+            r <- getBuff' buff i :: Program (CMD Expr) (Expr a)
+            case r of
+              (Var v) -> return $ toDyn $ (RefComp v :: Ref (Expr a))
+              _       -> newRef r >>= return . toDyn
 
           (TDelay v s) -> do
              -- Make global
