@@ -194,7 +194,7 @@ compileGraph (Graph nodes root) buffers input = do
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ " in " ++ show buffers
-            r <- getBuff' buff i :: Program (CMD Expr) (Expr a)
+            r <- getBuff buff i :: Program (CMD Expr) (Expr a)
             case r of
               (Var v) -> return $ toDyn $ (RefComp v :: Ref (Expr a))
               _       -> newRef r >>= return . toDyn
@@ -262,9 +262,8 @@ compileGraph (Graph nodes root) buffers input = do
 
 -- |
 data Buffer a = Buffer
-  { getBuff' :: Expr Int -> Program (CMD Expr) (Expr a)
-  , getBuff  ::             Program (CMD Expr) (Expr a) -- testing
-  , putBuff  :: Expr a   -> Program (CMD Expr) ()
+  { getBuff :: Expr Int -> Program (CMD Expr) (Expr a)
+  , putBuff :: Expr a   -> Program (CMD Expr) ()
   }
 
 instance Show (Buffer a) where show _ = "buffer"
@@ -273,22 +272,19 @@ newBuff :: Expr Int -> Expr a -> Prg (Buffer a)
 newBuff size init = do
   arr <- newArr size init
   ir  <- newRef 0
-  let get' j = do
+  let get j = do
         i <- unsafeGetRef ir
-        getArr ((i + (size - j)) `mod` size) arr
-  let get = do
-        i <- unsafeGetRef ir
-        todo
+        getArr ((i + (size - j - 1)) `mod` size) arr
   let put a = do
         i <- unsafeGetRef ir
         setArr i a arr
-        iff (return $ eq i (size-1))
+        iff (return $ eq i (size - 1))
             (setRef ir 0)
-            (setRef ir (i+1))
-  return $ Buffer get' get put
+            (setRef ir (i + 1))
+  return $ Buffer get put
 
 getBufferAt :: Expr Int -> Buffer a -> Prg (Expr a)
-getBufferAt = flip getBuff'
+getBufferAt = flip getBuff
 
 putBuffer :: Expr a -> Buffer a -> Prg ()
 putBuffer = flip putBuff
@@ -403,40 +399,3 @@ s2r (Pair l r)  = do
   l' <- s2r l
   r' <- s2r r
   return $ Pair' l' r'
-
---------------------------------------------------------------------------------
--- Testing
---------------------------------------------------------------------------------
-
-fir :: [Expr Float] -> Sig Float -> Sig Float
-fir as = sums . muls as . delays ds
-  where
-    ds = replicate (length as) 0
-
-iir :: [Expr Float] -> [Expr Float] -> Sig Float -> Sig Float
-iir as bs s = o
-  where
-    u = fir bs  s
-    l = fir as' o  where as' = map negate as
-    o = u + l
-
-sums :: [Sig Float] -> Sig Float
-sums = foldr1 (+)
-
-muls :: [Expr Float] -> [Sig Float] -> [Sig Float]
-muls as = zipWith (*) (map Sig.repeat as)
-
-delays :: [Expr Float] -> Sig Float -> [Sig Float]
-delays as s = tail $ scanl (flip Sig.delay) s as
-
-tGraph :: IO (Graph TSignal)
-tGraph = reifyGraph $ iir [1.1, 1.2, 1.3] [2.1, 2.2, 2.3]
-
--- chains : Ok
-
-tBuffer = do
-  (Graph gnodes groot) <- tGraph
-  let c = chains gnodes
-  putStrLn $  "-------\n"
-  putStrLn $ "d : " ++ (show gnodes) ++ "\n"
-  putStrLn $ "c : " ++ (show c)      ++ "\n"
