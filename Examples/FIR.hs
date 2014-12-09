@@ -80,6 +80,9 @@ main = do
     code <- test
     writeFile "fir.c" $ show code
 
+runFIR :: IO ()
+runFIR = testF >>= runProgram
+
 testF :: IO (Program (CMD Expr) ())
 testF = do
   prg <- SC.compile (iir [1.1, 1.2, 1.3] [2.1, 2.2, 2.3])
