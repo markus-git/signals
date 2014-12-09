@@ -199,12 +199,24 @@ compileGraph (Graph nodes root) buffers input = do
               (Var v) -> return $ toDyn $ (RefComp v :: Ref (Expr a))
               _       -> newRef r >>= return . toDyn
 
-          (TDelay v s) -> do
-             -- Make global
-            r <- newRef $ litExp True
-            r <- newRef $ v
+          (TDelay (d :: Expr t0) s) -> do
+             -- Make global first ref
 
-            error "I'm testing delay chains, so why are you here?.."
+            r <- initRef :: Prg (Ref (Expr t0))
+            p <- initRef :: Prg (Ref (Expr t0))
+            o <- initRef :: Prg (Ref (Expr t0))
+
+            vr   <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0))
+            next <- getRef vr
+
+            iff (return $ litExp $ True)
+                (do setRef p next
+                    setRef o d)
+                (do prev <- getRef p
+                    setRef o prev
+                    setRef p next)
+
+            return $ toDyn o
 
     compileStruct :: Node -> Map Id Dynamic -> Prg Ex
     compileStruct (i, n) m = case n of
