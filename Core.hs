@@ -186,7 +186,6 @@ mkFunction fun body = singleton $ Function fun body
 --------------------------------------------------------------------------------
 
 readWord :: IO.Handle -> IO String
-readWord h = return "34"
 readWord h = do
     eof <- IO.hIsEOF h
     if eof
