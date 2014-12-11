@@ -90,8 +90,9 @@ testF = do
     inp  <- open "input"
     outp <- open "output"
     let (Stream init) = prg $ do
-          i <- fget inp
-          iff (feof inp) break (return ())
+          i     <- fget inp
+          isEOF <- feof inp
+          iff isEOF break (return ())
             -- Apparently EOF can only be detected after one has tried to read past the end
           return i
     let setty = fput outp

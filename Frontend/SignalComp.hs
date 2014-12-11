@@ -209,7 +209,7 @@ compileGraph (Graph nodes root) buffers input = do
             vr   <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0))
             next <- getRef vr
 
-            iff (return $ litExp $ True)
+            iff (litExp $ True)
                 (do setRef p next
                     setRef o d)
                 (do prev <- getRef p
@@ -282,7 +282,7 @@ newBuff size init = do
   let put a = do
         i <- unsafeGetRef ir
         setArr i a arr
-        iff (return $ eq i (size-1))
+        iff (eq i (size-1))
             (setRef ir 0)
             (setRef ir (i+1))
   return $ Buffer get' get put
