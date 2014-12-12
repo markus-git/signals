@@ -52,8 +52,8 @@ data TSignal r
                -> TSignal r
 
     -- ^ Buffers
-    TVBuff  :: r -> (r, TSignal r) -> TSignal r
-    TDBuff  :: Expr Int -> r -> TSignal r
+    TVBuff  :: r ->             TSignal r
+    TDBuff  :: r -> Expr Int -> TSignal r
   deriving Typeable
 
 --------------------------------------------------------------------------------
@@ -118,3 +118,6 @@ instance Show (TSignal Unique) where
     (TSnd s)     -> "snd. " ++ show s
 
     (TDelay _ s) -> "delay. " ++ show s
+
+    (TVBuff r)    -> "vbuff ." ++ show r
+    (TDBuff r _)  -> "dbuff ." ++ show r

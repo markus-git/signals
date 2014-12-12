@@ -103,8 +103,6 @@ zipWith :: (Typeable a, Typeable b, Typeable c)
           -> Sig c
 zipWith f = curry $ lift $ uncurry f
 
-----------------------------------------
-
 delay :: (Typeable a) => Expr a -> Sig a -> Sig a
 delay e = Sig . Delay e . unSig
 
@@ -138,6 +136,9 @@ instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
     atan  = todo; acos  = todo; sinh    = todo;
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
+
+--------------------------------------------------------------------------------
+-- ** New Instnances
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals

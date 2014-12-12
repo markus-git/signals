@@ -61,6 +61,7 @@ compile f = do
   g <- reifyGraph f
   return $ \i -> Stream $ do
     (b, g') <- delayChains g
+--    error $ show g'
     return $ compileGraph g' b i
 
 --------------------------------------------------------------------------------
@@ -161,13 +162,13 @@ compileGraph (Graph nodes root) buffers input = do
 
             return $ toDyn y
 
-          (TVBuff s n) -> do
+          (TVBuff s) -> do
             let buff = case M.lookup s buffers of
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
                                          ++ "in " ++ show buffers
 
-            n' <- compileNode n m :: Program (CMD Expr) Dynamic
+            n' <- load' s m
 
             let x :: Maybe (Ref (Expr a))
                 x = fromDynamic n'
@@ -189,7 +190,7 @@ compileGraph (Graph nodes root) buffers input = do
                                   (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
                                   _       -> newRef v >>= return . toDyn
 
-          (TDBuff i s) -> do
+          (TDBuff s i) -> do
             let buff = case M.lookup s buffers of
                          Just b  -> b
                          Nothing -> error $ "couldn't find buffer: " ++ show s
@@ -274,7 +275,7 @@ newBuff size init = do
   ir  <- newRef 0
   let get j = do
         i <- unsafeGetRef ir
-        getArr ((i + (size - j - 2)) `mod` size) arr
+        getArr ((i + (size - j - 1)) `mod` size) arr
   let put a = do
         i <- unsafeGetRef ir
         setArr i a arr
@@ -282,12 +283,6 @@ newBuff size init = do
             (setRef ir 0)
             (setRef ir (i + 1))
   return $ Buffer get put
-
-getBufferAt :: Expr Int -> Buffer a -> Prg (Expr a)
-getBufferAt = flip getBuff
-
-putBuffer :: Expr a -> Buffer a -> Prg ()
-putBuffer = flip putBuff
 
 --------------------------------------------------------------------------------
 -- *** Finding buffers
@@ -300,6 +295,8 @@ delayChains (Graph gnodes groot) = do
     (chains, buffers) <- fmap unzip $ buffer $ chains gnodes
     let nodes = update chains gnodes
         maps  = M.fromList $ zip (map (fst . head) chains) buffers
+                  -- buffers are given the same id as the first delay in the chain
+
     return (maps, Graph nodes groot)
 
 chains :: [Node] -> [Chain]
@@ -323,27 +320,51 @@ buffer :: (Typeable a) => [Chain] -> Prg [(Chain, Buffer a)]
 buffer chains = sequence $ fmap (create . update) chains
   where
     update :: (Typeable a) => Chain -> (Chain, [Expr a])
-    update (x@(u, _):xs) =
-        let (chain, delays) = unzip $ snd $ mapAccumL f 1 xs
-         in ((u, TVBuff u x) : chain, delays)
-      where f n (i, TDelay a _) = (n + 1, ( (i, TDBuff n u)
-                                          , case cast a of
-                                              Just x  -> x
-                                              Nothing -> error "typ buff err."))
+    update ((u, _):xs) =
+          -- I assume that a ref for u will exists when we get to the TVBuff node
+          -- -u: hack to get unique id, since u is unique and its domain is >=0
+        let (chain, delays) = unzip $ snd $ mapAccumL updateNode 1 xs
+         in ((-u, TVBuff u) : chain, delays)
+      where
+        updateNode :: (Typeable a) => Expr Int -> Node -> (Expr Int, (Node, Expr a))
+        updateNode n (i, TDelay a _) =
+            (n + 1, ((i, TDBuff (-u) n), fromJust $ cast a))
 
     create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
     create (ns, as) = do
+        -- assumes that each value of as is the same
       buff <- newBuff (Val $ length as + 1) (head as)
       return (ns, buff)
 
 update :: [Chain] -> [Node] -> [Node]
-update = flip $ foldr (flip $ foldr replace)
+update chains ns =
+    let (vars, delays) = fmap (updateDelays ns) $ split chains
+     in delays ++ vars -- the order of things doesn't matter here
   where
+      -- safe head
+    split :: [[Node]] -> ([Node], [Chain])
+    split = foldr (\(x,y) -> fmap'' (x:) (y:)) ([],[])
+         . map (fmap' head . splitAt 1)
+
+    updateDelays :: [Node] -> [Chain] -> [Node]
+    updateDelays = foldr (flip $ foldr replace)
+
+      -- I assume that nodes have a unique id
     replace :: Node -> [Node] -> [Node]
     replace _ [] = []
     replace y (x:xs)
       | fst y == fst x = y : xs
       | otherwise      = x : replace y xs
+
+swap :: (a, b) -> (b, a)
+swap (a, b) = (b, a)
+
+fmap' :: (a -> c) -> (a, b) -> (c, b)
+fmap' f p = swap $ fmap f (swap p)
+
+fmap'' :: (a -> c) -> (b -> d) -> (a, b) -> (c, d)
+fmap'' f g = fmap' f . fmap g
+             -- this is one of those arrow operators
 
 --------------------------------------------------------------------------------
 -- Stuff I'm note sure about yet
@@ -399,3 +420,5 @@ s2r (Pair l r)  = do
   l' <- s2r l
   r' <- s2r r
   return $ Pair' l' r'
+
+--------------------------------------------------------------------------------
