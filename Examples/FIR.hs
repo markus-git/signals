@@ -55,7 +55,7 @@ muls :: [Expr Float] -> [Sig Float] -> [Sig Float]
 muls as = zipWith (*) (map S.repeat as)
 
 delays :: [Expr Float] -> Sig Float -> [Sig Float]
-delays as s = tail $ scanl (flip S.delay) s as
+delays as s = scanl (flip S.delay) s as
 
 --------------------------------------------------------------------------------
 -- * IIR Filter Examples
@@ -65,7 +65,7 @@ iir :: [Expr Float] -> [Expr Float] -> Sig Float -> Sig Float
 iir as bs s = o
   where
     u = fir bs  s
-    l = fir as' o  where as' = map negate as
+    l = fir as' $ S.delay 0 o  where as' = map negate as
     o = u + l
 
 --------------------------------------------------------------------------------
