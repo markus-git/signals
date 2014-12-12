@@ -48,7 +48,7 @@ data CMD exp a
     UnsafeGetRef :: Ref (exp a) -> CMD exp (exp a)
 
     -- ^ Control structures | Todo: Move to seperate data class
-    If :: Program (CMD exp) (exp Bool)
+    If :: exp Bool
        -> Program (CMD exp) ()
        -> Program (CMD exp) ()
        -> CMD exp ()
@@ -146,7 +146,7 @@ unsafeGetRef = singleton . UnsafeGetRef
 --------------------------------------------------------------------------------
 -- **
 
-iff :: Program (CMD exp) (exp Bool)
+iff :: exp Bool
     -> Program (CMD exp) ()
     -> Program (CMD exp) ()
     -> Program (CMD exp) ()
@@ -218,11 +218,9 @@ runCMD (SetArr i a (ArrEval arr)) = writeArray arr (fromIntegral (evalExp i)) a
 
 runCMD (UnsafeGetRef (RefEval r)) = readIORef r
 
-runCMD (If c t f) = do
-    c' <- runProgram c
-    if evalExp c'
-      then runProgram t
-      else runProgram f
+runCMD (If c t f)
+    | evalExp c = runProgram t
+    | otherwise = runProgram f
 
 runCMD (While cond body) = do
     cond' <- runProgram cond

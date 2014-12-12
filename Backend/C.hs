@@ -238,15 +238,14 @@ compCMD' (UnsafeGetRef (RefComp ref)) = return $ Var ref
 
 -- ^ Control structures
 compCMD' (If b t f) = do
-  b'  <- compile b  :: C (Expr Bool)
-  b'' <- compExp b' :: C C.Exp
+  b' <- compExp b :: C C.Exp
 
   ct <- inNewBlock_ $ compile t
   cf <- inNewBlock_ $ compile f
 
   case null cf of
-    True  -> addStm [cstm| if ($(b'')) {$items:ct} |]
-    False -> addStm [cstm| if ($(b'')) {$items:ct} else {$items:cf} |]
+    True  -> addStm [cstm| if ($(b')) {$items:ct} |]
+    False -> addStm [cstm| if ($(b')) {$items:ct} else {$items:cf} |]
   return ()
 compCMD' (While b t) = do
   b'  <- compile b  :: C (Expr Bool)
