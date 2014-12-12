@@ -191,7 +191,7 @@ compileGraph (Graph nodes root) buffers input = do
 
           (TDBuff s i) -> do
             let buff = fromJust $ M.lookup s buffers
-            v <- getBuff buff i :: Program (CMD Expr) (Expr a)
+            v <- getBuff buff (i-1) :: Program (CMD Expr) (Expr a)
             r <- newRef' v
             return (toDyn r, m)
 
@@ -345,7 +345,7 @@ buffer chains = sequence $ fmap (create . update) chains
     create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
     create (ns, as) = do
         -- assumes that each value of as is the same
-      buff <- newBuff (Val $ length as + 1) (head as)
+      buff <- newBuff (Val $ length as) (head as)
       return (ns, buff)
 
 update :: [Chain] -> [Node] -> [Node]
