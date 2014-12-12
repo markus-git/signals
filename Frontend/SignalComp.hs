@@ -85,6 +85,8 @@ findNode nodes i = find ((==) i . P.fst) nodes
 --------------------------------------------------------------------------------
 -- Nothing to see here citizen, move along.
 
+type Maps = Map Id Dynamic
+
 -- ToDo: Change how references are handeled
 -- ToDo: Reader, Writer compiler
 -- ToDo: Some other restriction than "Any" on Expr will lead to problems..
@@ -95,7 +97,9 @@ compileGraph :: forall a b . (Typeable a, Typeable b)
              -> Pro a
              -> Pro b
 compileGraph (Graph nodes root) buffers input = do
-    d <- compileNode (fromJust $ findNode nodes root) M.empty
+    (d, m') <- compileNode (fromJust $ findNode nodes root) M.empty
+
+    mapM (\n -> compileNode n m' >>= \(p, _) -> return p) (filter ((<0) . fst) nodes)
 
     let x :: Maybe (Ref (Expr b))
         x = fromDynamic d
@@ -104,26 +108,25 @@ compileGraph (Graph nodes root) buffers input = do
         y = fromDynamic d
 
     case (x, y) of
-      (Just r, _) -> getRef r
-      (_, Just s) -> case s of (Leaf v) -> return v
-      (_, _) -> error $ show $ dynTypeRep d
+      (Just r, _)        -> getRef r
+      (_, Just (Leaf s)) -> return s
   where
-    compileNode :: Node -> Map Id Dynamic -> Prg Dynamic
+      -- ToDo: I really need to have a linker stage, this is a hack to get
+      --       things running...
+    compileNode :: Node -> Map Id Dynamic -> Prg (Dynamic, Map Id Dynamic)
     compileNode (i, n) m
-      | Just d <- M.lookup i m = return d
+      | Just d <- M.lookup i m = return (d, m)
       | otherwise              = case n of
           (TVar) -> do
             v <- input
-            case v of
-              (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
-              _       -> do r <- newRef v
-                            return $ toDyn r
+            r <- newRef' v
+            return (toDyn r, add i (toDyn r) m)
 
-            -- If I make "Proxy t -> Proxy (Expr t)" then functions
+            -- If I make "Proxy t" into "Proxy (Expr t)" then functions
             -- will be limited, more so than for TConst and TLift
           (TLambda (_ :: Proxy t) s u) -> do
-            s' <- load s m
-            u' <- load u $ add s s' m
+            (s', m')  <- load s m
+            (u', m'') <- load u m'
 
             -- the proxy type "t" here represents the desired return value
             -- of the function. Which will either be a reference to such a
@@ -135,40 +138,40 @@ compileGraph (Graph nodes root) buffers input = do
                 y = fromDynamic u'
 
             case (x, y) of
-              (Just r, _) -> return $ toDyn r
-              (_, Just r) -> return $ toDyn r
+              (Just r, _) -> return (toDyn r, m'')
+              (_, Just r) -> return (toDyn r, m'')
 
+
+            -- I'm hoping no one will reference a const node...
           (TConst s) -> do
             s' <- Str.runStream s
             r  <- newRef s'
-            return $ toDyn r
-
+            return (toDyn r, m)
           (TLift (f :: Stream (Expr t0) -> Stream (Expr t1)) s) -> do
-            r  <- initRef                     :: Prg (Ref (Expr t1))
-            s' <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0))
-            v  <- Str.runStream $ f $ Str.Stream $ return $ getRef s'
+            r        <- initRef                     :: Prg (Ref (Expr t1))
+            (s', m') <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0), Maps)
+            v        <- Str.runStream $ f $ Str.Stream $ return $ getRef s'
             setRef r v
-            return $ toDyn r
+            return (toDyn r, m')
+
 
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
-            Ex r <- compileStruct (find s) m
-            s'   <- r2s r
+            (Ex r, m') <- compileStruct (find s) m
+            s'         <- r2s r
+            -- hm... do I still need the convice it that s' is typeable?
+            case ws s' of
+              Wt -> do let x   = f $ fromJust $ cast s'
+                           m'' = add i (toDyn x) m'
+                       return (toDyn x, m'')
 
-            -- hm...
-            let y = case ws s' of
-                      Wt -> case cast s' of
-                              Just x  -> f x
-                              Nothing -> error "!"
-
-            return $ toDyn y
 
           (TVBuff s) -> do
-            let buff = case M.lookup s buffers of
-                         Just b  -> b
-                         Nothing -> error $ "couldn't find buffer: " ++ show s
-                                         ++ "in " ++ show buffers
-
-            n' <- load' s m
+            let buff = fromJust  $ M.lookup i buffers
+            let n'   = case M.lookup s m of
+                         Just x  -> x
+                         Nothing -> error $ "\ncouldn't find node " ++ show s ++
+                                             "\nin map \n" ++ show m ++
+                                             "\nor in graph \n" ++ show nodes
 
             let x :: Maybe (Ref (Expr a))
                 x = fromDynamic n'
@@ -176,40 +179,32 @@ compileGraph (Graph nodes root) buffers input = do
             let y :: Maybe (Struct (Expr a))
                 y = fromDynamic n'
 
-
             case (x, y) of
               (Just r, _) -> do v <- getRef r
                                 putBuff buff v
-                                case v of
-                                  (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
-                                  _       -> newRef v >>= return . toDyn
-              (_, Just s) -> do let v = case s of
-                                          (Leaf v) -> v
+                                r <- newRef' v
+                                return (toDyn r, m)
+              (_, Just s) -> do let v = case s of (Leaf v) -> v
                                 putBuff buff v
-                                case v of
-                                  (Var r) -> return $ toDyn (RefComp r :: Ref (Expr a))
-                                  _       -> newRef v >>= return . toDyn
+                                r <- newRef' v
+                                return (toDyn r, m)
 
           (TDBuff s i) -> do
-            let buff = case M.lookup s buffers of
-                         Just b  -> b
-                         Nothing -> error $ "couldn't find buffer: " ++ show s
-                                         ++ " in " ++ show buffers
-            r <- getBuff buff i :: Program (CMD Expr) (Expr a)
-            case r of
-              (Var v) -> return $ toDyn $ (RefComp v :: Ref (Expr a))
-              _       -> newRef r >>= return . toDyn
+            let buff = fromJust $ M.lookup s buffers
+            v <- getBuff buff i :: Program (CMD Expr) (Expr a)
+            r <- newRef' v
+            return (toDyn r, m)
+
 
           (TDelay (d :: Expr t0) s) -> do
-             -- Make global first ref
-
             r <- initRef :: Prg (Ref (Expr t0))
-            p <- initRef :: Prg (Ref (Expr t0))
-            o <- initRef :: Prg (Ref (Expr t0))
+            p <- initRef -- values from previous iteration
+            o <- initRef -- current output value
+            (vr, m') <- load' s (add i (toDyn r) m)
+            next     <- getRef vr
 
-            vr   <- load' s (add i (toDyn r) m) :: Prg (Ref (Expr t0))
-            next <- getRef vr
-
+              -- if we could init global vars with a value we wouldn't
+              -- need this if statement
             iff (litExp $ True)
                 (do setRef p next
                     setRef o d)
@@ -217,29 +212,31 @@ compileGraph (Graph nodes root) buffers input = do
                     setRef o prev
                     setRef p next)
 
-            return $ toDyn o
+            return (toDyn o, m)
 
-    compileStruct :: Node -> Map Id Dynamic -> Prg Ex
+    compileStruct :: Node -> Map Id Dynamic -> Prg (Ex, Map Id Dynamic)
     compileStruct (i, n) m = case n of
           (TZip l r) -> do
-            Ex l' <- compileStruct (find l) m
-            Ex r' <- compileStruct (find r) m
-            return $ Ex $ Pair' l' r'
+            (Ex l', m')  <- compileStruct (find l) m
+            (Ex r', m'') <- compileStruct (find r) m'
+            return (Ex (Pair' l' r'), m'')
           (TFst l) -> do
-            Ex l' <- compileStruct (find l) m
+            (Ex l', m') <- compileStruct (find l) m
             case l' of
-              Pair' x _ -> return $ Ex x
+              Pair' x _ -> return (Ex x, m')
           (TSnd r) -> do
-            Ex r' <- compileStruct (find r) m
+            (Ex r', m') <- compileStruct (find r) m
             case r' of
-              Pair' _ x -> return $ Ex x
+              Pair' _ x -> return (Ex x, m')
           (TMap (f :: Struct t0 -> Struct t1) s) -> do
-            n' <- load' i m :: Prg (Struct t1)
-            r' <- s2r n'
-            return $ Ex r'
+            (n', m') <- load' i m :: Prg (Struct t1, Maps)
+            r'       <- s2r n'
+            return (Ex r', m')
           _  -> do
-            n' <- load' i m :: Prg (Ref (Expr Float))
-            return $ Ex $ Leaf' n'
+              -- I can't remember why I put Float here.. probably Typeable
+            (n', m') <- load' i m :: Prg (Ref (Expr Float), Maps)
+            return (Ex $ Leaf' n', m')
+
 
     find  :: Unique -> Node
     find  = fromJust . findNode nodes
@@ -247,12 +244,27 @@ compileGraph (Graph nodes root) buffers input = do
     add   :: Unique -> Dynamic -> Map Unique Dynamic -> Map Unique Dynamic
     add   = M.insertWith (P.flip P.const)
 
-    load  :: Unique -> Map Unique Dynamic -> Program (CMD Expr) Dynamic
+    load  :: Unique -> Map Unique Dynamic -> Prg (Dynamic, Map Unique Dynamic)
     load u m = P.flip compileNode m $ find u
 
-    load' :: Typeable n => Unique -> Map Unique Dynamic -> Program (CMD Expr) n
-    load' u m = (fromJust . fromDynamic) <$> load u m -- I'm a very brave man
+    load' :: Typeable n => Unique -> Map Unique Dynamic -> Prg (n, Map Unique Dynamic)
+    load' u m = do (d, m') <- load u m
+                   case fromDynamic d of
+                     Just n  -> return (n, m')
+                     Nothing -> error "type error"
 
+        -- (fromJust . fromDynamic) <$> load u m -- I'm a very brave man
+
+--------------------------------------------------------------------------------
+-- ...
+
+newRef' :: Typeable a => Expr a -> Prg (Ref (Expr a))
+newRef' (Var a) = return (RefComp a :: Ref (Expr a))
+newRef' x       = newRef x
+
+fromJust' :: Maybe a -> a
+fromJust' (Just a) = a
+fromJust' (Nothing) = error "!"
 
 --------------------------------------------------------------------------------
 -- * Optimization
