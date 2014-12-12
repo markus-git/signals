@@ -274,7 +274,7 @@ newBuff size init = do
   ir  <- newRef 0
   let get j = do
         i <- unsafeGetRef ir
-        getArr ((i + (size - j - 1)) `mod` size) arr
+        getArr ((i + (size - j - 2)) `mod` size) arr
   let put a = do
         i <- unsafeGetRef ir
         setArr i a arr
@@ -333,7 +333,7 @@ buffer chains = sequence $ fmap (create . update) chains
 
     create :: (Typeable a) => (Chain, [Expr a]) -> Prg (Chain, Buffer a)
     create (ns, as) = do
-      buff <- newBuff (Val $ length as) (head as)
+      buff <- newBuff (Val $ length as + 1) (head as)
       return (ns, buff)
 
 update :: [Chain] -> [Node] -> [Node]
