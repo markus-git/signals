@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE InstanceSigs         #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Frontend.Signal where
 
@@ -138,7 +139,22 @@ instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
     atanh = todo; acosh = todo; logBase = todo;
 
 --------------------------------------------------------------------------------
--- ** New Instnances
+-- ** Private Instances
+
+class Eqq e a
+  where
+    (===) :: e a -> e a -> e Bool
+    (/==) :: e a -> e a -> e Bool
+
+instance Eq a => Eqq Expr a
+  where
+    a === b = Eq a b
+    a /== b = Not $ Eq a b
+
+instance (Typeable a, Eq a) => Eqq Sig a
+  where
+    a === b = zipWith (Eq) a b
+    a /== b = zipWith (\b -> Not . Eq b) a b
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
