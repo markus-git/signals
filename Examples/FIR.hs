@@ -62,11 +62,11 @@ delays as s = scanl (flip S.delay) s as
 --------------------------------------------------------------------------------
 
 iir :: [Expr Float] -> [Expr Float] -> Sig Float -> Sig Float
-iir as bs s = o
+iir (a:as) bs s = o
   where
-    u = fir bs  s
-    l = fir as' $ S.delay 0 o  where as' = map negate as
-    o = u + l
+    u = fir bs s
+    l = fir as $ S.delay 0 o
+    o = (1 / S.repeat a) * (u - l)
 
 --------------------------------------------------------------------------------
 
