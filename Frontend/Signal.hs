@@ -103,16 +103,12 @@ instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
 --------------------------------------------------------------------------------
 -- ** ...
 
-{-
-
 constS :: (Typeable a) => Str exp a -> Sig exp a
 constS = Sig . Const
 
 liftS :: (Typeable a, Typeable b)
       => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
 liftS f = Sig . Lift f . unSig
-
--}
 
 mapS :: (Typeable a, Typeable b)
      => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
