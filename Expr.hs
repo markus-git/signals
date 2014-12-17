@@ -126,20 +126,3 @@ lt l r = (LEq l r) `And` (Not $ Eq r l)
 
 gt :: Ord a => Expr a -> Expr a -> Expr Bool
 gt = flip lt
-
---------------------------------------------------------------------------------
--- * Trees over expressions
---------------------------------------------------------------------------------
-
-{- I don't know where to put these... -}
-
--- | 0-tuple value
-data Empty a
-  deriving Typeable
-
--- | ...
-data Struct a
-  where
-    Leaf :: Typeable a => Expr a -> Struct (Expr a)
-    Pair :: Struct a -> Struct b -> Struct (a, b)
-  deriving Typeable

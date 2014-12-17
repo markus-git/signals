@@ -4,7 +4,7 @@
 
 module Interpretation where
 
-import Expr (Expr, Struct, VarId)
+import Expr (Expr, VarId)
 
 import Data.Constraint
 
@@ -41,9 +41,6 @@ class CompExp m exp
 
     -- | Compilation of expressions
     compExp :: exp a -> m Exp
-
-    -- |
-    compSExp :: Struct a -> m Exp
 
 --------------------------------------------------------------------------------
 -- **

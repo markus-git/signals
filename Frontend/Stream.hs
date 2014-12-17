@@ -1,16 +1,17 @@
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-
+{-# LANGUAGE ConstraintKinds    #-}
 
 module Frontend.Stream where
 
-import Core (CMD)
-import Expr (Expr)
+import Core (CMD, newRef, getRef, setRef)
+import Interpretation (VarPred)
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Operational
+
 import Data.Typeable (Typeable)
 
 import Prelude (($))
@@ -20,11 +21,13 @@ import qualified Prelude as P
 -- * Streams
 --------------------------------------------------------------------------------
 
--- todo: abstract over expr
-
-data Stream a
+-- | ...
+data Stream exp a
   where
-    Stream :: Program (CMD Expr) (Program (CMD Expr) a) -> Stream a
+    Stream :: Program (CMD exp) (Program (CMD exp) a) -> Stream exp a
+
+-- | ...
+type Str exp a = Stream exp (exp a)
 
 --------------------------------------------------------------------------------
 -- ** Instances
@@ -32,18 +35,23 @@ data Stream a
 deriving instance Typeable Stream
 
 --------------------------------------------------------------------------------
--- ** User Interface
+-- * User Interface
+--------------------------------------------------------------------------------
 
-repeat :: expr a -> Stream (expr a)
+--------------------------------------------------------------------------------
+-- ** Combinatorial functions
+
+-- | creates and infinite stream by repeating @a@
+repeat :: exp a -> Str exp a
 repeat a = Stream $ return $ return a
 
-map :: (expr a -> expr b) -> Stream (expr a) -> Stream (expr b)
+-- | point-wise transform each value produced with @f@
+map :: (exp a -> exp b) -> Str exp a -> Str exp b
 map f (Stream init) = Stream $ fmap (fmap f) init
 
-zipWith :: (expr a -> expr b -> expr c)
-        -> Stream (expr a)
-        -> Stream (expr b)
-        -> Stream (expr c)
+-- | joined two streams using @f@ to merge produced elements
+zipWith :: (exp a -> exp b -> exp c)
+        -> Str exp a -> Str exp b -> Str exp c
 zipWith f (Stream init1) (Stream init2) = Stream $ do
   next1 <- init1
   next2 <- init2
@@ -53,7 +61,22 @@ zipWith f (Stream init1) (Stream init2) = Stream $ do
     return $ f a b
 
 --------------------------------------------------------------------------------
+-- ** Sequential functions
+
+-- | preappend @a@ to input stream
+delay :: (Typeable a, VarPred exp a)
+      => exp a -> Str exp a -> Str exp a
+delay a (Stream init) = Stream $ do
+  next <- init
+  r    <- newRef a
+  return $ do
+    o <- getRef r
+    v <- next
+    setRef r v
+    return o
+
+--------------------------------------------------------------------------------
 -- ** Run Functions
 
-runStream :: Stream a -> Program (CMD Expr) a
-runStream (Stream init) = join init
+run :: Stream exp a -> Program (CMD exp) a
+run (Stream init) = join init

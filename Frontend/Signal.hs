@@ -12,13 +12,16 @@
 
 module Frontend.Signal where
 
-import Expr
+---- todo: remove
+import Expr (Expr)
+----
+
 import Interpretation
 
-import           Frontend.Stream (Stream)
+import           Frontend.Stream (Stream, Str)
 import qualified Frontend.Stream as S
 
-import           Prelude hiding (fst, snd, zip, zipWith, map, repeat)
+import           Prelude (($), (.), id)
 import qualified Prelude as P
 
 import Data.Dynamic
@@ -28,87 +31,44 @@ import Data.Typeable
 -- *
 --------------------------------------------------------------------------------
 
--- |
-data Signal a
+-- | ...
+data Signal exp a
   where
-    Const :: Typeable a
-            => Stream (Expr a)
-            -> Signal (Expr a)
+    -- ^ lifts consant streams into signals
+    Const :: Typeable a => Stream exp (exp a) -> Signal exp (Empty (exp a))
 
+    -- ^ lifts stream transformers into signal transformers, possibly state-full
     Lift  :: (Typeable a, Typeable b)
-            => (Stream (Expr a) -> Stream (Expr b))
-            -> (Signal (Expr a) -> Signal (Expr b))
+          => (Stream exp (exp a) -> Stream exp (exp b))
+          -> (Signal exp (Empty (exp a)) -> Signal exp (Empty (exp b)))
 
+    -- ^ ...
     Map   :: (Typeable a, Typeable b)
-            => (Struct a -> Struct b)
-            -> (Signal a -> Signal b)
+          => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
 
-    Zip   :: (Typeable a, Typeable b) => Signal a      -> Signal b -> Signal (a, b)
-    Fst   :: (Typeable a)             => Signal (a, b)             -> Signal a
-    Snd   :: (Typeable b)             => Signal (a, b)             -> Signal b
+    -- ^ joins together two nodes
+    Zip   :: (Typeable a, Typeable b)
+          => Signal exp a -> Signal exp b -> Signal exp (a, b)
 
-    Delay :: (Typeable a) => Expr a -> Signal (Expr a) -> Signal (Expr a)
+    -- ^ breaks apart a signal of pairs, returning the first
+    Fst   :: Typeable a => Signal exp (a, b) -> Signal exp a
 
-    SVar  :: (Typeable a) => Dynamic -> Signal a
-  deriving Typeable
+    -- ^ breaks apart a signal of pairs, returning the first
+    Snd   :: Typeable b => Signal exp (a, b) -> Signal exp b
+
+    -- ^ prepends a value to the input signal
+    Delay :: Typeable a => exp a -> Signal exp (exp a) -> Signal exp (exp a)
+
+    -- ^ dummy argument used in observable sharing
+    SVar  :: Typeable a => Dynamic -> Signal exp a
 
 -- | ...
---
--- The use of Expr here is only temporary (due to a Typeable thingy),
--- with GHC >7.8.* exp can be in the type instead
-newtype Sig a = Sig {unSig :: Signal (Expr a)}
-
---------------------------------------------------------------------------------
--- ** "Smart" constructors
-
-constS :: (Typeable a)
-         => Stream (Expr a)
-         -> Sig a
-constS  = Sig . Const
-
-liftS  :: (Typeable a, Typeable b)
-         => (Stream (Expr a) -> Stream (Expr b))
-         -> (Sig a -> Sig b)
-liftS f = Sig . Lift f . unSig
-
-mapS   :: (Typeable a, Typeable b)
-         => (Struct a -> Struct b)
-         -> (Signal a -> Signal b)
-mapS    = Map
-
-zipS   :: (Typeable a, Typeable b) => Signal a -> Signal b -> Signal (a, b)
-zipS    = Zip
-
-fstS   :: (Typeable a) => Signal (a, b) -> Signal a
-fstS    = Fst
-
-sndS   :: (Typeable b) => Signal (a, b) -> Signal b
-sndS    = Snd
-
---------------------------------------------------------------------------------
--- ** User Interface
-
-repeat :: (Typeable a) => Expr a -> Sig a
-repeat = constS . S.repeat
-
-map :: (Typeable a, Typeable b)
-      => (Expr a -> Expr b)
-      -> Sig a
-      -> Sig b
-map f = liftS (S.map f)
-
-zipWith :: (Typeable a, Typeable b, Typeable c)
-          => (Expr a -> Expr b -> Expr c)
-          -> Sig a
-          -> Sig b
-          -> Sig c
-zipWith f = curry $ lift $ uncurry f
-
-delay :: (Typeable a) => Expr a -> Sig a -> Sig a
-delay e = Sig . Delay e . unSig
+newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 
 --------------------------------------------------------------------------------
 -- ** Instances
+
+{-
 
 instance (Show a, Typeable a, Num a, Eq a) => Num (Sig a)
   where
@@ -138,50 +98,76 @@ instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
 
+-}
+
 --------------------------------------------------------------------------------
--- ** Private Instances
+-- ** ...
 
-class Eqq e a
-  where
-    (===) :: e a -> e a -> e Bool
-    (/==) :: e a -> e a -> e Bool
+{-
 
-instance Eq a => Eqq Expr a
-  where
-    a === b = Eq a b
-    a /== b = Not $ Eq a b
+constS :: (Typeable a) => Str exp a -> Sig exp a
+constS = Sig . Const
 
-instance (Typeable a, Eq a) => Eqq Sig a
-  where
-    a === b = zipWith (Eq) a b
-    a /== b = zipWith (\b -> Not . Eq b) a b
+liftS :: (Typeable a, Typeable b)
+      => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
+liftS f = Sig . Lift f . unSig
+
+-}
+
+mapS :: (Typeable a, Typeable b)
+     => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
+mapS = Map
+
+--------------------------------------------------------------------------------
+-- ** User Interface
+--------------------------------------------------------------------------------
+
+{-
+
+repeat :: (Typeable a) => exp a -> Sig exp a
+repeat = constS . S.repeat
+
+map :: (Typeable a, Typeable b) => (exp a -> exp b) -> Sig exp a -> Sig exp b
+map f = liftS $ S.map f
+
+delay :: (Typeable a) => exp a -> Sig exp a -> Sig exp a
+delay e = Sig . Delay e . unSig
+
+-}
+
+zipWith :: (Typeable exp, Typeable a, Typeable b, Typeable c)
+        => (exp a -> exp b -> exp c) -> Sig exp a -> Sig exp b -> Sig exp c
+zipWith f = P.curry $ lift $ P.uncurry f
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
+--
+-- | All this to convert between tuples and zip pairs
 --------------------------------------------------------------------------------
 
--- {- All this to convert between tuples and zip pairs -}
-
 --------------------------------------------------------------------------------
--- *** Conversion between signals and tuples
+-- ** Conversion between signals and tuples
 
 class StructS a
   where
-    type Internal a
+    type Internal a :: *
+    type Domain   a :: * -> *
 
-    fromS :: a -> Signal (Internal a)
-    toS   :: Signal (Internal a) -> a
+    fromS :: a -> Signal (Domain a) (Internal a)
+    toS   :: Signal (Domain a) (Internal a) -> a
 
-instance StructS (Signal (Expr a))
+instance StructS (Signal exp (Empty (exp a)))
   where
-    type Internal (Signal (Expr a)) = Expr a
+    type Internal (Signal exp (Empty (exp a))) = Empty (exp a)
+    type Domain   (Signal exp (Empty (exp a))) = exp
 
     fromS = id
     toS   = id
 
-instance StructS (Sig a)
+instance StructS (Sig exp a)
   where
-    type Internal (Sig a) = Expr a
+    type Internal (Sig exp a) = Empty (exp a)
+    type Domain   (Sig exp a) = exp
 
     fromS = unSig
     toS   = Sig
@@ -190,27 +176,38 @@ instance ( Typeable (Internal a)
          , Typeable (Internal b)
          , StructS a
          , StructS b
+         , Domain a ~ Domain b
          )
     => StructS (a, b)
   where
     type Internal (a, b) = (Internal a, Internal b)
+    type Domain   (a, b) = Domain a
 
-    fromS (a, b) = zipS (fromS a) (fromS b)
-    toS p        = (toS (fstS p), toS (sndS p))
+    fromS (a, b) = Zip (fromS a) (fromS b)
+    toS    p     = (toS (Fst p), toS (Snd p))
 
 --------------------------------------------------------------------------------
--- *** Conversion between struct's and tuples
+-- ** Conversion between struct's and tuples
+
+-- | 0-tuple value
+data Empty a deriving Typeable
+
+-- | ...
+data Struct a
+  where
+    Leaf :: exp a -> Struct (Empty (exp a))
+    Pair :: Struct a -> Struct b -> Struct (a, b)
 
 class StructE a
   where
-    type Normal a
+    type Normal a :: *
 
     fromE :: Struct a -> Normal a
     toE   :: Normal a -> Struct a
 
-instance Typeable a => StructE (Expr a)
+instance StructE (Empty (exp a))
   where
-    type Normal (Expr a) = Expr a
+    type Normal (Empty (exp a)) = exp a
 
     fromE (Leaf a) = a
     toE a          = Leaf a
@@ -220,15 +217,16 @@ instance (StructE a, StructE b) => StructE (a, b)
     type Normal (a, b) = (Normal a, Normal b)
 
     fromE (Pair a b) = (fromE a, fromE b)
-    toE (a, b)       = Pair (toE a) (toE b)
+    toE   (a, b)     = Pair (toE a) (toE b)
 
 --------------------------------------------------------------------------------
--- *** The lifting operator
+-- ** Lifting operator
 
 lift
-  :: ( StructS            s1,  StructS            s2
-     , StructE  (Internal s1), StructE  (Internal s2)
+  :: ( StructS s1            , StructS s2
+     , StructE (Internal s1) , StructE (Internal s2)
      , Typeable (Internal s1), Typeable (Internal s2)
+     , Domain s1 ~ Domain s2
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapS (toE . f . fromE) . fromS
