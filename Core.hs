@@ -27,10 +27,10 @@ import qualified Text.Printf as Printf
 data CMD exp a
   where
     -- ^ File management    (IOHandler in Haskell)
-    Open  :: FilePath            -> CMD exp Handle -- todo: allow specifying read/write mode
+    Open  :: FilePath            -> CMD exp Handle
     Close :: Handle              -> CMD exp ()
     Put   :: Handle -> exp Float -> CMD exp ()
-    Get   :: Handle              -> CMD exp (exp Float) -- todo: generalize to arbitrary types
+    Get   :: Handle              -> CMD exp (exp Float)
     Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
@@ -243,4 +243,3 @@ runCMD (Printf format a) = Printf.printf format (show $ evalExp a)
 
 runProgram :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => Program (CMD exp) a -> IO a
 runProgram = interpretWithMonad runCMD
-

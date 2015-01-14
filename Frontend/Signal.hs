@@ -1,27 +1,28 @@
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE InstanceSigs         #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Frontend.Signal where
-
----- todo: remove
-import Expr (Expr)
-----
 
 import Interpretation
 
 import           Frontend.Stream (Stream, Str)
 import qualified Frontend.Stream as S
 
-import           Prelude (($), (.), id)
+import           Prelude ( ($), (.), id
+                         , Num, (+), (-), (*), fromInteger
+                         , Fractional, (/), fromRational
+                         , Floating, (**), pi, sin
+                         , Eq
+                         , Show)
 import qualified Prelude as P
 
 import Data.Dynamic
@@ -53,14 +54,17 @@ data Signal exp a
     -- ^ breaks apart a signal of pairs, returning the first
     Fst   :: Typeable a => Signal exp (a, b) -> Signal exp a
 
-    -- ^ breaks apart a signal of pairs, returning the first
+    -- ^ breaks apart a signal of pairs, returning the second
     Snd   :: Typeable b => Signal exp (a, b) -> Signal exp b
 
     -- ^ prepends a value to the input signal
-    Delay :: Typeable a => exp a -> Signal exp (exp a) -> Signal exp (exp a)
+    Delay :: Typeable a
+          => exp a -> Signal exp (Empty (exp a)) -> Signal exp (Empty (exp a))
 
     -- ^ dummy argument used in observable sharing
     SVar  :: Typeable a => Dynamic -> Signal exp a
+
+  deriving (Typeable)
 
 -- | ...
 newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
@@ -68,9 +72,9 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 --------------------------------------------------------------------------------
 -- ** Instances
 
-{-
+class (VarPred exp a, Typeable exp, Typeable a) => Typ exp a
 
-instance (Show a, Typeable a, Num a, Eq a) => Num (Sig a)
+instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -79,14 +83,14 @@ instance (Show a, Typeable a, Num a, Eq a) => Num (Sig a)
 
     abs = todo; signum = todo;
 
-instance (Show a, Typeable a, Fractional a, Eq a) => Fractional (Sig a)
+instance (Typ exp a, Fractional (exp a), Eq (exp a)) => Fractional (Sig exp a)
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
+instance (Typ exp a, Floating (exp a), Eq (exp a)) => Floating (Sig exp a)
   where
     pi   = repeat pi
     sin  = map sin
@@ -98,7 +102,8 @@ instance (Show a, Typeable a, Floating a, Eq a) => Floating (Sig a)
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
 
--}
+
+todo = P.error "unsupported operation"
 
 --------------------------------------------------------------------------------
 -- ** ...
@@ -118,8 +123,6 @@ mapS = Map
 -- ** User Interface
 --------------------------------------------------------------------------------
 
-{-
-
 repeat :: (Typeable a) => exp a -> Sig exp a
 repeat = constS . S.repeat
 
@@ -129,10 +132,9 @@ map f = liftS $ S.map f
 delay :: (Typeable a) => exp a -> Sig exp a -> Sig exp a
 delay e = Sig . Delay e . unSig
 
--}
-
 zipWith :: (Typeable exp, Typeable a, Typeable b, Typeable c)
-        => (exp a -> exp b -> exp c) -> Sig exp a -> Sig exp b -> Sig exp c
+        => (exp a -> exp b -> exp c)
+        -> Sig exp a -> Sig exp b -> Sig exp c
 zipWith f = P.curry $ lift $ P.uncurry f
 
 --------------------------------------------------------------------------------

@@ -1,20 +1,19 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Frontend.SignalComp where
 
-----------------------------------------
-import Core
-import Expr
-import Interpretation
-----------------------------------------
-
-import           Frontend.Stream (Stream(..))
+import           Frontend.Stream (Stream(..), Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Sig)
+import           Frontend.Signal (Signal, Sig, Struct(..))
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -23,23 +22,25 @@ import qualified Frontend.SignalObsv as SigO
 import           Data.Map (Map)
 import qualified Data.Map as M
 
-import Core                (CMD, Ref, newRef, setRef, getRef, initRef
-                               , Arr, newArr, setArr, getArr)
-import Expr                (Expr(..))
+import Expr                (Expr(..), eq)
 import Interpretation      (VarPred)
-import Frontend.Signal     (Signal)
-import Frontend.SignalObsv (TSignal(..))
+import Core                (CMD, Ref(..), newRef, setRef, getRef
+                               , Arr(..), newArr, setArr, getArr
+                               , iff)
 
-import qualified Backend.C -- HACK HACK! Move CompExp instance
+import Control.Applicative
+import Control.Monad.Operational (Program)
 
-import Control.Applicative ((<$>))
-import Control.Monad.Operational
-import Control.Monad.State
+import           Control.Monad.Writer (WriterT, MonadWriter)
+import qualified Control.Monad.Writer as CMW
+
+import           Control.Monad.Reader (ReaderT, MonadReader, MonadTrans, lift)
+import qualified Control.Monad.Reader as CMR
+
+import           Control.Monad.Identity (Identity)
+import qualified Control.Monad.Identity as CMI
+
 import Data.Dynamic
-import Data.Foldable (find)
-import Data.Functor.Identity
-import Data.List  (mapAccumL, (\\))
-import Data.Maybe (fromJust)
 import Data.Reify
 import Data.Proxy
 import Data.Typeable
@@ -48,8 +49,82 @@ import           Prelude
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
+-- * Compiler
+--------------------------------------------------------------------------------
+
+type Prg    exp = Program (CMD exp)
+
+type SGraph exp = Graph (TSignal exp)
+
+type SNode  exp = (Unique, TSignal exp Unique)
+
+--------------------------------------------------------------------------------
+-- ** Knot Monad
+
+newtype KnotT i x m a = KnotT { unKnotT :: ReaderT (Map i x) (WriterT [(i, x)] m) a }
+        deriving
+          ( Monad
+          , MonadReader (Map i x)
+          , MonadWriter [(i, x)]
+          )
+
+instance Functor m => Functor (KnotT i x m)
+  where
+    fmap f = KnotT . fmap f . unKnotT
+
+instance Applicative m => Applicative (KnotT i x m)
+  where
+    pure    = KnotT . pure
+    f <*> v = KnotT $ unKnotT f <*> unKnotT v
+
+instance MonadTrans (KnotT i x)
+  where
+    lift = KnotT . lift . lift
+
+class Monad m => MonadKnot i x m | m -> i x
+  where
+    knot :: i -> m x
+    (-<) :: i -> x -> m ()
+
+instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) => MonadKnot i x m
+  where
+    knot i = CMR.asks (M.! i)
+    i -< x = CMW.tell [(i, x)]
+
+--------------------------------------------------------------------------------
+-- ** Graph
+
+
+
+
+
+--------------------------------------------------------------------------------
+-- *** ...
+
+lifty :: ( CMR.MonadTrans n
+         , CMR.MonadTrans t
+         , Monad (n m)
+         , Monad m)
+         => m a -> t (n m) a
+lifty = CMR.lift . CMR.lift
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
+
+{-
 
 type Pro a = Program (CMD Expr) (Expr a)
 type Str a = Stream             (Expr a)
@@ -64,26 +139,27 @@ compile f = do
 --    error $ show g'
     return $ compileGraph g' b i
 
+-}
+
 --------------------------------------------------------------------------------
 -- ** Helper types / functions
 
--- |
+{-
+
 type Prg a = Program (CMD Expr) a
-
--- |
 type Node  = (Unique, TSignal Unique)
-
--- |
 type Chain = [Node]
-
--- |
 type Id    = Unique
 
 findNode :: [Node] -> Id -> Maybe Node
 findNode nodes i = find ((==) i . P.fst) nodes
 
+-}
+
 --------------------------------------------------------------------------------
 -- Nothing to see here citizen, move along.
+
+{-
 
 type Maps = Map Id Dynamic
 
@@ -255,8 +331,12 @@ compileGraph (Graph nodes root) buffers input = do
 
         -- (fromJust . fromDynamic) <$> load u m -- I'm a very brave man
 
+-}
+
 --------------------------------------------------------------------------------
 -- ...
+
+{-
 
 newRef' :: Typeable a => Expr a -> Prg (Ref (Expr a))
 newRef' (Var a) = return (RefComp a :: Ref (Expr a))
@@ -266,6 +346,8 @@ fromJust' :: Maybe a -> a
 fromJust' (Just a) = a
 fromJust' (Nothing) = error "!"
 
+-}
+
 --------------------------------------------------------------------------------
 -- * Optimization
 --------------------------------------------------------------------------------
@@ -274,14 +356,15 @@ fromJust' (Nothing) = error "!"
 -- ** Buffers
 
 -- |
-data Buffer a = Buffer
-  { getBuff :: Expr Int -> Program (CMD Expr) (Expr a)
-  , putBuff :: Expr a   -> Program (CMD Expr) ()
+data Buffer exp a = Buffer
+  { getBuff :: exp Int -> Program (CMD exp) (exp a)
+  , putBuff :: exp a   -> Program (CMD exp) ()
   }
 
-instance Show (Buffer a) where show _ = "buffer"
+--instance Show (Buffer a) where show _ = "buffer"
 
-newBuff :: Expr Int -> Expr a -> Prg (Buffer a)
+{-
+newBuff :: exp Int -> exp a -> Program (CMD exp) (Buffer exp a)
 newBuff size init = do
   arr <- newArr size init
   ir  <- newRef 0
@@ -295,9 +378,12 @@ newBuff size init = do
             (setRef ir 0)
             (setRef ir (i + 1))
   return $ Buffer get put
+-}
 
 --------------------------------------------------------------------------------
 -- *** Finding buffers
+
+{-
 
 delayChains :: (Typeable a)
             => Graph TSignal
@@ -368,15 +454,22 @@ update chains ns =
       | fst y == fst x = y : xs
       | otherwise      = x : replace y xs
 
+-}
+
+{-
+
 swap :: (a, b) -> (b, a)
 swap (a, b) = (b, a)
 
 fmap' :: (a -> c) -> (a, b) -> (c, b)
 fmap' f p = swap $ fmap f (swap p)
+            -- this is one of those arrow operators
 
 fmap'' :: (a -> c) -> (b -> d) -> (a, b) -> (c, d)
 fmap'' f g = fmap' f . fmap g
-             -- this is one of those arrow operators
+            -- this is another one
+
+-}
 
 --------------------------------------------------------------------------------
 -- Stuff I'm note sure about yet
@@ -385,12 +478,18 @@ fmap'' f g = fmap' f . fmap g
 --------------------------------------------------------------------------------
 -- Existensial type
 
+{-
+
 data Ex
   where
     Ex :: Rx a -> Ex
 
+-}
+
 --------------------------------------------------------------------------------
 -- Witness
+
+{-
 
 data Wt a
   where
@@ -410,8 +509,12 @@ wr (Pair' l r)
    , Wt <- wr r
    = Wt
 
+-}
+
 --------------------------------------------------------------------------------
 -- Struct with references at the bottom
+
+{-
 
 data Rx a
   where
@@ -432,5 +535,7 @@ s2r (Pair l r)  = do
   l' <- s2r l
   r' <- s2r r
   return $ Pair' l' r'
+
+-}
 
 --------------------------------------------------------------------------------
