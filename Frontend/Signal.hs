@@ -40,10 +40,10 @@ data Signal exp a
 
     -- ^ lifts stream transformers into signal transformers, possibly state-full
     Lift  :: (Typeable a, Typeable b)
-          => (Stream exp (exp a) -> Stream exp (exp b))
+          => (Stream exp (exp a)         -> Stream exp (exp b))
           -> (Signal exp (Empty (exp a)) -> Signal exp (Empty (exp b)))
 
-    -- ^ ...
+    -- ^ maps a function over nested tuples to a function over signals
     Map   :: (Typeable a, Typeable b)
           => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
 
@@ -72,7 +72,7 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 --------------------------------------------------------------------------------
 -- ** Instances
 
-class (VarPred exp a, Typeable exp, Typeable a) => Typ exp a
+class (Typeable (exp :: * -> *), Typeable (a :: *)) => Typ exp a
 
 instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
   where
@@ -101,7 +101,6 @@ instance (Typ exp a, Floating (exp a), Eq (exp a)) => Floating (Sig exp a)
     atan  = todo; acos  = todo; sinh    = todo;
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
-
 
 todo = P.error "unsupported operation"
 
@@ -139,8 +138,6 @@ zipWith f = P.curry $ lift $ P.uncurry f
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
---
--- | All this to convert between tuples and zip pairs
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------

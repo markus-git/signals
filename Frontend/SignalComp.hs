@@ -52,73 +52,52 @@ import qualified Prelude as P
 -- * Compiler
 --------------------------------------------------------------------------------
 
-type Prg    exp = Program (CMD exp)
-
-type SGraph exp = Graph (TSignal exp)
-
-type SNode  exp = (Unique, TSignal exp Unique)
-
 --------------------------------------------------------------------------------
 -- ** Knot Monad
 
-newtype KnotT i x m a = KnotT { unKnotT :: ReaderT (Map i x) (WriterT [(i, x)] m) a }
-        deriving
-          ( Monad
-          , MonadReader (Map i x)
-          , MonadWriter [(i, x)]
-          )
-
-instance Functor m => Functor (KnotT i x m)
-  where
-    fmap f = KnotT . fmap f . unKnotT
-
-instance Applicative m => Applicative (KnotT i x m)
-  where
-    pure    = KnotT . pure
-    f <*> v = KnotT $ unKnotT f <*> unKnotT v
+newtype KnotT i x m a =
+    KnotT { unKnotT :: ReaderT (Map i x) (WriterT [(i, x)] m) a }
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadReader (Map i x)
+    , MonadWriter [(i, x)]
+    )
 
 instance MonadTrans (KnotT i x)
   where
     lift = KnotT . lift . lift
 
-class Monad m => MonadKnot i x m | m -> i x
+class (Ord i, MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
+    MonadKnot i x m | m -> i x
   where
     knot :: i -> m x
-    (-<) :: i -> x -> m ()
+    (=:) :: i -> x -> m ()
 
-instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) => MonadKnot i x m
+instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
+    MonadKnot i x m
   where
     knot i = CMR.asks (M.! i)
-    i -< x = CMW.tell [(i, x)]
+    i =: x = CMW.tell [(i, x)]
 
 --------------------------------------------------------------------------------
 -- ** Graph
 
+type Knot exp a = KnotT Unique (Ref (exp a)) (Program (CMD exp)) ()
 
+type SGraph exp = Graph (TSignal exp)
 
+type SNode  exp = (Unique, TSignal exp Unique)
 
+compile :: SNode exp -> Knot exp a
+compile (i, TVar) =
+  do undefined
 
---------------------------------------------------------------------------------
--- *** ...
-
-lifty :: ( CMR.MonadTrans n
-         , CMR.MonadTrans t
-         , Monad (n m)
-         , Monad m)
-         => m a -> t (n m) a
-lifty = CMR.lift . CMR.lift
-
-
-
-
-
-
-
-
-
-
-
-
+compile (i, TConst c) =
+  do s <- lift $ Str.run c
+     r <- lift $ newRef s
+     i =: r
 
 --------------------------------------------------------------------------------
 -- *

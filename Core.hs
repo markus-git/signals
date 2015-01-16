@@ -34,9 +34,8 @@ data CMD exp a
     Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
-    InitRef :: TypeRep                    -> CMD exp (Ref (exp a))
-    NewRef  :: TypeRep     -> exp a       -> CMD exp (Ref (exp a))
-    GetRef  :: TypeRep     -> Ref (exp a) -> CMD exp (exp a)
+    NewRef  :: exp a                      -> CMD exp (Ref (exp a))
+    GetRef  :: Ref (exp a)                -> CMD exp (exp a)
     SetRef  :: Ref (exp a) -> exp a       -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
@@ -48,10 +47,10 @@ data CMD exp a
     UnsafeGetRef :: Ref (exp a) -> CMD exp (exp a)
 
     -- ^ Control structures | Todo: Move to seperate data class
-    If :: exp Bool
-       -> Program (CMD exp) ()
-       -> Program (CMD exp) ()
-       -> CMD exp ()
+    If    :: exp Bool
+          -> Program (CMD exp) ()
+          -> Program (CMD exp) ()
+          -> CMD exp ()
     While :: Program (CMD exp) (exp Bool)
           -> Program (CMD exp) ()
           -> CMD exp ()
@@ -85,63 +84,58 @@ data Arr a
 --------------------------------------------------------------------------------
 -- *** File Handling
 
-open :: FilePath -> Program (CMD exp) Handle
-open = singleton . Open
+open  :: FilePath -> Program (CMD exp) Handle
+open   = singleton . Open
 
 close :: Handle -> Program (CMD exp) ()
-close = singleton . Close
+close  = singleton . Close
 
-fput :: Handle -> exp Float -> Program (CMD exp) ()
+fput  :: Handle -> exp Float -> Program (CMD exp) ()
 fput p = singleton . Put p
 
-fget :: Handle -> Program (CMD exp) (exp Float)
-fget = singleton . Get
+fget  :: Handle -> Program (CMD exp) (exp Float)
+fget   = singleton . Get
 
-feof :: Handle -> Program (CMD exp) (exp Bool)
-feof = singleton . Eof
+feof  :: Handle -> Program (CMD exp) (exp Bool)
+feof   = singleton . Eof
 
 --------------------------------------------------------------------------------
 -- *** Variables
 
-initRef :: forall exp a . (VarPred exp a, Typeable a) => Program (CMD exp) (Ref (exp a))
-initRef = singleton (InitRef (typeOf (undefined :: a)))
+newRef        :: exp a -> Program (CMD exp) (Ref (exp a))
+newRef e      = singleton (NewRef e)
 
-newRef  :: forall exp a . (VarPred exp a, Typeable a) => exp a -> Program (CMD exp) (Ref (exp a))
-newRef e = singleton (NewRef (typeOf (undefined :: a)) e)
+getRef        :: Ref (exp a) -> Program (CMD exp) (exp a)
+getRef r      = singleton (GetRef r)
 
-getRef :: forall exp a . (VarPred exp a, Typeable a) => Ref (exp a) -> Program (CMD exp) (exp a)
-getRef r = singleton (GetRef (typeOf (undefined :: a)) r)
+setRef        :: Ref (exp a) -> exp a -> Program (CMD exp) ()
+setRef r      = singleton . SetRef r
 
-setRef  :: VarPred exp a => Ref (exp a) -> exp a -> Program (CMD exp) ()
-setRef r = singleton . SetRef r
-
-modifyRef :: (VarPred exp a, Typeable a) => Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
+modifyRef     :: Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
 modifyRef r f = getRef r >>= setRef r . f
 
 --------------------------------------------------------------------------------
 -- *** Arrays
 
-newArr :: (Integral n, VarPred exp a)
-    => exp n -> exp a -> Program (CMD exp) (Arr (exp a))
+newArr :: Integral n => exp n -> exp a -> Program (CMD exp) (Arr (exp a))
 newArr n = singleton . NewArr n
 
-getArr :: (Integral n, VarPred exp a)
-    => exp n -> Arr (exp a) -> Program (CMD exp) (exp a)
+getArr :: Integral n => exp n -> Arr (exp a) -> Program (CMD exp) (exp a)
 getArr n = singleton . GetArr n
 
-setArr :: (Integral n, VarPred exp a)
-    => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
+setArr :: Integral n => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
 setArr n a = singleton . SetArr n a
 
 ----------------------------------------
 -- Unsafe
 
--- | Like 'getRef' but assumes that the reference will not be modified later in the program
+-- | Like 'getRef' but assumes that the reference will not be modified later
+--   in the program
 unsafeGetRef :: VarPred exp a => Ref (exp a) -> Program (CMD exp) (exp a)
 unsafeGetRef = singleton . UnsafeGetRef
-  -- TODO It would be possible to make a conservative analysis to find out if uses of `unsafeGetRef`
-  --      are safe. Even better, the compiler could automatically treat `getRef` as `unsafeGetRef`
-  --      whenever possible.
+  -- TODO: It would be possible to make a conservative analysis to find out if
+  --       uses of `unsafeGetRef` are safe. Even better, the compiler could
+  --       automatically treat `getRef` as `unsafeGetRef` whenever possible.
 
 --------------------------------------------------------------------------------
 -- **
@@ -185,6 +179,16 @@ mkFunction fun body = singleton $ Function fun body
 -- * Run Functions
 --------------------------------------------------------------------------------
 
+runProgram :: ( EvalExp exp
+              , LitPred exp Bool
+              , LitPred exp Float)
+           => Program (CMD exp) a
+           -> IO a
+runProgram = interpretWithMonad runCMD
+
+--------------------------------------------------------------------------------
+-- **
+
 readWord :: IO.Handle -> IO String
 readWord h = do
     eof <- IO.hIsEOF h
@@ -207,9 +211,8 @@ runCMD (Get (HandleEval h))   = do
         _        -> error "runCMD: Get: no parse"
 runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
 
-runCMD (InitRef _)            = fmap RefEval $ newIORef (error "Reading uninitialized reference")
-runCMD (NewRef _ a)           = fmap RefEval $ newIORef a
-runCMD (GetRef _ (RefEval r)) = readIORef r
+runCMD (NewRef a)           = fmap RefEval $ newIORef a
+runCMD (GetRef (RefEval r)) = readIORef r
 runCMD (SetRef (RefEval r) a) = writeIORef r a
 
 runCMD (NewArr i a)               = fmap ArrEval $ newArray (0, fromIntegral (evalExp i) - 1) a
@@ -231,15 +234,3 @@ runCMD (While cond body) = do
 runCMD Break = error "runCMD: Break not implemented"
 
 runCMD (Printf format a) = Printf.printf format (show $ evalExp a)
-
--- runCMD (Close _) = error "SDF"
--- runCMD (Put _ _) = error "SDF"
--- runCMD (Get _) = error "SDF"
--- runCMD (GetRef _ _) = error "SDF"
--- runCMD (SetRef _ _) = error "SDF"
--- runCMD (UnsafeGetRef _) = error "SDF"
-
-
-
-runProgram :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => Program (CMD exp) a -> IO a
-runProgram = interpretWithMonad runCMD

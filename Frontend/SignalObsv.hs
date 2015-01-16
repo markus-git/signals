@@ -1,11 +1,12 @@
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Frontend.SignalObsv where
 
@@ -54,7 +55,7 @@ data TSignal exp r
   deriving (Typeable)
 
 --------------------------------------------------------------------------------
--- ** MuRef instances for 'Signal' types
+-- ** MuRef instances for signals
 
 instance (Typeable exp) => MuRef (Signal exp a)
   where
