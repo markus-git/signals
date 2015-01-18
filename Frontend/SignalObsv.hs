@@ -29,12 +29,12 @@ import Data.Typeable
 data TSignal exp r
   where
     -- ^ Signal functions
-    TLambda :: Typeable x => Proxy x -> r -> r -> TSignal exp r
+    TLambda :: r -> r -> TSignal exp r
 
     TVar    :: TSignal exp r
 
     -- ^ Signal
-    TConst  :: (Typeable a) => Stream exp (exp a) -> TSignal exp r
+    TConst  :: (Typeable a, Typeable exp) => Stream exp (exp a) -> TSignal exp r
 
     TLift   :: (Typeable a, Typeable b)
             => (Stream exp (exp a) -> Stream exp (exp b)) -> r -> TSignal exp r
@@ -42,7 +42,8 @@ data TSignal exp r
     TMap    :: (Typeable a, Typeable b)
             => (Struct a -> Struct b) -> r -> TSignal exp r
 
-    TZip    :: r -> r -> TSignal exp r
+    TZip    :: (Typeable a, Typeable b) => Proxy (a, b)
+            -> r -> r -> TSignal exp r
     TFst    :: r      -> TSignal exp r
     TSnd    :: r      -> TSignal exp r
 
@@ -65,7 +66,9 @@ instance (Typeable exp) => MuRef (Signal exp a)
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
       (Map   sf s) -> TMap  sf <$> f s
-      (Zip   s u)  -> TZip     <$> f s <*> f u
+      (Zip   (s :: Signal exp l)
+             (u :: Signal exp r))
+                   -> TZip (Proxy :: Proxy (l, r)) <$> f s <*> f u
       (Fst   s)    -> TFst     <$> f s
       (Snd   s)    -> TSnd     <$> f s
       (Delay a s)  -> TDelay a <$> f s
@@ -78,9 +81,7 @@ instance (Typeable a, Typeable b, Typeable exp) =>
 
     mapDeRef f sf =
       let (v, sg) = let a = SVar (toDyn sf) in (a, sf a)
-       in TLambda (Proxy :: Proxy b)
-            <$> f v
-            <*> f sg
+       in TLambda <$> f v <*> f sg
 
 instance (Typeable exp) => MuRef (Sig exp a)
   where
@@ -101,14 +102,14 @@ instance (Typeable a, Typeable b, Typeable exp) =>
 
 instance Show (TSignal exp Unique) where
   show node = case node of
-    (TLambda _ i b) -> "lam. " ++ show i ++ " " ++ show b
-    (TVar)          -> "var. "
+    (TLambda i b) -> "lam. " ++ show i ++ " " ++ show b
+    (TVar)        -> "var. "
 
     (TConst _)   -> "const. "
     (TLift  _ s) -> "lift. " ++ show s
 
     (TMap _ s)   -> "map. " ++ show s
-    (TZip s u)   -> "zip. " ++ show s ++ " " ++ show u
+    (TZip _ s u) -> "zip. " ++ show s ++ " " ++ show u
     (TFst s)     -> "fst. " ++ show s
     (TSnd s)     -> "snd. " ++ show s
 

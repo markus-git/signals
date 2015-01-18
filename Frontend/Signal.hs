@@ -192,6 +192,8 @@ data Struct a
   where
     Leaf :: exp a -> Struct (Empty (exp a))
     Pair :: Struct a -> Struct b -> Struct (a, b)
+  deriving
+    Typeable
 
 class StructE a
   where

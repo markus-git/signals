@@ -45,6 +45,8 @@ import Data.Reify
 import Data.Proxy
 import Data.Typeable
 
+import Data.Maybe (fromJust) -- ToDo: replace
+
 import           Prelude
 import qualified Prelude as P
 
@@ -84,20 +86,134 @@ instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
 --------------------------------------------------------------------------------
 -- ** Graph
 
-type Knot exp a = KnotT Unique (Ref (exp a)) (Program (CMD exp)) ()
+type Knot  exp a = KnotT Unique Dynamic (Program (CMD exp)) a
 
-type SGraph exp = Graph (TSignal exp)
+type SGraph  exp = Graph (TSignal exp)
 
-type SNode  exp = (Unique, TSignal exp Unique)
+type SNode   exp = (Unique, TSignal exp Unique)
 
-compile :: SNode exp -> Knot exp a
-compile (i, TVar) =
+type SProg exp a = Program (CMD exp) (exp a)
+
+compiler :: (Typeable exp, Typeable a, Typeable b)
+         => SGraph exp   -- ^ signal graph
+         -> SProg  exp a -- ^ input  program
+         -> SProg  exp b -- ^ output program
+compiler (Graph nodes root) input = undefined
+
+----------------------------------------
+-- ...
+
+compile :: forall exp a. (Typeable exp, Typeable a)
+        => SNode exp     -- ^ signal node
+        -> SProg exp a   -- ^ input  program : remove later
+        -> Knot  exp ()  -- ^ output knot
+
+compile (i, TLambda l r) _ =
+  do sl <- knot l
+     sr <- knot r -- I'm not sure if this is correct,
+     i  =: sr     -- or if 'sl <- knot l' is unecessary
+
+compile (i, TVar) input =
+  do s <- lift $ input
+     r <- tangle s
+     i =: r
+
+compile (i, TConst c) _ =
+  do s <- lift $ Str.run c
+     r <- tangle s
+     i =: r
+
+compile (i, TLift f c) _ =
+  do s <- knot c
+     t <- untangle s
+     g <- lift $ streamify f t -- = lift $ f t
+     r <- tangle g
+     i =: r
+
+compile (i, TMap f c) _ =
+  do s <- knot c
+     t <- untangleS s
+     g <- return $ f t
+     r <- tangleS g
+     i =: r
+
+compile (i, TZip (_ :: Proxy (tL, tR)) l r) _ =
   do undefined
 
-compile (i, TConst c) =
-  do s <- lift $ Str.run c
-     r <- lift $ newRef s
-     i =: r
+{-
+
+compile (i, TZip (_ :: Proxy (tl, tr)) l r) _ =
+  do sl <- check =<< knot l :: Knot exp (Struct tl)
+     sr <- check =<< knot r :: Knot exp (Struct tr)
+     r  <- tangleS (Pair sl sr)
+     i  =: r
+  where
+    check :: forall exp a. (Typeable exp, Typeable a)
+          => Dynamic
+          -> Knot exp (Struct a)
+    check x =
+      case fromDynamic x :: Maybe (Ref (exp a)) of
+        Nothing -> return $ unDyn x
+        Just r  -> lift   $ getRef r >>= return . fromJust . cast . Leaf
+                                           -- this is shit
+
+-}
+
+----------------------------------------
+-- Some helper functions
+
+-- | does some unwrapping/wrapping of stream functions
+streamify   :: (Str exp a -> Str exp b) -> exp a -> SProg exp b
+streamify f = Str.run . f . Stream . return . return
+
+----------------------------------------
+-- Some dynamic helper functions
+--
+-- ToDo: we should remove 'Dynamic' later on, so I put all the
+--       functions which invlove typecasting here.
+
+-- | casts a reference to a dynamic type
+tangle      :: (Typeable exp, Typeable a) => exp a -> Knot exp Dynamic
+tangle e    = lift $ toDyn <$> newRef e
+
+-- | fetches the value from a dynamic reference
+untangle    :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (exp a)
+untangle d  = lift $ getRef $ unDyn d
+
+-- | same as tangle, but for structs
+tangleS     :: (Typeable a) => Struct a -> Knot exp Dynamic
+tangleS s   = return $ toDyn s
+
+-- | same as untangle, but for structs
+untangleS   :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (Struct a)
+untangleS d = return $ unDyn d
+
+-- | removes the dynamic type from a reference
+unDyn       :: Typeable a => Dynamic -> a
+unDyn d     = case fromDynamic d of
+                Just e  -> e
+                Nothing -> error "unDyn"
+
+----------------------------------------
+-- Trees
+
+data BTree a = L a | B (BTree a) (BTree a)
+
+-- | ... hackity hack
+typeTree :: forall a. Typeable a => Proxy a -> BTree ()
+typeTree _ = go $ typeOf (undefined :: a)
+  where
+    ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
+    go r | typeRepTyCon r == ty = let [x, y] = typeRepArgs r in B (go x) (go y)
+         | otherwise            = L ()
+
+-- | Replace `()` with unique Id's
+markTree :: BTree () -> Unique -> BTree Unique
+markTree = undefined
+
+-- | Tell all the Id's
+tellTree :: BTree Unique -> ()
+tellTree = undefined
 
 --------------------------------------------------------------------------------
 -- *
