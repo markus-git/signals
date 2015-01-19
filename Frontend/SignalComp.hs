@@ -13,7 +13,7 @@ module Frontend.SignalComp where
 import           Frontend.Stream (Stream(..), Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Sig, Struct(..))
+import           Frontend.Signal (Signal, Sig, Struct(..), Empty(..))
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -44,8 +44,6 @@ import Data.Dynamic
 import Data.Reify
 import Data.Proxy
 import Data.Typeable
-
-import Data.Maybe (fromJust) -- ToDo: replace
 
 import           Prelude
 import qualified Prelude as P
@@ -86,13 +84,11 @@ instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
 --------------------------------------------------------------------------------
 -- ** Graph
 
-type Knot  exp a = KnotT Unique Dynamic (Program (CMD exp)) a
+type SGraph exp   = Graph (TSignal exp)
 
-type SGraph  exp = Graph (TSignal exp)
+type SNode  exp   = (Unique, TSignal exp Unique)
 
-type SNode   exp = (Unique, TSignal exp Unique)
-
-type SProg exp a = Program (CMD exp) (exp a)
+type SProg  exp a = Program (CMD exp) (exp a)
 
 compiler :: (Typeable exp, Typeable a, Typeable b)
          => SGraph exp   -- ^ signal graph
@@ -103,45 +99,45 @@ compiler (Graph nodes root) input = undefined
 ----------------------------------------
 -- ...
 
+type Knot  exp a = KnotT String Dynamic (Program (CMD exp)) a
+
 compile :: forall exp a. (Typeable exp, Typeable a)
         => SNode exp     -- ^ signal node
         -> SProg exp a   -- ^ input  program : remove later
         -> Knot  exp ()  -- ^ output knot
 
 compile (i, TLambda l r) _ =
-  do sl <- knot l
-     sr <- knot r -- I'm not sure if this is correct,
-     i  =: sr     -- or if 'sl <- knot l' is unecessary
+  do sl <- knot $ show l
+     sr <- knot $ show r -- I'm not sure if this is correct,
+     show i =: sr        -- or if 'sl <- knot l' is unecessary
 
 compile (i, TVar) input =
   do s <- lift $ input
-     r <- tangle s
-     i =: r
+     r <- tangle s       -- : lift $ toDyn <$> newRef
+     show i =: r
 
 compile (i, TConst c) _ =
   do s <- lift $ Str.run c
      r <- tangle s
-     i =: r
+     show i =: r
 
 compile (i, TLift f c) _ =
-  do s <- knot c
+  do s <- knot $ show c
      t <- untangle s
-     g <- lift $ streamify f t -- = lift $ f t
+     g <- lift $ streamify f t -- : lift $ Stream . f . unStream $ t
      r <- tangle g
-     i =: r
+     show i =: r
 
-compile (i, TMap f c) _ =
-  do s <- knot c
+{-
+  do s <- knot $ show c
      t <- untangleS s
      g <- return $ f t
      r <- tangleS g
-     i =: r
+     show i =: r
+-}
 
-compile (i, TZip (_ :: Proxy (tL, tR)) l r) _ =
-  do undefined
 
 {-
-
 compile (i, TZip (_ :: Proxy (tl, tr)) l r) _ =
   do sl <- check =<< knot l :: Knot exp (Struct tl)
      sr <- check =<< knot r :: Knot exp (Struct tr)
@@ -156,7 +152,6 @@ compile (i, TZip (_ :: Proxy (tl, tr)) l r) _ =
         Nothing -> return $ unDyn x
         Just r  -> lift   $ getRef r >>= return . fromJust . cast . Leaf
                                            -- this is shit
-
 -}
 
 ----------------------------------------
@@ -195,11 +190,34 @@ unDyn d     = case fromDynamic d of
                 Nothing -> error "unDyn"
 
 ----------------------------------------
--- Trees
+-- Even more trees
+
+{-
+
+data TStruct a
+  where
+    TLeaf :: String                 -> TStruct (Empty (exp a))
+    TPair :: TStruct a -> TStruct b -> TStruct (a, b)
+
+typeTree :: forall a. Typeable a => Proxy (Struct a) -> TStruct a
+typeTree _ = go $ typeOf (undefined :: Struct a)
+  where
+    go r = undefined
+
+typeTree :: forall a. Typeable a => Proxy a -> TStruct a
+typeTree _ = go $ typeOf (undefined :: a)
+  where
+    ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
+    go r | typeRepTyCon r == ty = let [x, y] = typeRepArgs r in TPair (go x) (go y)
+         | otherwise            = TLeaf undefined
+
+-}
+
+{-
 
 data BTree a = L a | B (BTree a) (BTree a)
 
--- | ... hackity hack
+-- | Construct binary tree from struct proxy  ... hackity hack
 typeTree :: forall a. Typeable a => Proxy a -> BTree ()
 typeTree _ = go $ typeOf (undefined :: a)
   where
@@ -207,13 +225,24 @@ typeTree _ = go $ typeOf (undefined :: a)
     go r | typeRepTyCon r == ty = let [x, y] = typeRepArgs r in B (go x) (go y)
          | otherwise            = L ()
 
--- | Replace `()` with unique Id's
-markTree :: BTree () -> Unique -> BTree Unique
-markTree = undefined
+-- | Replace empty holes of a binary tree with unique id's
+markTree :: BTree () -> String -> BTree String
+markTree (L _)   s = L s
+markTree (B l r) s = B (markTree l (s ++ "_l")) (markTree r (s ++ "_r"))
 
--- | Tell all the Id's
-tellTree :: BTree Unique -> ()
+-- | ... this is a version of 'r2s' from my old compiler ...
+knotTree :: Typeable a => Proxy a -> String -> Knot exp (Struct a)
+knotTree p s = go $ markTree (typeTree p) s
+
+go :: BTree String -> Knot exp (Struct a)
+go (L s)   = knot s >>= \v -> return $ Leaf v
+go (B l r) = undefined
+
+-- | ... this will be a version of 's2r' from my old compiler ...
+tellTree :: Struct a -> Knot exp ()
 tellTree = undefined
+
+-}
 
 --------------------------------------------------------------------------------
 -- *
