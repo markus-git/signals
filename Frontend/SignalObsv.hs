@@ -40,7 +40,7 @@ data TSignal exp r
             => (Stream exp (exp a) -> Stream exp (exp b)) -> r -> TSignal exp r
 
     TMap    :: (Typeable a, Typeable b)
-            => (Struct a -> Struct b) -> r -> TSignal exp r
+            => (Struct exp a -> Struct exp b) -> r -> TSignal exp r
 
     TZip    :: r -> r -> TSignal exp r
 

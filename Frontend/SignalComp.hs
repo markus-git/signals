@@ -13,7 +13,7 @@ module Frontend.SignalComp where
 import           Frontend.Stream (Stream(..), Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Sig, Struct(..), Empty(..))
+import           Frontend.Signal (Signal, Sig, Empty(..), Struct(..), TStruct(..))
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -113,7 +113,7 @@ compile (i, TLambda l r) _ =
 
 compile (i, TVar) input =
   do s <- lift $ input
-     r <- tangle s       -- : lift $ toDyn <$> newRef
+     r <- tangle s
      show i =: r
 
 compile (i, TConst c) _ =
@@ -124,27 +124,44 @@ compile (i, TConst c) _ =
 compile (i, TLift f c) _ =
   do s <- knot $ show c
      t <- untangle s
-     g <- lift $ streamify f t -- : lift $ Stream . f . unStream $ t
+     g <- lift $ streamify f t
      r <- tangle g
      show i =: r
 
-{-
-  do s <- knot $ show c
-     t <- untangleS s
-     g <- return $ f t
-     r <- tangleS g
-     show i =: r
--}
-
 --------------------------------------------------------------------------------
--- Some helper functions
+-- *** Some helper functions
 
 -- | does some unwrapping/wrapping of stream functions
 streamify   :: (Str exp a -> Str exp b) -> exp a -> SProg exp b
 streamify f = Str.run . f . Stream . return . return
 
+-- | ...
+markS :: TStruct exp a -> String -> TStruct exp a
+markS (TLeaf _)   s = TLeaf s
+markS (TPair l r) s = TPair (markS l (s ++ "_l")) (markS r (s ++ "_r"))
+
+-- | ...
+knotS :: Typeable exp => TStruct exp a -> Knot exp (Struct exp a)
+knotS (TLeaf i) =
+  do x  <- knot i
+     v  <- untangle x
+     return $ Leaf v
+knotS (TPair l r) =
+  do sl <- knotS l
+     sr <- knotS r
+     return $ Pair sl sr
+
+-- | ...
+tellS :: Typeable exp => Struct exp a -> String -> Knot exp ()
+tellS (Leaf v) i =
+  do r <- tangle v
+     i =: r
+tellS (Pair l r) i =
+  do tellS l (i ++ "_l")
+     tellS r (i ++ "_r")
+
 --------------------------------------------------------------------------------
--- Some dynamic helper functions
+-- *** Some dynamic helper functions
 --
 -- ToDo: we should remove 'Dynamic' later on, so I put all the
 --       functions which invlove typecasting here.
@@ -157,13 +174,17 @@ tangle e    = lift $ toDyn <$> newRef e
 untangle    :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (exp a)
 untangle d  = lift $ getRef $ unDyn d
 
+{-
+
 -- | same as tangle, but for structs
-tangleS     :: (Typeable a) => Struct a -> Knot exp Dynamic
+tangleS     :: (Typeable a) => Struct exp a -> Knot exp Dynamic
 tangleS s   = return $ toDyn s
 
 -- | same as untangle, but for structs
-untangleS   :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (Struct a)
+untangleS   :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (Struct exp a)
 untangleS d = return $ unDyn d
+
+-}
 
 -- | removes the dynamic type from a reference
 unDyn       :: Typeable a => Dynamic -> a

@@ -44,7 +44,7 @@ data Signal exp a
 
     -- ^ maps a function over nested tuples to a function over signals
     Map   :: (Typeable a, Typeable b)
-          => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
+          => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 
     -- ^ joins together two nodes
     Zip   :: (Typeable a, Typeable b)
@@ -72,6 +72,8 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 -- ** Instances
 
 class (Typeable (exp :: * -> *), Typeable (a :: *)) => Typ exp a
+
+{-
 
 instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
   where
@@ -101,6 +103,8 @@ instance (Typ exp a, Floating (exp a), Eq (exp a)) => Floating (Sig exp a)
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
 
+-}
+
 todo = P.error "unsupported operation"
 
 --------------------------------------------------------------------------------
@@ -114,7 +118,7 @@ liftS :: (Typeable a, Typeable b)
 liftS f = Sig . Lift f . unSig
 
 mapS :: (Typeable a, Typeable b)
-     => (Struct a -> Struct b) -> Signal exp a -> Signal exp b
+     => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 mapS = Map
 
 --------------------------------------------------------------------------------
@@ -130,10 +134,14 @@ map f = liftS $ S.map f
 delay :: (Typeable a) => exp a -> Sig exp a -> Sig exp a
 delay e = Sig . Delay e . unSig
 
+{-
+
 zipWith :: (Typeable exp, Typeable a, Typeable b, Typeable c)
         => (exp a -> exp b -> exp c)
         -> Sig exp a -> Sig exp b -> Sig exp c
 zipWith f = P.curry $ lift $ P.uncurry f
+
+-}
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
@@ -143,18 +151,18 @@ zipWith f = P.curry $ lift $ P.uncurry f
 data Empty a deriving Typeable
 
 -- | Representation of nested tuples as a binary tree
-data Struct a
+data Struct exp a
   where
-    Leaf :: exp a -> Struct (Empty (exp a))
-    Pair :: Struct a -> Struct b -> Struct (a, b)
+    Leaf :: Typeable a => exp a -> Struct exp (Empty (exp a))
+    Pair :: Struct exp a -> Struct exp b -> Struct exp (a, b)
   deriving
     Typeable
 
 -- | Similar to `Struct`, with id's at the leafs
-data TStruct a
+data TStruct exp a
   where
-    TLeaf :: String -> TStruct (Empty (exp a))
-    TPair :: TStruct a -> TStruct b -> TStruct (a, b)
+    TLeaf :: Typeable a => String -> TStruct exp (Empty (exp a))
+    TPair :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
   deriving
     Typeable
 
@@ -178,20 +186,6 @@ instance StructS (Signal exp (Empty (exp a)))
     fromS = id
     toS   = id
 
-instance ( Typeable (Internal a)
-         , Typeable (Internal b)
-         , StructS a
-         , StructS b
-         , Domain a ~ Domain b
-         )
-    => StructS (a, b)
-  where
-    type Internal (a, b) = (Internal a, Internal b)
-    type Domain   (a, b) = Domain a
-
-    fromS (a, b) = Zip (fromS a) (fromS b)
-    toS    p     = (toS (Fst p), toS (Snd p))
-
 instance StructS (Sig exp a)
   where
     type Internal (Sig exp a) = Empty (exp a)
@@ -200,32 +194,50 @@ instance StructS (Sig exp a)
     fromS = unSig
     toS   = Sig
 
+instance ( StructS a, Typeable (Internal a)
+         , StructS b, Typeable (Internal b)
+         , Domain a ~ Domain b
+         ) =>
+    StructS (a, b)
+  where
+    type Internal (a, b) = (Internal a, Internal b)
+    type Domain   (a, b) = Domain a
+
+    fromS (a, b) = Zip (fromS a) (fromS b)
+    toS    p     = (toS (Fst p), toS (Snd p))
+
 --------------------------------------------------------------------------------
--- ** Conversion between signals and empty structs
+-- ** Conversion between signals and empty structs (used to remove structs later on)
 
 class StructT a
   where
-    type TInternal a :: *
+    type Regular a :: *
+    type DomainT a :: * -> *
 
-    repS :: a -> TStruct (TInternal a)
+    represent :: a -> TStruct (DomainT a) (Regular a)
 
-instance StructT (Signal exp (Empty (exp a)))
+instance Typeable a =>
+    StructT (Signal exp (Empty (exp a)))
   where
-    type TInternal (Signal exp (Empty (exp a))) = Empty (exp a)
+    type Regular (Signal exp (Empty (exp a))) = Empty (exp a)
+    type DomainT (Signal exp (Empty (exp a))) = exp
 
-    repS _ = TLeaf ""
+    represent e = TLeaf ""
 
-instance (StructT a, StructT b) => StructT (a, b)
+instance Typeable a =>
+    StructT (Sig exp a)
   where
-    type TInternal (a, b) = (TInternal a, TInternal b)
+    type Regular (Sig exp a) = Empty (exp a)
+    type DomainT (Sig exp a) = exp
 
-    repS (a, b)  = TPair (repS a) (repS b)
+    represent = represent . unSig
 
-instance StructT (Sig exp a)
+instance (StructT a, StructT b, DomainT a ~ DomainT b) => StructT (a, b)
   where
-    type TInternal (Sig exp a) = Empty (exp a)
+    type Regular (a, b) = (Regular a, Regular b)
+    type DomainT (a, b) = DomainT a
 
-    repS = repS . unSig
+    represent (a, b) = TPair (represent a) (represent b)
 
 --------------------------------------------------------------------------------
 -- ** Conversion between struct's and tuples
@@ -233,21 +245,28 @@ instance StructT (Sig exp a)
 -- | ...
 class StructE a
   where
-    type Normal a :: *
+    type Normal  a :: *
+    type DomainE a :: * -> *
 
-    fromE :: Struct a -> Normal a
-    toE   :: Normal a -> Struct a
+    fromE :: Struct (DomainE a) a -> Normal a
+    toE   :: Normal a -> Struct (DomainE a) a
 
-instance StructE (Empty (exp a))
+instance Typeable a => StructE (Empty (exp a))
   where
-    type Normal (Empty (exp a)) = exp a
+    type Normal  (Empty (exp a)) = exp a
+    type DomainE (Empty (exp a)) = exp
 
     fromE (Leaf a) = a
     toE a          = Leaf a
 
-instance (StructE a, StructE b) => StructE (a, b)
+instance ( StructE a
+         , StructE b
+         , DomainE a ~ DomainE b
+         ) =>
+    StructE (a, b)
   where
-    type Normal (a, b) = (Normal a, Normal b)
+    type Normal  (a, b) = (Normal a, Normal b)
+    type DomainE (a, b) = DomainE a
 
     fromE (Pair a b) = (fromE a, fromE b)
     toE   (a, b)     = Pair (toE a) (toE b)
@@ -255,11 +274,19 @@ instance (StructE a, StructE b) => StructE (a, b)
 --------------------------------------------------------------------------------
 -- ** Lifting operator
 
+-- | ...
 lift
-  :: ( StructS s1            , StructS s2
-     , StructE (Internal s1) , StructE (Internal s2)
-     , Typeable (Internal s1), Typeable (Internal s2)
+  :: ( -- we must be able to do the signal \ tuple transformations
+       StructS s1            , StructS s2
+     , StructE  (Internal s1), StructE  (Internal s2)
+
+       -- the `exp` type of the signals and tuples should be the same
      , Domain s1 ~ Domain s2
+     , DomainE (Internal s1) ~ Domain s1
+     , DomainE (Internal s2) ~ Domain s2
+
+       -- requires typeable since we make use of `Zip` to transform signals
+     , Typeable (Internal s1), Typeable (Internal s2)
      )
   => (Normal (Internal s1) -> Normal (Internal s2)) -> s1 -> s2
 lift f = toS . mapS (toE . f . fromE) . fromS
