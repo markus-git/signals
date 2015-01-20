@@ -40,14 +40,13 @@ data TSignal exp r
             => (Stream exp (exp a) -> Stream exp (exp b)) -> r -> TSignal exp r
 
     TMap    :: (Typeable a, Typeable b)
-            => TStruct a -> (Struct a -> Struct b) -> r -> TSignal exp r
+            => (Struct a -> Struct b) -> r -> TSignal exp r
 
-    TZip    :: (Typeable a, Typeable b)
-            => TStruct a -> TStruct b -> r -> r -> TSignal exp r
+    TZip    :: r -> r -> TSignal exp r
 
-    TFst    :: Typeable a => TStruct a -> r -> TSignal exp r
+    TFst    :: r -> TSignal exp r
 
-    TSnd    :: Typeable a => TStruct a -> r -> TSignal exp r
+    TSnd    :: r -> TSignal exp r
 
     TDelay  :: (Typeable a) => exp a -> r -> TSignal exp r
 
@@ -67,14 +66,10 @@ instance (Typeable exp) => MuRef (Signal exp a)
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
-{-
-      (Map   sf s) -> TMap undefined  sf <$> f s
-      (Zip   (s :: Signal exp l)
-             (u :: Signal exp r))
-                   -> TZip undefined undefined <$> f s <*> f u
-      (Fst   s)    -> TFst undefined    <$> f s
-      (Snd   s)    -> TSnd undefined    <$> f s
--}
+      (Map   sf s) -> TMap  sf <$> f s
+      (Zip   s  u) -> TZip <$> f s <*> f u
+      (Fst   s)    -> TFst <$> f s
+      (Snd   s)    -> TSnd <$> f s
       (Delay a s)  -> TDelay a <$> f s
       (SVar  _)    -> pure $ TVar
 
@@ -101,42 +96,19 @@ instance (Typeable a, Typeable b, Typeable exp) =>
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
 
 --------------------------------------------------------------------------------
--- **
-
-data TStruct a
-  where
-    TLeaf :: String                 -> TStruct (Empty (exp a))
-    TPair :: TStruct a -> TStruct b -> TStruct (a, b)
-
-ts :: Struct a -> TStruct a
-ts (Leaf _)   = TLeaf ""
-ts (Pair l r) = TPair (ts l) (ts r)
-
-tsp :: forall a. Typeable a => Proxy a -> TStruct a
-tsp _ | typeRepTyCon ty == pc = let [x, y] = typeRepArgs ty
-                                 in TPair (tsp (Proxy :: Proxy x))
-                                          (tsp (Proxy :: Proxy y))
-  where
-    ty :: TypeRep
-    ty = typeOf (undefined :: a)
-
-    pc :: TyCon
-    pc = typeRepTyCon $ typeOf (undefined :: (a, a))
-
---------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
 
 instance Show (TSignal exp Unique) where
   show node = case node of
-    (TLambda i b)  -> "lam. " ++ show i ++ " " ++ show b
-    (TVar)         -> "var. "
-    (TConst _)     -> "const. "
-    (TLift  _ s)   -> "lift. " ++ show s
-    (TMap _ _ s)   -> "map. " ++ show s
-    (TZip _ _ s u) -> "zip. " ++ show s ++ " " ++ show u
-    (TFst _ s)     -> "fst. " ++ show s
-    (TSnd _ s)     -> "snd. " ++ show s
-    (TDelay _ s)   -> "delay. " ++ show s
-    (TVBuff r)     -> "vbuff ." ++ show r
-    (TDBuff r _)   -> "dbuff ." ++ show r
+    (TLambda i b) -> "lam. "   ++ show i ++ " " ++ show b
+    (TVar)        -> "var. "
+    (TConst _)    -> "const. "
+    (TLift  _ s)  -> "lift. "  ++ show s
+    (TMap _ s)    -> "map. "   ++ show s
+    (TZip s u)    -> "zip. "   ++ show s ++ " " ++ show u
+    (TFst s)      -> "fst. "   ++ show s
+    (TSnd s)      -> "snd. "   ++ show s
+    (TDelay _ s)  -> "delay. " ++ show s
+    (TVBuff r)    -> "vbuff ." ++ show r
+    (TDBuff r _)  -> "dbuff ." ++ show r

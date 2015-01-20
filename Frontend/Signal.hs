@@ -21,8 +21,7 @@ import           Prelude ( ($), (.), id
                          , Num, (+), (-), (*), fromInteger
                          , Fractional, (/), fromRational
                          , Floating, (**), pi, sin
-                         , Eq
-                         , Show)
+                         , Eq, Show, String)
 import qualified Prelude as P
 
 import Data.Dynamic
@@ -140,9 +139,29 @@ zipWith f = P.curry $ lift $ P.uncurry f
 -- * Generalised lifting of Signals
 --------------------------------------------------------------------------------
 
+-- | 0-tuple value
+data Empty a deriving Typeable
+
+-- | Representation of nested tuples as a binary tree
+data Struct a
+  where
+    Leaf :: exp a -> Struct (Empty (exp a))
+    Pair :: Struct a -> Struct b -> Struct (a, b)
+  deriving
+    Typeable
+
+-- | Similar to `Struct`, with id's at the leafs
+data TStruct a
+  where
+    TLeaf :: String -> TStruct (Empty (exp a))
+    TPair :: TStruct a -> TStruct b -> TStruct (a, b)
+  deriving
+    Typeable
+
 --------------------------------------------------------------------------------
 -- ** Conversion between signals and tuples
 
+-- | ...
 class StructS a
   where
     type Internal a :: *
@@ -159,14 +178,6 @@ instance StructS (Signal exp (Empty (exp a)))
     fromS = id
     toS   = id
 
-instance StructS (Sig exp a)
-  where
-    type Internal (Sig exp a) = Empty (exp a)
-    type Domain   (Sig exp a) = exp
-
-    fromS = unSig
-    toS   = Sig
-
 instance ( Typeable (Internal a)
          , Typeable (Internal b)
          , StructS a
@@ -181,20 +192,45 @@ instance ( Typeable (Internal a)
     fromS (a, b) = Zip (fromS a) (fromS b)
     toS    p     = (toS (Fst p), toS (Snd p))
 
+instance StructS (Sig exp a)
+  where
+    type Internal (Sig exp a) = Empty (exp a)
+    type Domain   (Sig exp a) = exp
+
+    fromS = unSig
+    toS   = Sig
+
+--------------------------------------------------------------------------------
+-- ** Conversion between signals and empty structs
+
+class StructT a
+  where
+    type TInternal a :: *
+
+    repS :: a -> TStruct (TInternal a)
+
+instance StructT (Signal exp (Empty (exp a)))
+  where
+    type TInternal (Signal exp (Empty (exp a))) = Empty (exp a)
+
+    repS _ = TLeaf ""
+
+instance (StructT a, StructT b) => StructT (a, b)
+  where
+    type TInternal (a, b) = (TInternal a, TInternal b)
+
+    repS (a, b)  = TPair (repS a) (repS b)
+
+instance StructT (Sig exp a)
+  where
+    type TInternal (Sig exp a) = Empty (exp a)
+
+    repS = repS . unSig
+
 --------------------------------------------------------------------------------
 -- ** Conversion between struct's and tuples
 
--- | 0-tuple value
-data Empty a deriving Typeable
-
 -- | ...
-data Struct a
-  where
-    Leaf :: exp a -> Struct (Empty (exp a))
-    Pair :: Struct a -> Struct b -> Struct (a, b)
-  deriving
-    Typeable
-
 class StructE a
   where
     type Normal a :: *

@@ -136,32 +136,14 @@ compile (i, TLift f c) _ =
      show i =: r
 -}
 
-
-{-
-compile (i, TZip (_ :: Proxy (tl, tr)) l r) _ =
-  do sl <- check =<< knot l :: Knot exp (Struct tl)
-     sr <- check =<< knot r :: Knot exp (Struct tr)
-     r  <- tangleS (Pair sl sr)
-     i  =: r
-  where
-    check :: forall exp a. (Typeable exp, Typeable a)
-          => Dynamic
-          -> Knot exp (Struct a)
-    check x =
-      case fromDynamic x :: Maybe (Ref (exp a)) of
-        Nothing -> return $ unDyn x
-        Just r  -> lift   $ getRef r >>= return . fromJust . cast . Leaf
-                                           -- this is shit
--}
-
-----------------------------------------
+--------------------------------------------------------------------------------
 -- Some helper functions
 
 -- | does some unwrapping/wrapping of stream functions
 streamify   :: (Str exp a -> Str exp b) -> exp a -> SProg exp b
 streamify f = Str.run . f . Stream . return . return
 
-----------------------------------------
+--------------------------------------------------------------------------------
 -- Some dynamic helper functions
 --
 -- ToDo: we should remove 'Dynamic' later on, so I put all the
@@ -188,61 +170,6 @@ unDyn       :: Typeable a => Dynamic -> a
 unDyn d     = case fromDynamic d of
                 Just e  -> e
                 Nothing -> error "unDyn"
-
-----------------------------------------
--- Even more trees
-
-{-
-
-data TStruct a
-  where
-    TLeaf :: String                 -> TStruct (Empty (exp a))
-    TPair :: TStruct a -> TStruct b -> TStruct (a, b)
-
-typeTree :: forall a. Typeable a => Proxy (Struct a) -> TStruct a
-typeTree _ = go $ typeOf (undefined :: Struct a)
-  where
-    go r = undefined
-
-typeTree :: forall a. Typeable a => Proxy a -> TStruct a
-typeTree _ = go $ typeOf (undefined :: a)
-  where
-    ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
-    go r | typeRepTyCon r == ty = let [x, y] = typeRepArgs r in TPair (go x) (go y)
-         | otherwise            = TLeaf undefined
-
--}
-
-{-
-
-data BTree a = L a | B (BTree a) (BTree a)
-
--- | Construct binary tree from struct proxy  ... hackity hack
-typeTree :: forall a. Typeable a => Proxy a -> BTree ()
-typeTree _ = go $ typeOf (undefined :: a)
-  where
-    ty   = typeRepTyCon $ typeOf (undefined :: (a, a))
-    go r | typeRepTyCon r == ty = let [x, y] = typeRepArgs r in B (go x) (go y)
-         | otherwise            = L ()
-
--- | Replace empty holes of a binary tree with unique id's
-markTree :: BTree () -> String -> BTree String
-markTree (L _)   s = L s
-markTree (B l r) s = B (markTree l (s ++ "_l")) (markTree r (s ++ "_r"))
-
--- | ... this is a version of 'r2s' from my old compiler ...
-knotTree :: Typeable a => Proxy a -> String -> Knot exp (Struct a)
-knotTree p s = go $ markTree (typeTree p) s
-
-go :: BTree String -> Knot exp (Struct a)
-go (L s)   = knot s >>= \v -> return $ Leaf v
-go (B l r) = undefined
-
--- | ... this will be a version of 's2r' from my old compiler ...
-tellTree :: Struct a -> Knot exp ()
-tellTree = undefined
-
--}
 
 --------------------------------------------------------------------------------
 -- *
