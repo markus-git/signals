@@ -73,8 +73,6 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 
 class (Typeable (exp :: * -> *), Typeable (a :: *)) => Typ exp a
 
-{-
-
 instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
   where
     fromInteger = repeat . fromInteger
@@ -102,8 +100,6 @@ instance (Typ exp a, Floating (exp a), Eq (exp a)) => Floating (Sig exp a)
     atan  = todo; acos  = todo; sinh    = todo;
     tanh  = todo; cosh  = todo; asinh   = todo;
     atanh = todo; acosh = todo; logBase = todo;
-
--}
 
 todo = P.error "unsupported operation"
 
@@ -134,14 +130,10 @@ map f = liftS $ S.map f
 delay :: (Typeable a) => exp a -> Sig exp a -> Sig exp a
 delay e = Sig . Delay e . unSig
 
-{-
-
 zipWith :: (Typeable exp, Typeable a, Typeable b, Typeable c)
         => (exp a -> exp b -> exp c)
         -> Sig exp a -> Sig exp b -> Sig exp c
 zipWith f = P.curry $ lift $ P.uncurry f
-
--}
 
 --------------------------------------------------------------------------------
 -- * Generalised lifting of Signals
@@ -211,33 +203,24 @@ instance ( StructS a, Typeable (Internal a)
 
 class StructT a
   where
-    type Regular a :: *
     type DomainT a :: * -> *
 
-    represent :: a -> TStruct (DomainT a) (Regular a)
+    rep :: Signal (DomainT a) a -> TStruct (DomainT a) a
 
-instance Typeable a =>
-    StructT (Signal exp (Empty (exp a)))
+instance Typeable a => StructT (Empty (exp a))
   where
-    type Regular (Signal exp (Empty (exp a))) = Empty (exp a)
-    type DomainT (Signal exp (Empty (exp a))) = exp
+    type DomainT (Empty (exp a)) = exp
 
-    represent e = TLeaf ""
+    rep _ = TLeaf ""
 
-instance Typeable a =>
-    StructT (Sig exp a)
+instance ( StructT a, Typeable a
+         , StructT b, Typeable b
+         , DomainT a ~ DomainT b) =>
+    StructT (a, b)
   where
-    type Regular (Sig exp a) = Empty (exp a)
-    type DomainT (Sig exp a) = exp
-
-    represent = represent . unSig
-
-instance (StructT a, StructT b, DomainT a ~ DomainT b) => StructT (a, b)
-  where
-    type Regular (a, b) = (Regular a, Regular b)
     type DomainT (a, b) = DomainT a
 
-    represent (a, b) = TPair (represent a) (represent b)
+    rep p = TPair (rep $ Fst p) (rep $ Snd p)
 
 --------------------------------------------------------------------------------
 -- ** Conversion between struct's and tuples
