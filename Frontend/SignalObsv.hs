@@ -69,15 +69,17 @@ instance (Typeable exp) => MuRef (Signal exp a)
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
 
---      (Map   sf s) -> TMap (rep s) sf <$> f s
+      (Map   sf s) -> TMap (rep s) sf <$> f s
 
 --      (Zip   s  u) -> TZip (rep s) (rep u) <$> f s <*> f u
 
 --      (Fst   s)    -> TFst undefined <$> f s
+
 --      (Snd   s)    -> TSnd undefined <$> f s
 
 --      (Delay a s)  -> TDelay a <$> f s
---      (SVar  _)    -> pure $ TVar
+
+      (SVar  _)    -> pure $ TVar
 
 instance (Typeable a, Typeable b, Typeable exp) =>
     MuRef (Signal exp a -> Signal exp b)
@@ -105,41 +107,18 @@ instance (Typeable a, Typeable b, Typeable exp) =>
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
 
 --------------------------------------------------------------------------------
--- **
-
--- how do I prove that, forall a. DomainT a ~ exp?
+-- ** Prove that, forall a. DomainT (Signal exp a) ~ exp
 
 data Wt c
   where
     Wt :: c => Wt c
 
 wt :: Signal exp a -> Wt (DomainT a ~ exp)
-wt (Const  _) = Wt
-wt (Lift _ _) = Wt
-wt x@(Map  _ s)
-  | Wt <- wt s
-  , Wt <- wd s x
-  = Wt
-wt (Zip l r)
-  | Wt <- wt l
-  , Wt <- wt r
-  = Wt
-wt (Fst s)
-  | Wt <- wt s
-  = Wt
-wt x@(Snd s)
-  | Wt <- wt s
-  , Wt <- wd s x
-  = Wt
-wt (Delay _ s)
-  | Wt <- wt s
-  = Wt
+wt s = undefined
 
+-- needed for `Map` and `Snd`
 wd :: Signal exp a -> Signal exp b -> Wt (DomainT a ~ DomainT b)
-wd s u
-  | Wt <- wt s
-  , Wt <- wt u
-  = Wt
+wd s u = undefined
 
 --------------------------------------------------------------------------------
 -- * Testing

@@ -260,8 +260,8 @@ instance ( StructE a
 -- | ...
 lift
   :: ( -- we must be able to do the signal \ tuple transformations
-       StructS s1            , StructS s2
-     , StructE  (Internal s1), StructE  (Internal s2)
+       StructS s1           , StructS s2
+     , StructE (Internal s1), StructE (Internal s2)
 
        -- the `exp` type of the signals and tuples should be the same
      , Domain s1 ~ Domain s2
