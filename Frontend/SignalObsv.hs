@@ -50,7 +50,7 @@ data TSignal exp r
 
     TSnd    :: TStruct exp a -> r -> TSignal exp r
 
-    TDelay  :: (Typeable a) => exp a -> r -> TSignal exp r
+    TDelay  :: Typeable a => exp a -> r -> TSignal exp r
 
     -- ^ Buffers
     TVBuff  :: r ->            TSignal exp r
@@ -68,17 +68,11 @@ instance (Typeable exp) => MuRef (Signal exp a)
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
-
       (Map   sf s) -> TMap (rep s) sf <$> f s
-
---      (Zip   s  u) -> TZip (rep s) (rep u) <$> f s <*> f u
-
---      (Fst   s)    -> TFst undefined <$> f s
-
---      (Snd   s)    -> TSnd undefined <$> f s
-
---      (Delay a s)  -> TDelay a <$> f s
-
+      (Zip   s  u) -> TZip (rep s) (rep u) <$> f s <*> f u
+      (Fst   s)    -> TFst (rep s) <$> f s
+      (Snd   s)    -> TSnd (rep s) <$> f s
+      (Delay a s)  -> TDelay a <$> f s
       (SVar  _)    -> pure $ TVar
 
 instance (Typeable a, Typeable b, Typeable exp) =>
@@ -105,20 +99,6 @@ instance (Typeable a, Typeable b, Typeable exp) =>
     type DeRef (Sig exp a -> Sig exp b) = TSignal exp
 
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
-
---------------------------------------------------------------------------------
--- ** Prove that, forall a. DomainT (Signal exp a) ~ exp
-
-data Wt c
-  where
-    Wt :: c => Wt c
-
-wt :: Signal exp a -> Wt (DomainT a ~ exp)
-wt s = undefined
-
--- needed for `Map` and `Snd`
-wd :: Signal exp a -> Signal exp b -> Wt (DomainT a ~ DomainT b)
-wd s u = undefined
 
 --------------------------------------------------------------------------------
 -- * Testing

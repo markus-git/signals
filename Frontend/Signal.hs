@@ -7,7 +7,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Frontend.Signal where
@@ -43,18 +42,30 @@ data Signal exp a
           -> (Signal exp (Empty (exp a)) -> Signal exp (Empty (exp b)))
 
     -- ^ maps a function over nested tuples to a function over signals
-    Map   :: (Typeable a, Typeable b)
+    Map   :: ( Typeable a, Typeable b
+             , StructT a, DomainT a ~ exp)
           => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 
     -- ^ joins together two nodes
-    Zip   :: (Typeable a, Typeable b)
+    Zip   :: ( Typeable a, Typeable b
+             , StructT a, StructT b
+             , DomainT a ~ exp
+             , DomainT b ~ DomainT a)
           => Signal exp a -> Signal exp b -> Signal exp (a, b)
 
     -- ^ breaks apart a signal of pairs, returning the first
-    Fst   :: Typeable a => Signal exp (a, b) -> Signal exp a
+    Fst   :: ( Typeable a, Typeable b
+             , StructT a, StructT b
+             , DomainT a ~ exp
+             , DomainT b ~ DomainT a)
+          => Signal exp (a, b) -> Signal exp a
 
     -- ^ breaks apart a signal of pairs, returning the second
-    Snd   :: Typeable b => Signal exp (a, b) -> Signal exp b
+    Snd   :: ( Typeable a, Typeable b
+             , StructT a, StructT b
+             , DomainT a ~ exp
+             , DomainT b ~ DomainT a)
+           => Signal exp (a, b) -> Signal exp b
 
     -- ^ prepends a value to the input signal
     Delay :: Typeable a
@@ -113,7 +124,7 @@ liftS :: (Typeable a, Typeable b)
       => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
 liftS f = Sig . Lift f . unSig
 
-mapS :: (Typeable a, Typeable b)
+mapS :: (Typeable a, Typeable b, StructT a, DomainT a ~ exp)
      => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 mapS = Map
 
@@ -186,9 +197,11 @@ instance StructS (Sig exp a)
     fromS = unSig
     toS   = Sig
 
-instance ( StructS a, Typeable (Internal a)
-         , StructS b, Typeable (Internal b)
+instance ( StructS a, StructT (Internal a), Typeable (Internal a)
+         , StructS b, StructT (Internal b), Typeable (Internal b)
          , Domain a ~ Domain b
+         , DomainT (Internal a) ~ DomainT (Internal b)
+         , DomainT (Internal a) ~ Domain a
          ) =>
     StructS (a, b)
   where
@@ -259,8 +272,11 @@ instance ( StructE a
 
 -- | ...
 lift
-  :: ( -- we must be able to do the signal \ tuple transformations
-       StructS s1           , StructS s2
+  :: ( -- ...
+       StructT (Internal s1), DomainT (Internal s1) ~ Domain s2
+
+       -- we must be able to do the signal \ tuple transformations
+     , StructS s1           , StructS s2
      , StructE (Internal s1), StructE (Internal s2)
 
        -- the `exp` type of the signals and tuples should be the same

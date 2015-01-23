@@ -7,13 +7,15 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE RecursiveDo                #-}
+{-# LANGUAGE Rank2Types                 #-}
 
 module Frontend.SignalComp where
 
 import           Frontend.Stream (Stream(..), Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Sig, Empty(..), Struct(..), TStruct(..))
+import           Frontend.Signal (Signal, Sig, Empty(..), Struct(..), TStruct(..), rep)
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -29,7 +31,9 @@ import Core                (CMD, Ref(..), newRef, setRef, getRef
                                , iff)
 
 import Control.Applicative
-import Control.Monad.Operational (Program)
+import Control.Monad
+import Control.Monad.Fix
+import Control.Monad.Operational
 
 import           Control.Monad.Writer (WriterT, MonadWriter)
 import qualified Control.Monad.Writer as CMW
@@ -41,6 +45,7 @@ import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.Identity as CMI
 
 import Data.Dynamic
+import Data.List (find)
 import Data.Reify
 import Data.Proxy
 import Data.Typeable
@@ -65,6 +70,8 @@ newtype KnotT i x m a =
     , MonadWriter [(i, x)]
     )
 
+type Knot i x = KnotT i x Identity
+
 instance MonadTrans (KnotT i x)
   where
     lift = KnotT . lift . lift
@@ -81,6 +88,62 @@ instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
     knot i = CMR.asks (M.! i)
     i =: x = CMW.tell [(i, x)]
 
+solve :: Ord i => [(i, x)] -> Map i x
+solve = M.fromList
+
+tie :: (Ord i, MonadFix m) => KnotT i x m a -> m (a, Map i x)
+tie (KnotT knot) = mfix $ \(a, solution) ->
+  do (a, constraints) <- CMW.runWriterT $ CMR.runReaderT knot solution
+     let solution = solve undefined
+     return (a, solution)
+
+--------------------------------------------------------------------------------
+-- **
+
+interpret :: ProgramT instr (Knot i x) a -> Knot i x (Program instr a)
+interpret = eval <=< viewT
+  where
+    eval :: forall instr i x a.
+            ProgramViewT instr (Knot i x) a
+         -> Knot i x (Program instr a)
+    eval (Return a) = return (return a)
+    eval (m :>>= k) =
+      do a1 <- return $ singleton m
+         a2 <- return $ a1 >>= k
+         interpret a2
+
+
+                   -- out :: Knot i1 x1 (Program instr1 a1)
+                   -- m   :: instr b
+                   -- k   :: b -> ProgramT instr1 (Knot i1 x1) x1
+
+-- viewT :: ProgramT instr (Knot i x) a -> Knot i x (ProgramViewT instr Knot a)
+
+
+-- tie   :: Knot i x (Program instr a)  -> (Program instr a, Map i x)
+
+{-
+
+twist :: (Functor m, Monad m) => ProgramT i m a -> m (Program i a)
+twist (Lift m) = fmap return m
+twist (Instr i) = return $ singleton i
+twist (Bind m k) = do
+  p <- twist m
+  twist $ Bind (liftProgram p) k
+
+-}
+
+--------------------------------------------------------------------------------
+
+
+{-
+
+instance MonadFix (Program (CMD exp))
+    where
+      mfix f = undefined
+
+-}
+
 --------------------------------------------------------------------------------
 -- ** Graph
 
@@ -90,16 +153,26 @@ type SNode  exp   = (Unique, TSignal exp Unique)
 
 type SProg  exp a = Program (CMD exp) (exp a)
 
-compiler :: (Typeable exp, Typeable a, Typeable b)
-         => SGraph exp   -- ^ signal graph
-         -> SProg  exp a -- ^ input  program
-         -> SProg  exp b -- ^ output program
-compiler (Graph nodes root) input = undefined
+{-
+
+compiler :: (Typeable exp, Typeable a)
+         => SGraph exp
+         -> SProg exp a
+         -> Program (CMD exp) (Map String Dynamic)
+compiler (Graph gnodes groot) input =
+  do let knot = compile (findN gnodes groot) input
+     (a, m) <- tie knot
+     return m
+
+-}
+
+findN :: [SNode exp] -> Unique -> SNode exp
+findN nodes i = let (Just n) = find ((==) i . P.fst) nodes in n
 
 ----------------------------------------
 -- ...
 
-type Knot  exp a = KnotT String Dynamic (Program (CMD exp)) a
+{-
 
 compile :: forall exp a. (Typeable exp, Typeable a)
         => SNode exp     -- ^ signal node
@@ -128,8 +201,32 @@ compile (i, TLift f c) _ =
      r <- tangle g
      show i =: r
 
+compile (i, TMap t f c) _ =
+  do s <- knotS $ markS t (show c)
+     g <- return $ f s
+     tellS g $ show i
+
+compile (i, TZip t f l r) _ =
+  do sl <- knotS $ markS t (show l)
+     sr <- knotS $ markS f (show r)
+     let s = Pair sl sr
+     tellS s $ show i
+
+compile (i, TFst t c) _ =
+  do (Pair l _) <- knotS $ markS t (show c)
+     tellS l $ show i
+
+compile (i, TSnd t c) _ =
+  do (Pair _ r) <- knotS $ markS t (show c)
+     tellS r $ show i
+
+compile (i, TDelay _ _) _ = error "delay"
+
+-}
+
 --------------------------------------------------------------------------------
--- *** Some helper functions
+
+{-
 
 -- | does some unwrapping/wrapping of stream functions
 streamify   :: (Str exp a -> Str exp b) -> exp a -> SProg exp b
@@ -160,11 +257,13 @@ tellS (Pair l r) i =
   do tellS l (i ++ "_l")
      tellS r (i ++ "_r")
 
+-}
+
 --------------------------------------------------------------------------------
--- *** Some dynamic helper functions
---
 -- ToDo: we should remove 'Dynamic' later on, so I put all the
 --       functions which invlove typecasting here.
+
+{-
 
 -- | casts a reference to a dynamic type
 tangle      :: (Typeable exp, Typeable a) => exp a -> Knot exp Dynamic
@@ -174,23 +273,13 @@ tangle e    = lift $ toDyn <$> newRef e
 untangle    :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (exp a)
 untangle d  = lift $ getRef $ unDyn d
 
-{-
-
--- | same as tangle, but for structs
-tangleS     :: (Typeable a) => Struct exp a -> Knot exp Dynamic
-tangleS s   = return $ toDyn s
-
--- | same as untangle, but for structs
-untangleS   :: (Typeable exp, Typeable a) => Dynamic -> Knot exp (Struct exp a)
-untangleS d = return $ unDyn d
-
--}
-
 -- | removes the dynamic type from a reference
 unDyn       :: Typeable a => Dynamic -> a
 unDyn d     = case fromDynamic d of
                 Just e  -> e
                 Nothing -> error "unDyn"
+
+-}
 
 --------------------------------------------------------------------------------
 -- *
