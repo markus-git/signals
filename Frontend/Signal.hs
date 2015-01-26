@@ -124,7 +124,10 @@ liftS :: (Typeable a, Typeable b)
       => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
 liftS f = Sig . Lift f . unSig
 
-mapS :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
+mapS :: ( Typeable a, Typeable b
+        , StructT a, StructT b
+        , DomainT a ~ exp
+        , DomainT b ~ DomainT a)
      => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 mapS = Map
 
@@ -168,6 +171,15 @@ data TStruct exp a
     TPair :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
   deriving
     Typeable
+
+tleft  :: TStruct exp (a, b) -> TStruct exp a
+tleft  ~t = case t of (TPair l _) -> l
+
+tright :: TStruct exp (a, b) -> TStruct exp b
+tright ~t = case t of (TPair _ r) -> r
+
+tleaf  :: TStruct exp (Empty (exp a)) -> String
+tleaf  ~t = case t of (TLeaf i) -> i
 
 --------------------------------------------------------------------------------
 -- ** Conversion between signals and tuples

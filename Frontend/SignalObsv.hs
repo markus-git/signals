@@ -45,7 +45,9 @@ data TSignal exp r
             => TStruct exp a -> TStruct exp b
             -> (Struct exp a -> Struct exp b) -> r -> TSignal exp r
 
-    TZip    :: TStruct exp a -> TStruct exp b -> r -> r -> TSignal exp r
+    TZip    :: TStruct exp a
+            -> TStruct exp b
+            -> r -> r -> TSignal exp r
 
     TFst    :: TStruct exp a -> r -> TSignal exp r
 
@@ -107,7 +109,7 @@ instance (Typeable a, Typeable b, Typeable exp) =>
 -- * Testing
 --------------------------------------------------------------------------------
 
-instance Show (TSignal exp Unique) where
+instance Show a => Show (TSignal exp a) where
   show node = case node of
     (TLambda i b)  -> "lam. "   ++ show i ++ " " ++ show b
     (TVar)         -> "var. "

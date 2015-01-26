@@ -15,7 +15,10 @@ module Frontend.SignalComp where
 import           Frontend.Stream (Stream(..), Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Signal, Sig, Empty(..), Struct(..), TStruct(..), rep)
+import           Frontend.Signal ( Signal, Sig
+                                 , Empty(..)
+                                 , Struct(..)
+                                 , TStruct(..), tleaf, tleft, tright, rep)
 import qualified Frontend.Signal as Sig
 
 import           Frontend.SignalObsv (TSignal(..))
@@ -90,14 +93,16 @@ solve :: Ord i => [(i, x)] -> Map i x
 solve = M.fromList
 
 tie :: (Ord i, MonadFix m) => KnotT i x m a -> m (a, Map i x)
-tie (KnotT knot) = mfix $ \(a, solution) ->
-  do (a, constraints) <- CMW.runWriterT $ CMR.runReaderT knot solution
+tie (KnotT knot) = mfix $ \ ~(a, solution) ->
+  do ~(a, constraints) <- CMW.runWriterT $ CMR.runReaderT knot solution
      let solution = solve constraints
      return (a, solution)
 
 --------------------------------------------------------------------------------
 -- * Compiler
 --------------------------------------------------------------------------------
+
+type Node exp i = (i, TSignal exp i)
 
 --------------------------------------------------------------------------------
 -- ** Linker
@@ -107,25 +112,18 @@ type Id  = String
 type Ref = String
 
 linker :: Graph (TSignal exp) -> Map Id Ref
-linker (Graph ns r) = finish . tie . link $ start r ns
-  where
-    start i = showP . findP i
-    finish  = snd   . runIdentity
-
-    showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
-    showP (x, y) = (show x, showTS y)
-
-    findP :: Eq a => a -> [(a, b)] -> (a, b)
-    findP i ns = case find ((==i) . fst) ns of Just x -> x
-
+linker (Graph nodes _) = snd
+                       . runIdentity
+                       . tie
+                       . sequence
+                       . fmap (link . showP)
+                       $ nodes
 
 -- | ...
 link :: (Id, TSignal exp Ref) -> Knot Id Ref ()
 
 link (i, TLambda l r) =
-  do knot l
-     knot r
-     i =: ('?' : i)
+  do i =: "?"
 
 link (i, TVar) =
   do i =: "input"
@@ -139,20 +137,50 @@ link (i, TLift _ s) =
 
 link (i, TMap t t' _ s) =
   do asks  t  s
-     tells t' i
+     tells t' t' i
 
 link (i, TZip t t' l r) =
   do sl <- asks t  l
      sr <- asks t' r
-     tells (TPair sl sr) i
+     tells (TPair t t') (TPair sl sr) i
+
+{-
 
 link (i, TFst t l) =
-  do (TPair sl _) <- asks t l
-     tells sl i
+  do sl <- asks t l
+     tells t (tleft sl) i
 
 link (i, TSnd t r) =
-  do (TPair _ sr) <- asks t r
-     tells sr i
+  do sr <- asks t r
+     tells t (tright sr) i
+
+-}
+
+--------------------------------------------------------------------------------
+
+asks :: TStruct exp a -> String -> Knot Id Ref (TStruct exp a)
+asks (TLeaf i)   s = knot s >>= return . TLeaf
+asks (TPair l r) s =
+  do l' <- asks l $ s ++ "_1"
+     r' <- asks r $ s ++ "_2"
+     return $ TPair l' r'
+
+tells :: TStruct exp a
+      -> TStruct exp a
+      -> String
+      -> Knot Id Ref ()
+tells (TLeaf _)   t s = s =: (tleaf t)
+tells (TPair l r) t s =
+  do tells l (tleft  t) (s ++ "_1")
+     tells r (tright t) (s ++ "_2")
+
+--------------------------------------------------------------------------------
+-- ** Sorter
+
+
+
+
+--------------------------------------------------------------------------------
 
 -- | ...
 showTS :: Show r => TSignal exp r -> TSignal exp String
@@ -168,45 +196,25 @@ showTS node =
     (TSnd t x)      -> TSnd   t      (show x)
     (TDelay e x)    -> TDelay e      (show x)
 
-----------------------------------------
-
-asks :: TStruct exp a -> String -> Knot Id Ref (TStruct exp a)
-asks (TLeaf i)   s = knot s >>= return . TLeaf
-asks (TPair l r) s =
-  do l' <- asks l $ s ++ "_1"
-     r' <- asks r $ s ++ "_2"
-     return $ TPair l' r'
-
-tells :: TStruct exp a -> String -> Knot Id Ref ()
-tells (TLeaf i)   s = i =: s
-tells (TPair l r) s =
-  do tells l $ s ++ "_1"
-     tells r $ s ++ "_2"
-
-{-
-
--- | does some unwrapping/wrapping of stream functions
-streamify   :: (Str exp a -> Str exp b) -> exp a -> SProg exp b
-streamify f = Str.run . f . Stream . return . return
-
--}
+showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
+showP (x, y) = (show x, showTS y)
 
 --------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
 
 type S  = Sig E.Expr Float
+type TS = TSignal E.Expr
 
 sig :: S -> S
-sig s = s + 2 - 3
-
-type TS = TSignal E.Expr
+sig s = s + 0
 
 tsig :: IO (Graph TS)
 tsig = reifyGraph sig
 
 test :: IO ()
 test = do
-  s <- tsig
+  s@(Graph nodes root) <- tsig
+  putStrLn $ show s
   let m = linker s
   putStrLn $ show m
