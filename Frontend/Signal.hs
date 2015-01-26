@@ -82,9 +82,7 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 --------------------------------------------------------------------------------
 -- ** Instances
 
-class (Typeable (exp :: * -> *), Typeable (a :: *)) => Typ exp a
-
-instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
+instance (Typeable exp, Typeable a, Num (exp a), Eq (exp a), Show a) => Num (Sig exp a)
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -93,14 +91,14 @@ instance (Typ exp a, Num (exp a), Eq (exp a)) => Num (Sig exp a)
 
     abs = todo; signum = todo;
 
-instance (Typ exp a, Fractional (exp a), Eq (exp a)) => Fractional (Sig exp a)
+instance (Typeable exp, Typeable a, Fractional (exp a), Eq (exp a), Show a) => Fractional (Sig exp a)
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Typ exp a, Floating (exp a), Eq (exp a)) => Floating (Sig exp a)
+instance (Typeable exp, Typeable a, Floating (exp a), Eq (exp a), Show a) => Floating (Sig exp a)
   where
     pi   = repeat pi
     sin  = map sin
@@ -218,7 +216,7 @@ class StructT a
   where
     type DomainT a :: * -> *
 
-    rep :: Signal (DomainT a) a -> TStruct (DomainT a) a
+    rep :: signal (DomainT a) a -> TStruct (DomainT a) a
 
 instance Typeable a => StructT (Empty (exp a))
   where
@@ -233,7 +231,13 @@ instance ( StructT a, Typeable a
   where
     type DomainT (a, b) = DomainT a
 
-    rep p = TPair (rep $ Fst p) (rep $ Snd p)
+    rep p = TPair (rep $ left p) (rep $ right p)
+      where
+        left  :: signal (DomainT a) (a, b) -> signal (DomainT a) a
+        left  = P.undefined
+
+        right :: signal (DomainT b) (a, b) -> signal (DomainT b) b
+        right = P.undefined
 
 --------------------------------------------------------------------------------
 -- ** Conversion between struct's and tuples
