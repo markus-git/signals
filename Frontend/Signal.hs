@@ -43,7 +43,9 @@ data Signal exp a
 
     -- ^ maps a function over nested tuples to a function over signals
     Map   :: ( Typeable a, Typeable b
-             , StructT a, DomainT a ~ exp)
+             , StructT a, StructT b
+             , DomainT a ~ exp
+             , DomainT b ~ DomainT a)
           => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 
     -- ^ joins together two nodes
@@ -122,7 +124,7 @@ liftS :: (Typeable a, Typeable b)
       => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
 liftS f = Sig . Lift f . unSig
 
-mapS :: (Typeable a, Typeable b, StructT a, DomainT a ~ exp)
+mapS :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
      => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 mapS = Map
 
@@ -216,7 +218,7 @@ class StructT a
   where
     type DomainT a :: * -> *
 
-    rep :: signal (DomainT a) a -> TStruct (DomainT a) a
+    rep :: c (DomainT a) a -> TStruct (DomainT a) a
 
 instance Typeable a => StructT (Empty (exp a))
   where
@@ -233,10 +235,10 @@ instance ( StructT a, Typeable a
 
     rep p = TPair (rep $ left p) (rep $ right p)
       where
-        left  :: signal (DomainT a) (a, b) -> signal (DomainT a) a
+        left  :: c (DomainT a) (a, b) -> c (DomainT a) a
         left  = P.undefined
 
-        right :: signal (DomainT b) (a, b) -> signal (DomainT b) b
+        right :: c (DomainT b) (a, b) -> c (DomainT b) b
         right = P.undefined
 
 --------------------------------------------------------------------------------
@@ -277,7 +279,9 @@ instance ( StructE a
 -- | ...
 lift
   :: ( -- ...
-       StructT (Internal s1), DomainT (Internal s1) ~ Domain s2
+       StructT (Internal s1) , StructT (Internal s2)
+     , DomainT (Internal s1) ~ Domain s2
+     , DomainT (Internal s2) ~ Domain s2
 
        -- we must be able to do the signal \ tuple transformations
      , StructS s1           , StructS s2

@@ -42,7 +42,8 @@ data TSignal exp r
             => (Stream exp (exp a) -> Stream exp (exp b)) -> r -> TSignal exp r
 
     TMap    :: (Typeable a, Typeable b)
-            => TStruct exp a -> (Struct exp a -> Struct exp b) -> r -> TSignal exp r
+            => TStruct exp a -> TStruct exp b
+            -> (Struct exp a -> Struct exp b) -> r -> TSignal exp r
 
     TZip    :: TStruct exp a -> TStruct exp b -> r -> r -> TSignal exp r
 
@@ -68,7 +69,9 @@ instance (Typeable exp) => MuRef (Signal exp a)
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
-      (Map   sf s) -> TMap (rep s) sf <$> f s
+      (Map   sf s) -> TMap (rep s) (rep u) sf <$> f s
+        where u :: Struct exp a
+              u = undefined
       (Zip   s  u) -> TZip (rep s) (rep u) <$> f s <*> f u
       (Fst   s)    -> TFst (rep s) <$> f s
       (Snd   s)    -> TSnd (rep s) <$> f s
@@ -110,7 +113,7 @@ instance Show (TSignal exp Unique) where
     (TVar)         -> "var. "
     (TConst _)     -> "const. "
     (TLift  _ s)   -> "lift. "  ++ show s
-    (TMap _ _ s)   -> "map. "   ++ show s
+    (TMap _ _ _ s) -> "map. "   ++ show s
     (TZip _ _ s u) -> "zip. "   ++ show s ++ " " ++ show u
     (TFst _ s)     -> "fst. "   ++ show s
     (TSnd _ s)     -> "snd. "   ++ show s
