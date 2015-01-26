@@ -38,7 +38,7 @@ import qualified Control.Monad.Writer as CMW
 import           Control.Monad.Reader (ReaderT, MonadReader, MonadTrans, lift)
 import qualified Control.Monad.Reader as CMR
 
-import           Control.Monad.Identity (Identity)
+import           Control.Monad.Identity (Identity, runIdentity)
 import qualified Control.Monad.Identity as CMI
 
 import Data.Dynamic
@@ -107,13 +107,17 @@ type Id  = String
 type Ref = String
 
 linker :: Graph (TSignal exp) -> Map Id Ref
-linker (Graph ns _) = snd
-                    $ CMI.runIdentity
-                    $ tie
-                    $ sequence
-                    $ fmap (link . showP) ns
+linker (Graph ns r) = finish . tie . link $ start r ns
   where
+    start i = showP . findP i
+    finish  = snd   . runIdentity
+
+    showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
     showP (x, y) = (show x, showTS y)
+
+    findP :: Eq a => a -> [(a, b)] -> (a, b)
+    findP i ns = case find ((==i) . fst) ns of Just x -> x
+
 
 -- | ...
 link :: (Id, TSignal exp Ref) -> Knot Id Ref ()
@@ -133,9 +137,9 @@ link (i, TLift _ s) =
   do knot s
      i =: ('v' : i)
 
-link (i, TMap t _ s) =
-  do asks t s
-     i =: ('?' : i)
+link (i, TMap t t' _ s) =
+  do asks  t  s
+     tells t' i
 
 link (i, TZip t t' l r) =
   do sl <- asks t  l
@@ -154,15 +158,15 @@ link (i, TSnd t r) =
 showTS :: Show r => TSignal exp r -> TSignal exp String
 showTS node =
   case node of
-    (TLambda x y)   -> TLambda   (show x) (show y)
+    (TLambda x y)   -> TLambda       (show x) (show y)
     (TVar)          -> TVar
     (TConst e)      -> TConst e
-    (TLift f x)     -> TLift f   (show x)
-    (TMap t f x)    -> TMap t f  (show x)
-    (TZip t t' x y) -> TZip t t' (show x) (show y)
-    (TFst t x)      -> TFst t    (show x)
-    (TSnd t x)      -> TSnd t    (show x)
-    (TDelay e x)    -> TDelay e  (show x)
+    (TLift f x)     -> TLift  f      (show x)
+    (TMap t t' f x) -> TMap   t t' f (show x)
+    (TZip t t' x y) -> TZip   t t'   (show x) (show y)
+    (TFst t x)      -> TFst   t      (show x)
+    (TSnd t x)      -> TSnd   t      (show x)
+    (TDelay e x)    -> TDelay e      (show x)
 
 ----------------------------------------
 
@@ -191,5 +195,18 @@ streamify f = Str.run . f . Stream . return . return
 -- * Testing
 --------------------------------------------------------------------------------
 
-signal :: Sig E.Expr Float -> Sig E.Expr Float
-signal s = s + (Sig.repeat 1)
+type S  = Sig E.Expr Float
+
+sig :: S -> S
+sig s = s + 2 - 3
+
+type TS = TSignal E.Expr
+
+tsig :: IO (Graph TS)
+tsig = reifyGraph sig
+
+test :: IO ()
+test = do
+  s <- tsig
+  let m = linker s
+  putStrLn $ show m
