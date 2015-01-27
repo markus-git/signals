@@ -21,10 +21,10 @@ import           Frontend.Signal ( Signal, Sig
                                  , TStruct(..), tleaf, tleft, tright, rep)
 import qualified Frontend.Signal as Sig
 
-import           Frontend.SignalObsv (TSignal(..))
+import           Frontend.SignalObsv (TSignal(..), showTS, showP)
 import qualified Frontend.SignalObsv as SigO
 
-import           Data.Map (Map)
+import           Data.Map (Map, (!))
 import qualified Data.Map as M
 
 import Core (CMD)
@@ -41,11 +41,15 @@ import qualified Control.Monad.Writer as CMW
 import           Control.Monad.Reader (ReaderT, MonadReader, MonadTrans, lift)
 import qualified Control.Monad.Reader as CMR
 
+import           Control.Monad.State (StateT, State, MonadState, get, put, modify)
+import qualified Control.Monad.State as CMS
+
 import           Control.Monad.Identity (Identity, runIdentity)
 import qualified Control.Monad.Identity as CMI
 
-import Data.Dynamic
 import Data.List (find)
+import Data.Maybe (fromJust)
+import Data.Dynamic
 import Data.Reify
 import Data.Proxy
 import Data.Typeable
@@ -102,28 +106,30 @@ tie (KnotT knot) = mfix $ \ ~(a, solution) ->
 -- * Compiler
 --------------------------------------------------------------------------------
 
-type Node exp i = (i, TSignal exp i)
-
 --------------------------------------------------------------------------------
 -- ** Linker
+--------------------------------------------------------------------------------
 
 type Id  = String
 
 type Ref = String
 
+-- | ...
 linker :: Graph (TSignal exp) -> Map Id Ref
-linker (Graph nodes _) = snd
-                       . runIdentity
-                       . tie
-                       . sequence
-                       . fmap (link . showP)
-                       $ nodes
+linker (Graph nodes _) =
+        snd
+      . runIdentity
+      . tie
+      . sequence
+      . fmap (link . showP)
+      $ nodes
 
 -- | ...
 link :: (Id, TSignal exp Ref) -> Knot Id Ref ()
-
 link (i, TLambda l r) =
-  do i =: "?"
+  do l' <- knot l
+     r' <- knot r
+     i =: (l' ++ ". " ++ r')
 
 link (i, TVar) =
   do i =: "input"
@@ -136,25 +142,26 @@ link (i, TLift _ s) =
      i =: ('v' : i)
 
 link (i, TMap t t' _ s) =
-  do asks  t  s
-     tells t' t' i
+  do s' <- asks t s   -- I'm not sure about this one,
+     tells t s' i     -- both the output and input will be structs
+     i =: ('v' : i)   -- but we only 'really' tell on the inputs
 
 link (i, TZip t t' l r) =
   do sl <- asks t  l
      sr <- asks t' r
      tells (TPair t t') (TPair sl sr) i
 
-{-
-
 link (i, TFst t l) =
   do sl <- asks t l
-     tells t (tleft sl) i
+     tells (tleft t) (tleft sl) i
 
 link (i, TSnd t r) =
   do sr <- asks t r
-     tells t (tright sr) i
+     tells (tright t) (tright sr) i
 
--}
+link (i, TDelay e s) =
+  do s' <- knot s
+     i =: ('d' : s')
 
 --------------------------------------------------------------------------------
 
@@ -176,28 +183,87 @@ tells (TPair l r) t s =
 
 --------------------------------------------------------------------------------
 -- ** Sorter
-
-
-
-
 --------------------------------------------------------------------------------
 
--- | ...
-showTS :: Show r => TSignal exp r -> TSignal exp String
-showTS node =
-  case node of
-    (TLambda x y)   -> TLambda       (show x) (show y)
-    (TVar)          -> TVar
-    (TConst e)      -> TConst e
-    (TLift f x)     -> TLift  f      (show x)
-    (TMap t t' f x) -> TMap   t t' f (show x)
-    (TZip t t' x y) -> TZip   t t'   (show x) (show y)
-    (TFst t x)      -> TFst   t      (show x)
-    (TSnd t x)      -> TSnd   t      (show x)
-    (TDelay e x)    -> TDelay e      (show x)
+data Status = Visited Int | Visiting | Unvisited
 
-showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
-showP (x, y) = (show x, showTS y)
+type TNode exp = (Unique, TSignal exp Unique)
+
+type Node  exp = (Status, TNode exp)
+
+sorter :: Graph (TSignal exp) -> Map Unique Int
+sorter (Graph nodes root) =
+    M.map getOrder . snd . exec $ init >> find root >>= sort
+  where
+    exec = flip CMS.execState (1, M.empty)
+
+    init = mapM insert $ fmap ((,) Unvisited) nodes
+
+    getOrder :: Node e -> Int
+    getOrder (Visited i, _) = i
+
+    insert :: Node e -> State (Int, Map Unique (Node e)) ()
+    insert x@(_, (i, _)) = modify $ fmap $ M.insert i x
+
+    find   :: Unique -> State (Int, Map Unique (Node e)) (TNode e)
+    find i = get >>= return . snd . fromJust . M.lookup i . snd
+
+{-
++ All nodes are unvisited by default
+
+procedure sort(G, v):
+  label v as visiting
+  for all edges from v to w in G.adjacent(v) do
+    if vertex w is labeled as visiting then
+      maybe fail "cycle"
+    if vertex w is not labeled as visited then
+      call sort(G, w)
+  label v as visited
+  label v with order c
+  increase ordering c
+-}
+sort :: TNode e -> State (Int, Map Unique (Node e)) Bool
+sort (i, node) =
+  do mark i Visiting
+     b <- and <$> flip mapM (edges node) (\e ->
+            do (s, node') <- find e
+               case s of
+                 Visited _ -> sort node'
+                 Unvisited -> return True
+                 Visiting  -> return False)
+     c <- new
+     mark i $ Visited c
+     return $ if delayed node
+               then True
+               else b
+  where
+    mark :: Unique -> Status -> State (Int, Map Unique (Node e)) ()
+    mark i s = modify $ fmap $ M.adjust (first $ const s) i
+
+    find :: Unique -> State (Int, Map Unique (Node e)) (Node e)
+    find i = get >>= return . (! i) . snd
+
+    new :: State (Int, Map Unique (Node e)) Int
+    new = do (i, m) <- get
+             put (i + 1, m)
+             return i
+
+    delayed :: TSignal e a -> Bool
+    delayed (TDelay _ _) = True
+    delayed _            = False
+
+edges :: TSignal e a -> [a]
+edges node =
+  case node of
+    TLambda x y  -> [x, y]
+    TVar         -> []
+    TConst _     -> []
+    TLift  _ x   -> [x]
+    TMap _ _ _ x -> [x]
+    TZip _ _ x y -> [x, y]
+    TFst _ x     -> [x]
+    TSnd _ x     -> [x]
+    TDelay _ x   -> [x]
 
 --------------------------------------------------------------------------------
 -- * Testing

@@ -49,9 +49,9 @@ data TSignal exp r
             -> TStruct exp b
             -> r -> r -> TSignal exp r
 
-    TFst    :: TStruct exp a -> r -> TSignal exp r
+    TFst    :: TStruct exp (a, b) -> r -> TSignal exp r
 
-    TSnd    :: TStruct exp a -> r -> TSignal exp r
+    TSnd    :: TStruct exp (a, b) -> r -> TSignal exp r
 
     TDelay  :: Typeable a => exp a -> r -> TSignal exp r
 
@@ -108,6 +108,25 @@ instance (Typeable a, Typeable b, Typeable exp) =>
 --------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+
+-- | ...
+showTS :: Show r => TSignal exp r -> TSignal exp String
+showTS node =
+  case node of
+    (TLambda x y)   -> TLambda       (show x) (show y)
+    (TVar)          -> TVar
+    (TConst e)      -> TConst e
+    (TLift f x)     -> TLift  f      (show x)
+    (TMap t t' f x) -> TMap   t t' f (show x)
+    (TZip t t' x y) -> TZip   t t'   (show x) (show y)
+    (TFst t x)      -> TFst   t      (show x)
+    (TSnd t x)      -> TSnd   t      (show x)
+    (TDelay e x)    -> TDelay e      (show x)
+
+showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
+showP (x, y) = (show x, showTS y)
 
 instance Show a => Show (TSignal exp a) where
   show node = case node of
