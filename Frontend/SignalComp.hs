@@ -63,53 +63,11 @@ import qualified Expr as E
 ---------------------------------------- : End
 
 --------------------------------------------------------------------------------
--- * Knot Monad
---------------------------------------------------------------------------------
-
-newtype KnotT i x m a =
-    KnotT { unKnotT :: ReaderT (Map i x) (WriterT [(i, x)] m) a }
-  deriving
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadReader (Map i x)
-    , MonadWriter [(i, x)]
-    )
-
-type Knot i x = KnotT i x Identity
-
-instance MonadTrans (KnotT i x)
-  where
-    lift = KnotT . lift . lift
-
-class (Ord i, MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
-    MonadKnot i x m | m -> i x
-  where
-    knot :: i -> m x
-    (=:) :: i -> x -> m ()
-
-instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
-    MonadKnot i x m
-  where
-    knot i = CMR.asks (M.! i)
-    i =: x = CMW.tell [(i, x)]
-
-solve :: Ord i => [(i, x)] -> Map i x
-solve = M.fromList
-
-tie :: (Ord i, MonadFix m) => KnotT i x m a -> m (a, Map i x)
-tie (KnotT knot) = mfix $ \ ~(a, solution) ->
-  do ~(a, constraints) <- CMW.runWriterT $ CMR.runReaderT knot solution
-     let solution = solve constraints
-     return (a, solution)
-
---------------------------------------------------------------------------------
 -- * Compiler
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
 -- ** Linker
---------------------------------------------------------------------------------
 
 type Id  = String
 
@@ -133,7 +91,7 @@ link (i, TLambda l r) =
      i =: (l' ++ ". " ++ r')
 
 link (i, TVar) =
-  do i =: "input"
+  do i =: ('v' : i)
 
 link (i, TConst _) =
   do i =: ('v' : i)
@@ -143,9 +101,9 @@ link (i, TLift _ s) =
      i =: ('v' : i)
 
 link (i, TMap t t' _ s) =
-  do s' <- asks t s   -- I'm not sure about this one,
-     tells t s' i     -- both the output and input will be structs
-     i =: ('v' : i)   -- but we only 'really' tell on the inputs
+  do s' <- asks t s
+     tells t  s' i
+     i =: ('v' : i)
 
 link (i, TZip t t' l r) =
   do sl <- asks t  l
@@ -167,16 +125,13 @@ link (i, TDelay e s) =
 --------------------------------------------------------------------------------
 
 asks :: TStruct exp a -> String -> Knot Id Ref (TStruct exp a)
-asks (TLeaf i)   s = knot s >>= return . TLeaf
+asks (TLeaf _)   s = knot s >>= return . TLeaf
 asks (TPair l r) s =
   do l' <- asks l $ s ++ "_1"
      r' <- asks r $ s ++ "_2"
      return $ TPair l' r'
 
-tells :: TStruct exp a
-      -> TStruct exp a
-      -> String
-      -> Knot Id Ref ()
+tells :: TStruct exp a -> TStruct exp a -> String -> Knot Id Ref ()
 tells (TLeaf _)   t s = s =: (tleaf t)
 tells (TPair l r) t s =
   do tells l (tleft  t) (s ++ "_1")
@@ -184,7 +139,6 @@ tells (TPair l r) t s =
 
 --------------------------------------------------------------------------------
 -- ** Sorter
---------------------------------------------------------------------------------
 
 data Status = Visited Int | Visiting | Unvisited
 
@@ -242,14 +196,26 @@ sort (i, node) =
     delayed _            = False
 
 --------------------------------------------------------------------------------
--- *
+-- ** Compiler
 
 type LMap = Map Id Ref
 
 type OMap = Map Unique Int
 
-comp :: TNode exp -> Map Id Ref -> Program (CMD exp) (exp b) -> Program (CMD exp) a
-comp (i, TVar) m input = undefined
+comp :: TNode exp
+     -> Map Id Ref
+     -> Program (CMD exp) (exp b)
+     -> Program (CMD exp) a
+comp (i, TVar) m input =
+  do v <- input
+     r <- C.newRef v
+     undefined
+
+--------------------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------------------
 
 filterMaps :: Graph (TSignal e) -> (LMap, OMap) -> (LMap, OMap)
 filterMaps (Graph nodes _) (lm, om) = (lm', om')
@@ -266,6 +232,47 @@ filterMaps (Graph nodes _) (lm, om) = (lm', om')
     nop (TSnd    {}) = True
     nop (TLambda {}) = True
     nop _            = False
+
+--------------------------------------------------------------------------------
+-- * Knot Monad
+--------------------------------------------------------------------------------
+
+newtype KnotT i x m a =
+    KnotT { unKnotT :: ReaderT (Map i x) (WriterT [(i, x)] m) a }
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadReader (Map i x)
+    , MonadWriter [(i, x)]
+    )
+
+type Knot i x = KnotT i x Identity
+
+instance MonadTrans (KnotT i x)
+  where
+    lift = KnotT . lift . lift
+
+class (Ord i, MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
+    MonadKnot i x m | m -> i x
+  where
+    knot :: i -> m x
+    (=:) :: i -> x -> m ()
+
+instance (Ord i , MonadReader (Map i x) m, MonadWriter [(i, x)] m) =>
+    MonadKnot i x m
+  where
+    knot i = CMR.asks (M.! i)
+    i =: x = CMW.tell [(i, x)]
+
+solve :: Ord i => [(i, x)] -> Map i x
+solve = M.fromList
+
+tie :: (Ord i, MonadFix m) => KnotT i x m a -> m (a, Map i x)
+tie (KnotT knot) = mfix $ \ ~(a, solution) ->
+  do ~(a, constraints) <- CMW.runWriterT $ CMR.runReaderT knot solution
+     let solution = solve constraints
+     return (a, solution)
 
 --------------------------------------------------------------------------------
 -- * Testing
