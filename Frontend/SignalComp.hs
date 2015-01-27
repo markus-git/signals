@@ -27,7 +27,8 @@ import qualified Frontend.SignalObsv as SigO
 import           Data.Map (Map, (!))
 import qualified Data.Map as M
 
-import Core (CMD)
+import           Core (CMD)
+import qualified Core as C
 
 import Control.Applicative
 import Control.Arrow
@@ -47,7 +48,7 @@ import qualified Control.Monad.State as CMS
 import           Control.Monad.Identity (Identity, runIdentity)
 import qualified Control.Monad.Identity as CMI
 
-import Data.List (find)
+import Data.List (find, elem)
 import Data.Maybe (fromJust)
 import Data.Dynamic
 import Data.Reify
@@ -243,8 +244,28 @@ sort (i, node) =
 --------------------------------------------------------------------------------
 -- *
 
-comp :: TNode exp -> Program (CMD exp) a
-comp (i, node) = undefined
+type LMap = Map Id Ref
+
+type OMap = Map Unique Int
+
+comp :: TNode exp -> Map Id Ref -> Program (CMD exp) (exp b) -> Program (CMD exp) a
+comp (i, TVar) m input = undefined
+
+filterMaps :: Graph (TSignal e) -> (LMap, OMap) -> (LMap, OMap)
+filterMaps (Graph nodes _) (lm, om) = (lm', om')
+  where
+    om' = M.filterWithKey (\k _ -> not $ isnop k) om
+    lm' = M.filterWithKey (\k _ -> not $ isnop (read [head k])) lm
+
+    isnop :: Unique -> Bool
+    isnop i = nop $ snd $ fromJust $ find ((==i) . fst) nodes
+
+    nop :: TSignal e a -> Bool
+    nop (TZip    {}) = True
+    nop (TFst    {}) = True
+    nop (TSnd    {}) = True
+    nop (TLambda {}) = True
+    nop _            = False
 
 --------------------------------------------------------------------------------
 -- * Testing
@@ -267,3 +288,8 @@ test = do
   putStrLn $ show m
   let s = sorter g
   putStrLn $ show s
+  putStrLn "==========="
+  let (m', s') = filterMaps g (m, s)
+  putStrLn $ show m'
+  putStrLn $ show s'
+  putStrLn "==========="
