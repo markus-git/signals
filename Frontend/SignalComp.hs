@@ -198,23 +198,91 @@ sort (i, node) =
 --------------------------------------------------------------------------------
 -- ** Compiler
 
-type LMap = Map Id Ref
+-- | .. map from node id to ordering
+type OMap       = Map Unique Int
 
-type OMap = Map Unique Int
+-- | ...
+type LMap       = Map Id Ref
 
-type DMap = Map Unique Dynamic
+-- | ...
+type DMap       = Map Ref Dynamic
 
-comp :: TNode exp
-     -> Map Id Ref
-     -> Program  (CMD exp) (exp b)
-     -> ProgramT (CMD exp) (State DMap) Dynamic
-comp (i, TVar) m input =
-  do v <- liftProgram input -- Eh..
+-- | ...
+type Prog exp a = ProgramT (CMD exp) (ReaderT LMap (State DMap)) a
+
+{-
+
+test :: IO ()
+test = do
+  g@(Graph nodes root) <- tsig
+  putStrLn $ show g
+  let m = linker g
+  putStrLn $ show m
+  let s = sorter g
+  putStrLn $ show s
+  putStrLn "==========="
+  let (m', s') = filterMaps g (m, s)
+  putStrLn $ show m'
+  putStrLn $ show s'
+  putStrLn "==========="
+-}
+
+compiler :: Graph (TSignal exp)
+         -> Program (CMD exp) (exp b)
+         -> Program (CMD exp) (exp a)
+compiler g input =
+  do let (m, s) = filterMaps g $ (linker &&& sorter) g
      undefined
+  where
+
+
+comp :: (Typeable exp, Typeable b)
+     => TNode exp
+     -> Program (CMD exp) (exp b)
+     -> Prog exp ()
+comp (i, TVar) input =
+  do v <- liftProgram input -- Eh..
+     r <- C.newRef v
+     setLink (show i) r
+
+comp (i, TConst c) _ =
+  do v <- liftProgram $ Str.run c -- Meh..
+     r <- C.newRef v
+     setLink (show i) r
+
+comp (i, TMap t t' f s) _ =
+  do v <- getLinks t (show i)
+     setLinks (f v) (show i)
 
 --------------------------------------------------------------------------------
 
+getLink :: Typeable a => Id -> Prog exp (C.Ref a)
+getLink u =
+  do x <- CMR.asks (! u)
+     y <- CMS.gets (! x)
+     case fromDynamic y of
+       Just r  -> return r
+       Nothing -> error "getLink"
 
+setLink :: Typeable a => Id -> C.Ref a -> Prog exp ()
+setLink u r =
+  do x <- CMR.asks (! u)
+     CMS.modify (M.insert x (toDyn r))
+
+--------------------------------------------------------------------------------
+
+getLinks :: Typeable exp => TStruct exp a -> Id -> Prog exp (Struct exp a)
+getLinks (TLeaf _)   s = getLink s >>= C.getRef >>= return . Leaf
+getLinks (TPair l r) s =
+  do sl <- getLinks l $ s ++ "_1"
+     sr <- getLinks r $ s ++ "_2"
+     return (Pair sl sr)
+
+setLinks :: Typeable exp => Struct exp a -> Id -> Prog exp ()
+setLinks (Leaf e) s = C.newRef e >>= setLink s
+
+-- we would need a proper 'setLinks' function, but first we need to deal with
+-- linking case where 'TMap' returnes a struct of values
 
 --------------------------------------------------------------------------------
 
