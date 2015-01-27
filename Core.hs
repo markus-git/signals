@@ -84,46 +84,43 @@ data Arr a
 --------------------------------------------------------------------------------
 -- *** File Handling
 
-open  :: FilePath -> Program (CMD exp) Handle
+open  :: FilePath -> ProgramT (CMD exp) m Handle
 open   = singleton . Open
 
-close :: Handle -> Program (CMD exp) ()
+close :: Handle -> ProgramT (CMD exp) m ()
 close  = singleton . Close
 
-fput  :: Handle -> exp Float -> Program (CMD exp) ()
+fput  :: Handle -> exp Float -> ProgramT (CMD exp) m ()
 fput p = singleton . Put p
 
-fget  :: Handle -> Program (CMD exp) (exp Float)
+fget  :: Handle -> ProgramT (CMD exp) m (exp Float)
 fget   = singleton . Get
 
-feof  :: Handle -> Program (CMD exp) (exp Bool)
+feof  :: Handle -> ProgramT (CMD exp) m (exp Bool)
 feof   = singleton . Eof
 
 --------------------------------------------------------------------------------
 -- *** Variables
 
-newRef        :: exp a -> Program (CMD exp) (Ref (exp a))
+newRef        :: exp a -> ProgramT (CMD exp) m (Ref (exp a))
 newRef e      = singleton (NewRef e)
 
-getRef        :: Ref (exp a) -> Program (CMD exp) (exp a)
+getRef        :: Ref (exp a) -> ProgramT (CMD exp) m (exp a)
 getRef r      = singleton (GetRef r)
 
-setRef        :: Ref (exp a) -> exp a -> Program (CMD exp) ()
+setRef        :: Ref (exp a) -> exp a -> ProgramT (CMD exp) m ()
 setRef r      = singleton . SetRef r
-
-modifyRef     :: Ref (exp a) -> (exp a -> exp a) -> Program (CMD exp) ()
-modifyRef r f = getRef r >>= setRef r . f
 
 --------------------------------------------------------------------------------
 -- *** Arrays
 
-newArr :: Integral n => exp n -> exp a -> Program (CMD exp) (Arr (exp a))
+newArr :: Integral n => exp n -> exp a -> ProgramT (CMD exp) m (Arr (exp a))
 newArr n = singleton . NewArr n
 
-getArr :: Integral n => exp n -> Arr (exp a) -> Program (CMD exp) (exp a)
+getArr :: Integral n => exp n -> Arr (exp a) -> ProgramT (CMD exp) m (exp a)
 getArr n = singleton . GetArr n
 
-setArr :: Integral n => exp n -> exp a -> Arr (exp a) -> Program (CMD exp) ()
+setArr :: Integral n => exp n -> exp a -> Arr (exp a) -> ProgramT (CMD exp) m ()
 setArr n a = singleton . SetArr n a
 
 ----------------------------------------
@@ -131,7 +128,7 @@ setArr n a = singleton . SetArr n a
 
 -- | Like 'getRef' but assumes that the reference will not be modified later
 --   in the program
-unsafeGetRef :: VarPred exp a => Ref (exp a) -> Program (CMD exp) (exp a)
+unsafeGetRef :: VarPred exp a => Ref (exp a) -> ProgramT (CMD exp) m (exp a)
 unsafeGetRef = singleton . UnsafeGetRef
   -- TODO: It would be possible to make a conservative analysis to find out if
   --       uses of `unsafeGetRef` are safe. Even better, the compiler could

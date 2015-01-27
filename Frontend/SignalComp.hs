@@ -202,13 +202,14 @@ type LMap = Map Id Ref
 
 type OMap = Map Unique Int
 
+type DMap = Map Unique Dynamic
+
 comp :: TNode exp
      -> Map Id Ref
-     -> Program (CMD exp) (exp b)
-     -> Program (CMD exp) a
+     -> Program  (CMD exp) (exp b)
+     -> ProgramT (CMD exp) (State DMap) Dynamic
 comp (i, TVar) m input =
-  do v <- input
-     r <- C.newRef v
+  do v <- liftProgram input -- Eh..
      undefined
 
 --------------------------------------------------------------------------------
