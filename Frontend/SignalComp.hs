@@ -21,7 +21,7 @@ import           Frontend.Signal ( Signal, Sig
                                  , TStruct(..), tleaf, tleft, tright, rep)
 import qualified Frontend.Signal as Sig
 
-import           Frontend.SignalObsv (TSignal(..), showTS, showP)
+import           Frontend.SignalObsv (TSignal(..), showTS, showP, edges)
 import qualified Frontend.SignalObsv as SigO
 
 import           Data.Map (Map, (!))
@@ -195,7 +195,9 @@ sorter :: Graph (TSignal exp) -> Map Unique Int
 sorter (Graph nodes root) =
     M.map getOrder . snd . exec $ init >> find root >>= sort
   where
-    exec = flip CMS.execState (1, M.empty)
+    exec s = case CMS.runState s (1, M.empty) of
+               (True, state) -> state
+               (False,    _) -> error "cycle in graph"
 
     init = mapM insert $ fmap ((,) Unvisited) nodes
 
@@ -208,34 +210,20 @@ sorter (Graph nodes root) =
     find   :: Unique -> State (Int, Map Unique (Node e)) (TNode e)
     find i = get >>= return . snd . fromJust . M.lookup i . snd
 
-{-
-+ All nodes are unvisited by default
-
-procedure sort(G, v):
-  label v as visiting
-  for all edges from v to w in G.adjacent(v) do
-    if vertex w is labeled as visiting then
-      maybe fail "cycle"
-    if vertex w is not labeled as visited then
-      call sort(G, w)
-  label v as visited
-  label v with order c
-  increase ordering c
--}
 sort :: TNode e -> State (Int, Map Unique (Node e)) Bool
 sort (i, node) =
   do mark i Visiting
-     b <- and <$> flip mapM (edges node) (\e ->
+     b <- flip mapM (edges node) $ \e ->
             do (s, node') <- find e
                case s of
-                 Visited _ -> sort node'
-                 Unvisited -> return True
-                 Visiting  -> return False)
+                 Unvisited -> sort node'
+                 Visited _ -> return True
+                 Visiting  -> return False
      c <- new
      mark i $ Visited c
      return $ if delayed node
                then True
-               else b
+               else and b
   where
     mark :: Unique -> Status -> State (Int, Map Unique (Node e)) ()
     mark i s = modify $ fmap $ M.adjust (first $ const s) i
@@ -252,18 +240,11 @@ sort (i, node) =
     delayed (TDelay _ _) = True
     delayed _            = False
 
-edges :: TSignal e a -> [a]
-edges node =
-  case node of
-    TLambda x y  -> [x, y]
-    TVar         -> []
-    TConst _     -> []
-    TLift  _ x   -> [x]
-    TMap _ _ _ x -> [x]
-    TZip _ _ x y -> [x, y]
-    TFst _ x     -> [x]
-    TSnd _ x     -> [x]
-    TDelay _ x   -> [x]
+--------------------------------------------------------------------------------
+-- *
+
+comp :: TNode exp -> Program (CMD exp) a
+comp (i, node) = undefined
 
 --------------------------------------------------------------------------------
 -- * Testing
@@ -280,7 +261,9 @@ tsig = reifyGraph sig
 
 test :: IO ()
 test = do
-  s@(Graph nodes root) <- tsig
-  putStrLn $ show s
-  let m = linker s
+  g@(Graph nodes root) <- tsig
+  putStrLn $ show g
+  let m = linker g
   putStrLn $ show m
+  let s = sorter g
+  putStrLn $ show s

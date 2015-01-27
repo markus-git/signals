@@ -62,6 +62,22 @@ data TSignal exp r
   deriving (Typeable)
 
 --------------------------------------------------------------------------------
+--
+
+edges :: TSignal e a -> [a]
+edges node =
+  case node of
+    TLambda x y  -> [x, y]
+    TVar         -> []
+    TConst _     -> []
+    TLift  _ x   -> [x]
+    TMap _ _ _ x -> [x]
+    TZip _ _ x y -> [x, y]
+    TFst _ x     -> [x]
+    TSnd _ x     -> [x]
+    TDelay _ x   -> [x]
+
+--------------------------------------------------------------------------------
 -- ** MuRef instances for signals
 
 instance (Typeable exp) => MuRef (Signal exp a)
