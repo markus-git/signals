@@ -48,7 +48,8 @@ import qualified Control.Monad.State as CMS
 import           Control.Monad.Identity (Identity, runIdentity)
 import qualified Control.Monad.Identity as CMI
 
-import Data.List (find, elem)
+import Data.List (find, sortBy, elem)
+import Data.Function (on)
 import Data.Maybe (fromJust)
 import Data.Dynamic
 import Data.Reify
@@ -208,46 +209,41 @@ type LMap       = Map Id Ref
 type DMap       = Map Ref Dynamic
 
 -- | ...
-type Prog exp a = ProgramT (CMD exp) (ReaderT LMap (State DMap)) a
+type Prog exp a = ReaderT LMap (StateT DMap (Program (CMD exp))) a
 
-{-
-
-test :: IO ()
-test = do
-  g@(Graph nodes root) <- tsig
-  putStrLn $ show g
-  let m = linker g
-  putStrLn $ show m
-  let s = sorter g
-  putStrLn $ show s
-  putStrLn "==========="
-  let (m', s') = filterMaps g (m, s)
-  putStrLn $ show m'
-  putStrLn $ show s'
-  putStrLn "==========="
--}
-
-compiler :: Graph (TSignal exp)
+compiler :: forall exp a b. (Typeable exp, Typeable b)
+         => Graph (TSignal exp)
          -> Program (CMD exp) (exp b)
          -> Program (CMD exp) (exp a)
-compiler g input =
-  do let (m, s) = filterMaps g $ (linker &&& sorter) g
-     undefined
+compiler g@(Graph nodes _) input =
+    undefined -- join state into a program
+  $ flip CMS.execStateT M.empty
+  $ flip CMR.runReaderT lmap
+  $ mapM (flip comp input)
+  $ sort smap
   where
+    (lmap, smap) = filterMaps g $ (linker &&& sorter) g
 
+    sort :: OMap -> [TNode exp]
+    sort = fmap (findNode . fst)
+         . sortBy (compare `on` snd)
+         . M.toList
+
+    findNode :: Unique -> TNode exp
+    findNode i = fromJust $ find ((==i) . fst) nodes
 
 comp :: (Typeable exp, Typeable b)
      => TNode exp
      -> Program (CMD exp) (exp b)
      -> Prog exp ()
 comp (i, TVar) input =
-  do v <- liftProgram input -- Eh..
-     r <- C.newRef v
+  do v <- lift $ lift $ liftProgram input -- I'll be buff in no time with
+     r <- lift $ lift $ C.newRef v        -- all this lifting
      setLink (show i) r
 
 comp (i, TConst c) _ =
-  do v <- liftProgram $ Str.run c -- Meh..
-     r <- C.newRef v
+  do v <- lift $ lift $ liftProgram $ Str.run c -- Meh..
+     r <- lift $ lift $ C.newRef v
      setLink (show i) r
 
 comp (i, TMap t t' f s) _ =
@@ -272,14 +268,17 @@ setLink u r =
 --------------------------------------------------------------------------------
 
 getLinks :: Typeable exp => TStruct exp a -> Id -> Prog exp (Struct exp a)
-getLinks (TLeaf _)   s = getLink s >>= C.getRef >>= return . Leaf
+getLinks (TLeaf _) s =
+  do r <- getLink s
+     v <- lift $ lift $ C.getRef r
+     return $ Leaf v
 getLinks (TPair l r) s =
   do sl <- getLinks l $ s ++ "_1"
      sr <- getLinks r $ s ++ "_2"
      return (Pair sl sr)
 
 setLinks :: Typeable exp => Struct exp a -> Id -> Prog exp ()
-setLinks (Leaf e) s = C.newRef e >>= setLink s
+setLinks (Leaf e) s = lift (lift (C.newRef e)) >>= setLink s
 
 -- we would need a proper 'setLinks' function, but first we need to deal with
 -- linking case where 'TMap' returnes a struct of values
