@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 module Backend.C where
 
@@ -11,7 +12,7 @@ import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Exception
 import Control.Monad.Operational
-import Data.Typeable (TypeRep)
+import Data.Typeable (TypeRep, typeOf)
 
 import Language.C.Quote.C
 import qualified Language.C.Syntax as C
@@ -66,10 +67,8 @@ instance Any a
 instance CompExp C Expr
   where
     type VarPred Expr = Any
-
     varExp   = Var
     compExp  = compExp'
-    compSExp = compSExp'
 
 -- |
 compExp' :: Expr a -> C C.Exp
@@ -154,6 +153,7 @@ instance CompCMD C cmd => CompCMD C (Construct cmd)
 
 compCMD' :: CMD Expr a -> C a
 
+--------------------------------------------------------------------------------
 -- ^ File handling
 compCMD' (Open path) = do
   addInclude "<stdio.h>"
@@ -181,29 +181,26 @@ compCMD' (Eof (HandleComp h)) = do
   addStm   [cstm| $id:sym = feof($id:h); |]
   return $ Var sym
 
+--------------------------------------------------------------------------------
 -- ^ Mutable refrences
-compCMD' (InitRef trep) = do
-  let t = compTypeRep trep
-  sym <- gensym "r"
-  addLocal [cdecl| $ty:t $id:sym; |]
-  return $ RefComp sym
-compCMD' (NewRef trep exp) = do
-  let t = compTypeRep trep
+compCMD' (NewRef exp) = do
+  let t = compTypeRep undefined
   sym <- gensym "r"
   v   <- compExp exp
-  addLocal [cdecl| $ty:t $id:sym; |]
+  addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = $v; |]
   return $ RefComp sym
-compCMD' (GetRef trep (RefComp ref)) = do
-  let t = compTypeRep trep
+compCMD' (GetRef (RefComp ref)) = do
+  let t = compTypeRep undefined
   sym <- gensym "r"
-  addLocal [cdecl| $ty:t $id:sym; |]
+  addLocal [cdecl| float $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref; |]
   return $ Var sym
 compCMD' (SetRef (RefComp ref) exp) = do
   v <- compExp exp
   addStm [cstm| $id:ref = $v; |]
 
+--------------------------------------------------------------------------------
 -- ^ Mutable arrays
 compCMD' (NewArr size init) = do
   addInclude "<string.h>"
@@ -213,15 +210,6 @@ compCMD' (NewArr size init) = do
   addLocal [cdecl| float $id:sym[ $v ]; |] -- todo: get real type
   addStm   [cstm| memset($id:sym, $i, sizeof( $id:sym )); |]
   return $ ArrComp sym
--- compCMD' (NewArr size init) = do
---   addInclude "<string.h>"
---   sym <- gensym "a"
---   v   <- compExp size
---   i   <- compExp init -- todo: use this with memset
---   addLocal [cdecl| float* $id:sym = calloc($v, sizeof(float)); |] -- todo: get real type
---   addFinalStm [cstm| free($id:sym); |]
---   addInclude "<stdlib.h>"
---   return $ Arr sym
 compCMD' (GetArr expi (ArrComp arr)) = do
   sym <- gensym "a"
   i   <- compExp expi
@@ -232,10 +220,10 @@ compCMD' (SetArr expi expv (ArrComp arr)) = do
   v <- compExp expv
   i <- compExp expi
   addStm [cstm| $id:arr[ $i ] = $v; |]
+compCMD' (UnsafeGetRef (RefComp ref)) =
+  return $ Var ref
 
--- Unsafe
-compCMD' (UnsafeGetRef (RefComp ref)) = return $ Var ref
-
+--------------------------------------------------------------------------------
 -- ^ Control structures
 compCMD' (If b t f) = do
   b' <- compExp b :: C C.Exp
@@ -313,4 +301,3 @@ genMain prog = do
     main = do
       (params,items) <- inNewFunction $ compile prog >> addStm [cstm| return 0; |]
       addGlobal [cedecl| int main($params:params){ $items:items }|]
-

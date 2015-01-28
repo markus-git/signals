@@ -34,9 +34,9 @@ data CMD exp a
     Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
-    NewRef  :: exp a                      -> CMD exp (Ref (exp a))
-    GetRef  :: Ref (exp a)                -> CMD exp (exp a)
-    SetRef  :: Ref (exp a) -> exp a       -> CMD exp ()
+    NewRef  :: exp a                -> CMD exp (Ref (exp a))
+    GetRef  :: Ref (exp a)          -> CMD exp (exp a)
+    SetRef  :: Ref (exp a) -> exp a -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
     NewArr :: Integral n => exp n -> exp a                -> CMD exp (Arr (exp a))
