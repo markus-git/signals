@@ -24,6 +24,8 @@ import qualified Frontend.Signal as Sig
 import           Frontend.SignalObsv (TSignal(..), showTS, showP, edges)
 import qualified Frontend.SignalObsv as SigO
 
+import qualified Backend.C           as B
+
 import           Data.Map (Map, (!))
 import qualified Data.Map as M
 
@@ -211,18 +213,23 @@ type DMap       = Map Ref Dynamic
 -- | ...
 type Prog exp a = ReaderT LMap (StateT DMap (Program (CMD exp))) a
 
-compiler :: forall exp a b. (Typeable exp, Typeable b)
+compiler :: forall exp a b. (Typeable exp, Typeable b, Typeable a)
          => Graph (TSignal exp)
          -> Program (CMD exp) (exp b)
          -> Program (CMD exp) (exp a)
 compiler g@(Graph nodes _) input =
-    undefined -- join state into a program
-  $ flip CMS.execStateT M.empty
-  $ flip CMR.runReaderT lmap
-  $ mapM (flip comp input)
-  $ sort smap
+  do let o = sort om
+     m <- run $ mapM_ (flip comp input) o
+     let a = m ! show (last o)
+     case fromDynamic a of
+       Just r  -> C.getRef r
+       Nothing -> error "compiler"
   where
-    (lmap, smap) = filterMaps g $ (linker &&& sorter) g
+    (lm, om) = filterMaps g $ (linker &&& sorter) g
+
+    run :: Prog exp () -> Program (CMD exp) DMap
+    run = flip CMS.execStateT M.empty
+        . flip CMR.runReaderT lm
 
     sort :: OMap -> [TNode exp]
     sort = fmap (findNode . fst)
@@ -355,16 +362,49 @@ sig s = s + 0
 tsig :: IO (Graph TS)
 tsig = reifyGraph sig
 
-test :: IO ()
+tex :: IO (Program (CMD E.Expr) ())
+tex = do
+  g     <- tsig
+  prog  <- return $ compiler g
+  return $ do
+    inp <- C.open "input"
+    out <- C.open "output"
+    let getty = prog (C.fget inp)
+        setty = C.fput out
+    C.while (return $ E.tru)
+            (do getty >>= setty)
+
+test :: IO Doc
 test = do
+  p <- tex
+  B.cgen $ C.mkFunction "main" p
+
+testShow :: IO ()
+testShow = do
+  putStrLn "========== Graph: "
   g@(Graph nodes root) <- tsig
   putStrLn $ show g
-  let m = linker g
+  putStrLn "=========== Unfiltered: "
+  let (m, s) = (linker &&& sorter) g
   putStrLn $ show m
-  let s = sorter g
   putStrLn $ show s
-  putStrLn "==========="
+  putStrLn "=========== Filtered: "
   let (m', s') = filterMaps g (m, s)
   putStrLn $ show m'
   putStrLn $ show s'
   putStrLn "==========="
+
+{-
+ex_fir :: IO (Program (CMD Expr) ())
+ex_fir = do
+  prg <- SC.runSignal (fir [1.1, 1.2, 1.3])
+  return $ do
+    ptr <- open "test"
+    let getty = prg (fget ptr)
+        setty = fput ptr
+    v <- getty
+    setty v
+    close ptr
+
+test = ex_fir >>= cgen . mkFunction "test"
+-}
