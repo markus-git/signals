@@ -24,8 +24,6 @@ import qualified Frontend.Signal as Sig
 import           Frontend.SignalObsv (TSignal(..), showTS, showP, edges)
 import qualified Frontend.SignalObsv as SigO
 
-import qualified Backend.C           as B
-
 import           Data.Map (Map, (!))
 import qualified Data.Map as M
 
@@ -63,6 +61,8 @@ import qualified Prelude as P
 
 ---------------------------------------- : Testing
 import qualified Expr as E
+import qualified Backend.C as B
+import Text.PrettyPrint.Mainland
 ---------------------------------------- : End
 
 --------------------------------------------------------------------------------
@@ -220,7 +220,7 @@ compiler :: forall exp a b. (Typeable exp, Typeable b, Typeable a)
 compiler g@(Graph nodes _) input =
   do let o = sort om
      m <- run $ mapM_ (flip comp input) o
-     let a = m ! show (last o)
+     let a = m ! ('v' : (show $ fst $ last o))
      case fromDynamic a of
        Just r  -> C.getRef r
        Nothing -> error "compiler"
@@ -393,18 +393,3 @@ testShow = do
   putStrLn $ show m'
   putStrLn $ show s'
   putStrLn "==========="
-
-{-
-ex_fir :: IO (Program (CMD Expr) ())
-ex_fir = do
-  prg <- SC.runSignal (fir [1.1, 1.2, 1.3])
-  return $ do
-    ptr <- open "test"
-    let getty = prg (fget ptr)
-        setty = fput ptr
-    v <- getty
-    setty v
-    close ptr
-
-test = ex_fir >>= cgen . mkFunction "test"
--}
