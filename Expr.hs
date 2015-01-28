@@ -115,6 +115,12 @@ todo = error "todo in expr" -- I'll add these later
 --------------------------------------------------------------------------------
 -- **
 
+tru :: Expr Bool
+tru = Val True
+
+fls :: Expr Bool
+fls = Val False
+
 eq :: Eq a => Expr a -> Expr a -> Expr Bool
 eq = Eq
 
