@@ -277,7 +277,7 @@ setLink u r =
 getLinks :: Typeable exp => TStruct exp a -> Id -> Prog exp (Struct exp a)
 getLinks (TLeaf _) s =
   do r <- getLink s
-     v <- lift $ lift $ C.getRef r
+     v <- lift $ lift $ C.unsafeGetRef r
      return $ Leaf v
 getLinks (TPair l r) s =
   do sl <- getLinks l $ s ++ "_1"
