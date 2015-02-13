@@ -161,11 +161,7 @@ tells (TPair l r) t s =
 --------------------------------------------------------------------------------
 
 data Status  = Visited | Visiting | Unvisited
-
-type SNode e = (Status, TSignal e Unique)
-
 type Order   = Int
-
 type Pred    = Unique
 
 sorter :: Unique
@@ -203,7 +199,7 @@ cycle i =
     pred i p = modify $ flip M.adjust i $ \(s, _, n) -> (s, p, n)
 
     status :: Unique -> State (Map Unique (Status, Pred, Node e)) Status
-    status i = get >>= return . (\(s, _, _) -> s) . (!? i)
+    status i = get >>= return . (\(s, _, _) -> s) . (! i)
 
     adjacent :: Unique -> State (Map Unique (Status, Pred, Node e)) [Unique]
     adjacent i =
@@ -242,11 +238,6 @@ sort i =
     adjacent :: Unique -> State (Int, Map Unique (Status, Order, Node e)) [Unique]
     adjacent i = get >>= return . edges . (\(_,_,n) -> n) . (! i) . snd
 
-(!?) :: Ord i => Map i x -> i -> x
-m !? i = case M.lookup i m of
-          Just x  -> x
-          Nothing -> error "1"
-
 --------------------------------------------------------------------------------
 
 isVisiting :: Status -> Bool
@@ -276,8 +267,8 @@ compiler nodes links order input =
        Just r  -> C.getRef r
        Nothing -> error "compiler"
   where
-    l =        filterMap nodes read isNOP links
-    o = sort $ filterMap nodes id   isNOP order
+    l = filterMap nodes (read . (:[]) . head) isNOP links
+    o = sort $ filterMap nodes id isNOP order
     
     run :: Prog exp () -> Program (CMD exp) (Map Id Dynamic)
     run = flip CMS.execStateT M.empty
@@ -287,8 +278,11 @@ compiler nodes links order input =
     sort = fmap   ((\i -> (i, nodes ! i)) .  fst)
          . sortBy (compare `on` snd)
          . M.toList
-           
-comp :: (Typeable exp, Typeable b) => (Unique, Node exp) -> Program (CMD exp) (exp b) -> Prog exp ()
+
+comp :: (Typeable exp, Typeable b)
+     => (Unique, Node exp)
+     -> Program (CMD exp) (exp b)
+     -> Prog exp ()
 comp (i, TVar) input =
   do v <- lift $ lift $ liftProgram input -- I'll be buff in no time with
      r <- lift $ lift $ C.newRef v        -- all this lifting
@@ -373,7 +367,7 @@ buffer_chains :: forall e a. (Typeable e, Typeable a, Num (e Int))
               -> Map Id [Id]
               -> Map Id ([TSignal e Id], [e a])
 buffer_chains nodes chains = 
-  let nodes' = M.map (map (nodes !)) chains :: Map Id [TSignal e Id]
+  let nodes' = M.map (map (nodes !)) chains
       vals   = M.map (map val) nodes'
       buffs  = M.mapWithKey (\k -> snd . mapAccumR (acc k) 1) nodes'
   in  M.intersectionWith (,) buffs vals
