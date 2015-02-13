@@ -171,7 +171,7 @@ sorter root nodes =
   case cycles initC root of
     False -> M.map (\(_,o,_) -> o) $ snd $ CMS.execState (sort root) initS
   where
-    initC =     M.map ((,,) Unvisited 0) $ filterMap nodes id isDelay nodes
+    initC =     M.map ((,,) Unvisited 0) nodes
     initS = (1, M.map ((,,) Unvisited 0) nodes) 
     
     cycles s i =
@@ -202,11 +202,14 @@ cycle i =
     status i = get >>= return . (\(s, _, _) -> s) . (! i)
 
     adjacent :: Unique -> State (Map Unique (Status, Pred, Node e)) [Unique]
-    adjacent i =
-      do m <- get
-         let ms = maybe [] (edges . \(_,_,n) -> n) (M.lookup i m)
-             ns = filter (flip M.member m) ms
-         return ns
+    adjacent i = get >>= return . (\(_, _, n) -> edges' n) . (! i)
+--      do m <- get
+--         let ms = maybe [] (edges . \(_,_,n) -> n) (M.lookup i m)
+--             ns = filter (flip M.member m) ms
+--         return ns
+      where
+        edges' (TDelay {}) = []
+        edges' x           = edges x
     
     predecessor :: Unique -> State (Map Unique (Status, Pred, Node e)) Pred
     predecessor i = get >>= return . (\(_, p, _) -> p) . (! i)
@@ -354,19 +357,21 @@ isDelay _           = False
 
 opt_delay_chains = undefined
 
-find_chains :: Map Id Id -> Map Id [Id]
-find_chains lm =
-  let delays = M.filter ((=='d') . head) lm
-      heads  = M.foldr M.delete delays (M.map tail delays)
-  in  M.map (flip chain delays) heads
+find_chains :: Map Unique (Node e) -> Map Unique [Unique]
+find_chains nodes =
+  let delays = M.filter (not . isDelay) nodes
+      heads  = M.foldr M.delete delays $ M.map (head . edges) delays
+  in  M.mapWithKey (\k _ -> chain k delays) heads
   where
-    chain i m = maybe [] (\v -> v : chain v m) $ M.lookup i m
-    
+    chain :: Unique -> Map Unique (Node e) -> [Unique] 
+    chain i m = maybe [] (\(TDelay _ v) -> v : chain v m) $ M.lookup i m
+  
 buffer_chains :: forall e a. (Typeable e, Typeable a, Num (e Int))
               => Map Id (TSignal e Id)
               -> Map Id [Id]
               -> Map Id ([TSignal e Id], [e a])
-buffer_chains nodes chains = 
+buffer_chains nodes chains = undefined
+{-
   let nodes' = M.map (map (nodes !)) chains
       vals   = M.map (map val) nodes'
       buffs  = M.mapWithKey (\k -> snd . mapAccumR (acc k) 1) nodes'
@@ -374,7 +379,7 @@ buffer_chains nodes chains =
   where
     val     (TDelay v _) = fromJust $ cast v
     acc k n (TDelay v _) = (n+1, TDBuff k n)
-
+-}
 merge_chains :: Map Id (TSignal e Id)
              -> Map Id ([TSignal e Id], [e a])
              -> Map Id (TSignal e Id)
@@ -399,7 +404,7 @@ tex = do
     let getty = prog (C.fget inp)
         setty = C.fput out
     C.while (return $ E.tru)
-            (do getty >>= setty)
+            (getty >>= setty)
 
 test :: IO Doc
 test = do
@@ -437,13 +442,16 @@ testShow = do
   putStrLn "=========== Links: "
   let l = linker m
   putStrLn $ show l
-  putStrLn "----- Filtered: "
-  putStrLn $ show $ filterMap m (read . (:[]) . head) isNOP l
+--putStrLn "----- Filtered: "
+--putStrLn $ show $ filterMap m (read . (:[]) . head) isNOP l
   putStrLn "=========== Order: "
   let o = sorter root m
   putStrLn $ show o
-  putStrLn "----- Filtered: "
-  putStrLn $ show $ filterMap m id isNOP o
+--putStrLn "----- Filtered: "
+--putStrLn $ show $ filterMap m id isNOP o
+  putStrLn "=========== Chains: "
+  let cs = find_chains m
+  putStrLn $ show cs
   putStrLn "=========== "
 
 -- filterMap :: Ord i => Map i x -> (j -> i) -> (x -> Bool) -> Map j y -> Map j y
