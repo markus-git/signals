@@ -203,10 +203,6 @@ cycle i =
 
     adjacent :: Unique -> State (Map Unique (Status, Pred, Node e)) [Unique]
     adjacent i = get >>= return . (\(_, _, n) -> edges' n) . (! i)
---      do m <- get
---         let ms = maybe [] (edges . \(_,_,n) -> n) (M.lookup i m)
---             ns = filter (flip M.member m) ms
---         return ns
       where
         edges' (TDelay {}) = []
         edges' x           = edges x
@@ -355,35 +351,50 @@ isDelay _           = False
 -- * Optimizing
 --------------------------------------------------------------------------------
 
-opt_delay_chains = undefined
+opt_delay_chains :: (Typeable e, Typeable a, Num (e Int))
+  => Map Unique (Node e)
+  -> ( Map Unique (Node e)
+     , Map Unique [e a])
+opt_delay_chains nodes =
+  let x = find_chains nodes
+      (y, buffs) = buffer_chains x
+      z = merge_chains nodes y
+  in  (z, buffs)
 
-find_chains :: Map Unique (Node e) -> Map Unique [Unique]
+find_chains :: Map Unique (Node e) -> Map Unique [(Unique, Node e)]
 find_chains nodes =
-  let delays = M.filter (not . isDelay) nodes
-      heads  = M.foldr M.delete delays $ M.map (head . edges) delays
-  in  M.mapWithKey (\k _ -> chain k delays) heads
+  let delays = M.foldrWithKey (\k n -> M.insert (edge n) (k, n)) M.empty
+             $ M.filter isDelay nodes
+      heads  = M.foldr (M.delete . fst) delays delays
+  in  M.map (flip chain delays) heads
   where
-    chain :: Unique -> Map Unique (Node e) -> [Unique] 
-    chain i m = maybe [] (\(TDelay _ v) -> v : chain v m) $ M.lookup i m
+    chain :: (Unique, Node e) -> Map Unique (Unique, Node e) -> [(Unique, Node e)] 
+    chain v@(i, _) m = v : maybe [] (flip chain m) (M.lookup i m)
+
+    edge :: Node e -> Unique
+    edge = head . edges
   
-buffer_chains :: forall e a. (Typeable e, Typeable a, Num (e Int))
-              => Map Id (TSignal e Id)
-              -> Map Id [Id]
-              -> Map Id ([TSignal e Id], [e a])
-buffer_chains nodes chains = undefined
-{-
-  let nodes' = M.map (map (nodes !)) chains
-      vals   = M.map (map val) nodes'
-      buffs  = M.mapWithKey (\k -> snd . mapAccumR (acc k) 1) nodes'
-  in  M.intersectionWith (,) buffs vals
+buffer_chains
+  :: forall e a. (Typeable e, Typeable a, Num (e Int))
+  => Map Unique [(Unique, Node e)]
+  -> ( Map Unique [(Unique, Node e)]
+     , Map Unique [e a])
+buffer_chains chains =
+  let vals  = M.map (map val) chains
+      buffs = M.mapWithKey (\k -> snd . mapAccumR (acc k) 1) chains
+  in (buffs, vals)
   where
-    val     (TDelay v _) = fromJust $ cast v
-    acc k n (TDelay v _) = (n+1, TDBuff k n)
--}
-merge_chains :: Map Id (TSignal e Id)
-             -> Map Id ([TSignal e Id], [e a])
-             -> Map Id (TSignal e Id)
-merge_chains nodes chains = undefined
+    val     (i, TDelay v _) = fromJust $ cast v
+    acc k n (i, TDelay v _) = (n+1, (i, TDBuff k n))
+
+merge_chains
+  :: Map Unique (Node e)
+  -> Map Unique [(Unique, Node e)]
+  -> Map Unique (Node e)
+merge_chains nodes chains =
+  let nodes' = M.foldr (flip $ foldr (\(u,n) -> M.adjust (const n) u)) nodes chains
+      heads' = M.foldrWithKey (\k _ -> M.insert (-k) (TVBuff k)) M.empty chains
+  in  M.union nodes' heads'
 
 --------------------------------------------------------------------------------
 -- * Testing
@@ -436,7 +447,7 @@ iir (x:a:as) bs s = o
 testShow :: IO ()
 testShow = do
   putStrLn "========== Graph: "
-  g@(Graph nodes root) <- reifyGraph $ fir [1,2]
+  g@(Graph nodes root) <- reifyGraph $ fir [1,2,3]
   let m = M.fromList nodes
   putStrLn $ show g
   putStrLn "=========== Links: "
@@ -450,8 +461,14 @@ testShow = do
 --putStrLn "----- Filtered: "
 --putStrLn $ show $ filterMap m id isNOP o
   putStrLn "=========== Chains: "
-  let cs = find_chains m
+  let cs     = find_chains m
+      (b, v) = buffer_chains cs :: (Map Unique [(Unique, Node E.Expr)], Map Unique [E])
+      gs     = merge_chains m b
   putStrLn $ show cs
+  putStrLn "........... "
+  putStrLn $ show b
+  putStrLn "........... "
+  putStrLn $ show gs
   putStrLn "=========== "
 
 -- filterMap :: Ord i => Map i x -> (j -> i) -> (x -> Bool) -> Map j y -> Map j y
