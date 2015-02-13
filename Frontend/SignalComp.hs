@@ -70,12 +70,27 @@ import Text.PrettyPrint.Mainland
 -- * Compiler
 --------------------------------------------------------------------------------
 
-type Id     = String
+-- ToDo: result is in 'e' since we use references for everything
+
+compile :: (Typeable e, Typeable a, Typeable b)
+        =>    (Sig e a -> Sig e b)
+        -> IO (Program (CMD e) (e a) -> Program (CMD e) (e b))
+compile f =
+  do (Graph ns root) <- reifyGraph f
+     let nodes = M.fromList ns
+         links = linker nodes
+         order = sorter root nodes
+     return $ \input -> compiler nodes links order input
+
+--------------------------------------------------------------------------------
 
 type Node e = TSignal e Unique
 
 --------------------------------------------------------------------------------
--- ** Linker
+-- * Linker
+--------------------------------------------------------------------------------
+
+type Id     = String
 
 -- | ...
 linker :: Map Unique (Node e) -> Map Id Id
@@ -142,7 +157,8 @@ tells (TPair l r) t s =
      tells r (tright t) (s ++ "_2")
 
 --------------------------------------------------------------------------------
--- ** Sorter
+-- * Sorter
+--------------------------------------------------------------------------------
 
 data Status  = Visited | Visiting | Unvisited
 
@@ -157,31 +173,28 @@ sorter :: Unique
        -> Map Unique Order
 sorter root nodes =
   case cycles initC root of
-    False -> M.map fst $ snd $ CMS.execState (sort root) initS
+    False -> M.map (\(_,o,_) -> o) $ snd $ CMS.execState (sort root) initS
   where
-    initC = M.map ((,,) Unvisited 0) $ filterMap nodes id isDelay nodes
-    initS = (1, M.map ((,) 0) nodes) 
+    initC =     M.map ((,,) Unvisited 0) $ filterMap nodes id isDelay nodes
+    initS = (1, M.map ((,,) Unvisited 0) nodes) 
     
     cycles s i =
       let m = CMS.execState (cycle i) s
-          n = M.filter (\(s,_,_) -> not $ isUnvisited s) m
+          n = M.filter (\(s,_,_) -> isUnvisited s) m
       in case M.null n of
            True  -> False
            False -> cycles m (fst $ M.findMin n)
 
 cycle :: Unique -> State (Map Unique (Status, Pred, Node e)) ()
 cycle i =
-  do m <- get
-     if not $ M.member i m
-       then return ()
-       else do mark i Visiting
-               us <- adjacent i
-               p  <- predecessor i
-               forM_ us $ \u ->
-                 do s <- status u
-                    when (isVisiting  s && p /= u) $ error "found cycle"
-                    when (isUnvisited s)           $ pred u i >> cycle u
-               mark i Visited
+  do mark i Visiting
+     us <- adjacent i
+     forM_ us $ \u ->
+       do p <- predecessor i
+          s <- status u
+          when (isVisiting  s && p /= u) $ error $ "found cycle from " ++ show i ++ " to " ++ show u
+          when (isUnvisited s)           $ pred u i >> cycle u
+     mark i Visited
   where
     mark :: Unique -> Status -> State (Map Unique (Status, Pred, Node e)) ()
     mark i s = modify $ flip M.adjust i $ \(_, p, n) -> (s, p, n)
@@ -190,31 +203,49 @@ cycle i =
     pred i p = modify $ flip M.adjust i $ \(s, _, n) -> (s, p, n)
 
     status :: Unique -> State (Map Unique (Status, Pred, Node e)) Status
-    status i = get >>= return . (\(s, _, _) -> s) . (! i)
+    status i = get >>= return . (\(s, _, _) -> s) . (!? i)
 
     adjacent :: Unique -> State (Map Unique (Status, Pred, Node e)) [Unique]
-    adjacent i = get >>= return . edges . (\(_, _, n) -> n) . (! i)
-
+    adjacent i =
+      do m <- get
+         let ms = maybe [] (edges . \(_,_,n) -> n) (M.lookup i m)
+             ns = filter (flip M.member m) ms
+         return ns
+    
     predecessor :: Unique -> State (Map Unique (Status, Pred, Node e)) Pred
     predecessor i = get >>= return . (\(_, p, _) -> p) . (! i)
 
-sort :: Unique -> State (Int, Map Unique (Order, Node e)) ()
+sort :: Unique -> State (Int, Map Unique (Status, Order, Node e)) ()
 sort i =
-  do us <- adjacent i
-     forM_ us sort
+  do mark i Visited
+     us <- adjacent i
+     forM_ us $ \u ->
+       do s <- status u
+          when (isUnvisited s) (sort u)
      o  <- new
      tag i o
   where
-    new :: State (Int, Map Unique (Order, Node e)) Order
+    new :: State (Int, Map Unique (Status, Order, Node e)) Order
     new = do (i, m) <- get
              put (i + 1, m)
              return i
 
-    tag :: Unique -> Order -> State (Int, Map Unique (Order, Node e)) ()
-    tag i o = modify $ second $ flip M.adjust i $ \(_, n) -> (o, n)
+    tag :: Unique -> Order -> State (Int, Map Unique (Status, Order, Node e)) ()
+    tag i o = modify $ second $ flip M.adjust i $ \(s, _, n) -> (s, o, n)
 
-    adjacent :: Unique -> State (Int, Map Unique (Order, Node e)) [Unique]
-    adjacent i = get >>= return . edges . snd . (! i) . snd
+    mark :: Unique -> Status -> State (Int, Map Unique (Status, Order, Node e)) ()
+    mark i s = modify $ second $ flip M.adjust i $ \(_, o, n) -> (s, o, n)
+
+    status :: Unique -> State (Int, Map Unique (Status, Order, Node e)) Status
+    status i = get >>= return . (\(s,_,_) -> s) . (! i) . snd
+    
+    adjacent :: Unique -> State (Int, Map Unique (Status, Order, Node e)) [Unique]
+    adjacent i = get >>= return . edges . (\(_,_,n) -> n) . (! i) . snd
+
+(!?) :: Ord i => Map i x -> i -> x
+m !? i = case M.lookup i m of
+          Just x  -> x
+          Nothing -> error "1"
 
 --------------------------------------------------------------------------------
 
@@ -227,15 +258,16 @@ isUnvisited (Unvisited) = True
 isUnvisited _           = False
 
 --------------------------------------------------------------------------------
--- ** Compiler
+-- * Compiler
+--------------------------------------------------------------------------------
 
 -- | ...
 type Prog e = ReaderT (Map Id Id) (StateT (Map Id Dynamic) (Program (CMD e)))
 
 compiler :: forall exp a b. (Typeable exp, Typeable b, Typeable a)
-         => Map Unique (TSignal exp Unique)
-         -> Map Id Id
-         -> Map Unique Order
+         => Map Unique (Node exp) -- nodes in graph
+         -> Map Id Id             -- links
+         -> Map Unique Order      -- order
          -> Program (CMD exp) (exp b)
          -> Program (CMD exp) (exp a)
 compiler nodes links order input =
@@ -270,6 +302,8 @@ comp (i, TConst c) _ =
 comp (i, TMap t t' f s) _ =
   do v <- getLinks t (show i)
      setLinks (f v) (show i)
+
+comp (i, n) _ = error $ "Missing comp. for: " ++ show n
 
 --------------------------------------------------------------------------------
 
@@ -307,7 +341,7 @@ setLinks (Leaf e) s = lift (lift (C.newRef e)) >>= setLink s
 --------------------------------------------------------------------------------
 
 filterMap :: Ord i => Map i x -> (j -> i) -> (x -> Bool) -> Map j y -> Map j y
-filterMap m f g = M.filterWithKey (\k _ -> g . (m !) $ f k)
+filterMap m f g = M.filterWithKey (\k _ -> not . g . (m !) $ f k)
 
 isNOP :: TSignal e a -> Bool
 isNOP (TZip    {}) = True
@@ -362,11 +396,9 @@ type S  = Sig E.Expr Float
 sig :: S -> S
 sig s = s + 0
 
-{-
 tex :: IO (Program (CMD E.Expr) ())
 tex = do
-  g     <- reifyGraph sig
-  prog  <- return $ compiler g
+  prog  <- compile sig
   return $ do
     inp <- C.open "input"
     out <- C.open "output"
@@ -379,7 +411,6 @@ test :: IO Doc
 test = do
   p <- tex
   B.cgen $ C.mkFunction "main" p
--}
 
 --------------------------------------------------------------------------------
 
@@ -411,11 +442,14 @@ testShow = do
   putStrLn $ show g
   putStrLn "=========== Links: "
   let l = linker m
-  putStrLn $ show m
+  putStrLn $ show l
+  putStrLn "----- Filtered: "
+  putStrLn $ show $ filterMap m (read . (:[]) . head) isNOP l
   putStrLn "=========== Order: "
   let o = sorter root m
   putStrLn $ show o
-  putStrLn "==========="
--- putStrLn "=========== Chains: "
---  let cm = find_chains m'
---  putStrLn $ show cm
+  putStrLn "----- Filtered: "
+  putStrLn $ show $ filterMap m id isNOP o
+  putStrLn "=========== "
+
+-- filterMap :: Ord i => Map i x -> (j -> i) -> (x -> Bool) -> Map j y -> Map j y
