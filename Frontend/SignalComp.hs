@@ -72,15 +72,29 @@ import Text.PrettyPrint.Mainland
 
 -- ToDo: result is in 'e' since we use references for everything
 
-compile :: (Typeable e, Typeable a, Typeable b)
-        =>    (Sig e a -> Sig e b)
+compile :: (Typeable e, Typeable a, Typeable b, Num (e Int), Integral (e Int))
+        => (Sig e a -> Sig e b)
         -> IO (Program (CMD e) (e a) -> Program (CMD e) (e b))
 compile f =
   do (Graph ns root) <- reifyGraph f
      let nodes = M.fromList ns
          links = linker nodes
          order = sorter root nodes
-     return $ \input -> compiler nodes links order input
+     
+     return $ \input ->
+       do (new, buffers) <- optimize nodes
+          compiler new links order buffers input
+
+optimize :: forall e a. (Typeable e, Typeable a, Num (e Int), Integral (e Int))
+  => Map Unique (Node e)
+  -> Program (CMD e)
+       ( Map Unique (Node e)
+       , Map Unique (Buffer e a))
+optimize nodes =
+  do let (new, vals) = opt_delay_chains nodes
+         (ids, exps) = unzip $ M.toList vals
+     buffer <- sequence $ map (\es -> newBuff (fromIntegral $ length es) (head es)) exps
+     return $ (new, M.fromList $ zip ids buffer)
 
 --------------------------------------------------------------------------------
 
@@ -254,14 +268,15 @@ isUnvisited _           = False
 -- | ...
 type Prog e = ReaderT (Map Id Id) (StateT (Map Id Dynamic) (Program (CMD e)))
 
-compiler :: forall exp a b. (Typeable exp, Typeable b, Typeable a)
+compiler :: forall exp a b. (Typeable exp, Typeable b, Typeable a, Num (exp Int))
          => Map Unique (Node exp) -- nodes in graph
          -> Map Id Id             -- links
          -> Map Unique Order      -- order
+         -> Map Unique (Buffer exp a)
          -> Program (CMD exp) (exp b)
          -> Program (CMD exp) (exp a)
-compiler nodes links order input =
-  do m <- run $ mapM_ (flip comp input) o
+compiler nodes links order buffers input =
+  do m <- run $ mapM_ (\n -> comp n buffers input) o
      case fromDynamic (m ! (show $ fst $ last o)) of
        Just r  -> C.getRef r
        Nothing -> error "compiler"
@@ -278,32 +293,58 @@ compiler nodes links order input =
          . sortBy (compare `on` snd)
          . M.toList
 
-comp :: (Typeable exp, Typeable b)
+comp :: (Typeable exp, Typeable b, Typeable a, Num (exp Int))
      => (Unique, Node exp)
+     -> Map Unique (Buffer exp a)
      -> Program (CMD exp) (exp b)
      -> Prog exp ()
-comp (i, TVar) input =
+comp (i, TVar) _ input =
   do v <- lift $ lift $ liftProgram input -- I'll be buff in no time with
      r <- lift $ lift $ C.newRef v        -- all this lifting
      setLink (show i) r
 
-comp (i, TConst c) _ =
+comp (i, TConst c) _ _ =
   do v <- lift $ lift $ liftProgram $ Str.run c -- Meh..
      r <- lift $ lift $ C.newRef v
      setLink (show i) r
 
-comp (i, TMap t t' f s) _ =
+comp (i, TLift f s) _ _ =
+  do r <- getLink (show s)
+     let str = Str.Stream $ return $ C.getRef r
+     v <- lift $ lift $ liftProgram $ Str.run $ f str
+     k <- lift $ lift $ C.newRef v
+     setLink (show i) k
+
+comp (i, TMap t t' f s) _ _ =
   do v <- getLinks t (show i)
      setLinks (f v) (show i)
 
-comp (i, n) _ = error $ "Missing comp. for: " ++ show n
+comp (i, TDBuff s j) buffers _ =
+  do let b = buffers !? s
+     v <- lift $ lift $ getBuff b (j - 1)
+     r <- lift $ lift $ C.newRef v
+     setLink (show i) r
+
+comp (i, TVBuff s) buffers _ =
+  do let b = buffers !? i
+     r <- getLink (show s)
+     v <- lift $ lift $ C.getRef r
+     lift $ lift $ putBuff b v
+     setLink (show i) r
+
+--comp (i, n) = error $ "Missing comp. for: " ++ show n
+
+(!?) :: Ord i => Map i x -> i -> x
+m !? i = case M.lookup i m of
+           Just x  -> x
+           Nothing -> error $ "!"
 
 --------------------------------------------------------------------------------
 
 getLink :: Typeable a => Id -> Prog exp (C.Ref a)
 getLink u =
-  do x <- CMR.asks (! u)
-     y <- CMS.gets (! x)
+  do x <- CMR.asks (!? u)
+     y <- CMS.gets (!? x)
      case fromDynamic y of
        Just r  -> return r
        Nothing -> error "getLink"
@@ -351,6 +392,29 @@ isDelay _           = False
 -- * Optimizing
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- ** Buffers
+
+data Buffer exp a = Buffer
+  { getBuff :: exp Int -> Program (CMD exp) (exp a)
+  , putBuff :: exp a   -> Program (CMD exp) ()
+  }
+
+newBuff
+  :: forall exp a. (Num (exp Int), Integral (exp Int))
+  => exp Int -> exp a -> Program (CMD exp) (Buffer exp a)
+newBuff size init =
+  do arr <- C.newArr size init
+     ir  <- C.newRef (0 :: exp Int)
+     let get j = do i <- C.unsafeGetRef ir
+                    C.getArr ((i + (size - j - 1)) `mod` size) arr
+     let put a = do i <- C.unsafeGetRef ir
+                    C.setArr i a arr
+                    -- missing iff
+     return $ Buffer get put
+
+--------------------------------------------------------------------------------
+
 opt_delay_chains :: (Typeable e, Typeable a, Num (e Int))
   => Map Unique (Node e)
   -> ( Map Unique (Node e)
@@ -385,7 +449,7 @@ buffer_chains chains =
   in (buffs, vals)
   where
     val     (i, TDelay v _) = fromJust $ cast v
-    acc k n (i, TDelay v _) = (n+1, (i, TDBuff k n))
+    acc k n (i, TDelay v _) = (n+1, (i, TDBuff k $ fromIntegral n))
 
 merge_chains
   :: Map Unique (Node e)
@@ -408,7 +472,7 @@ sig s = s + 0
 
 tex :: IO (Program (CMD E.Expr) ())
 tex = do
-  prog  <- compile sig
+  prog  <- compile $ fir [1,2,3]
   return $ do
     inp <- C.open "input"
     out <- C.open "output"
@@ -470,5 +534,3 @@ testShow = do
   putStrLn "........... "
   putStrLn $ show gs
   putStrLn "=========== "
-
--- filterMap :: Ord i => Map i x -> (j -> i) -> (x -> Bool) -> Map j y -> Map j y
