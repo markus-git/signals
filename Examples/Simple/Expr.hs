@@ -1,11 +1,18 @@
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE QuasiQuotes        #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances  #-}
 
-module Expr where
+module Examples.Simple.Expr where
 
+import Interpretation
+
+import Backend.C.Monad
+
+import           Language.C.Quote.C
+import qualified Language.C.Syntax as C
 import Data.Typeable (Typeable)
 
 --------------------------------------------------------------------------------
@@ -113,7 +120,8 @@ i2n = I2N
 todo = error "todo in expr" -- I'll add these later
 
 --------------------------------------------------------------------------------
--- **
+-- *
+--------------------------------------------------------------------------------
 
 tru :: Expr Bool
 tru = Val True
@@ -132,3 +140,111 @@ lt l r = (LEq l r) `And` (Not $ Eq r l)
 
 gt :: Ord a => Expr a -> Expr a -> Expr Bool
 gt = flip lt
+
+--------------------------------------------------------------------------------
+-- * Evaluation
+--------------------------------------------------------------------------------
+
+instance EvalExp Expr
+  where
+    type LitPred Expr = Show
+
+    litExp  = Val
+    evalExp = evalExpr'
+
+-- |
+evalExpr' :: Expr a -> a
+evalExpr' (Val a) = a
+evalExpr' (Var _) = error "cannot eval var"
+
+-- ^ Math. ops.
+evalExpr' (Add a b) = evalExpr' a + evalExpr' b
+evalExpr' (Sub a b) = evalExpr' a - evalExpr' b
+evalExpr' (Mul a b) = evalExpr' a * evalExpr' b
+evalExpr' (Div a b) = evalExpr' a / evalExpr' b
+evalExpr' (Mod a b) = evalExpr' a `mod` evalExpr' b
+evalExpr' (Sin a)   = sin $ evalExpr' a
+evalExpr' (I2N a)   = fromInteger $ fromIntegral $ evalExpr' a
+
+-- ^ Bool. ops.
+evalExpr' (Not   a) = not $ evalExpr' a
+evalExpr' (And a b) = evalExpr' a && evalExpr' b
+evalExpr' (Or  a b) = evalExpr' a || evalExpr' b
+evalExpr' (Eq  a b) = evalExpr' a == evalExpr' b
+evalExpr' (LEq a b) = evalExpr' a <= evalExpr' b
+
+--------------------------------------------------------------------------------
+-- * Compilation of Expressions
+--------------------------------------------------------------------------------
+
+class    Any a
+instance Any a
+
+instance CompExp Expr
+  where
+    type VarPred Expr = Any
+    varExp   = Var
+    compExp  = compExp'
+
+-- |
+compExp' :: Expr a -> C C.Exp
+compExp' (Var v) = return [cexp| $id:v |]
+compExp' (Val v) = case show v of
+    "True"  -> addInclude "<stdbool.h>" >> return [cexp| true |]
+    "False" -> addInclude "<stdbool.h>" >> return [cexp| false |]
+    v'      -> return [cexp| $id:v' |]
+
+-- ^ Math. ops.
+compExp' (Add a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' + $b' |]
+compExp' (Sub a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' - $b' |]
+compExp' (Mul a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' * $b' |]
+compExp' (Div a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' / $b' |]
+compExp' (Exp a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' ^ $b' |]
+compExp' (Sin a)   = do
+  a' <- compExp' a
+  return [cexp| sin( $a' ) |]
+compExp' (Mod a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' % $b'|]
+compExp' (I2N a) = do
+  a' <- compExp' a
+  return [cexp| $a' |]
+
+-- ^ Bool. ops.
+compExp' (Not  a)  = do
+  a' <- compExp' a
+  return [cexp| ! $a' |]
+compExp' (And a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| ($a' && $b') |]
+compExp' (Or a b)  = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| ($a' || $b') |]
+compExp' (Eq a b)  = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' == $b' |]
+compExp' (LEq a b) = do
+  a' <- compExp' a
+  b' <- compExp' b
+  return [cexp| $a' <= $b' |]
+
+

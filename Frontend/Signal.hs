@@ -74,7 +74,8 @@ data Signal exp a
           => exp a -> Signal exp (Empty (exp a)) -> Signal exp (Empty (exp a))
 
     -- ^ dummy argument used in observable sharing
-    SVar  :: Typeable a => Dynamic -> Signal exp a
+    SVar  :: (Typeable a, StructT a, DomainT a ~ exp)
+          => Dynamic -> Signal exp a
 
   deriving (Typeable)
 
@@ -172,14 +173,22 @@ data TStruct exp a
   deriving
     Typeable
 
+--------------------------------------------------------------------------------
+
+tpair  :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
+tpair l r = TPair l r
+
+tleaf  :: Typeable a => String -> TStruct exp (Empty (exp a))
+tleaf s = TLeaf s
+
 tleft  :: TStruct exp (a, b) -> TStruct exp a
 tleft  ~t = case t of (TPair l _) -> l
 
 tright :: TStruct exp (a, b) -> TStruct exp b
 tright ~t = case t of (TPair _ r) -> r
 
-tleaf  :: TStruct exp (Empty (exp a)) -> String
-tleaf  ~t = case t of (TLeaf i) -> i
+tid    :: TStruct exp (Empty (exp a)) -> String
+tid    ~t = case t of (TLeaf i) -> i
 
 --------------------------------------------------------------------------------
 -- ** Conversion between signals and tuples

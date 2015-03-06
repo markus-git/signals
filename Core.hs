@@ -17,7 +17,6 @@ import Data.Typeable
 import Data.IORef
 import Data.Array.IO.Safe
 import qualified System.IO as IO
-import qualified Text.Printf as Printf
 
 --------------------------------------------------------------------------------
 -- * Commands
@@ -171,63 +170,3 @@ data Construct cmd a
 
 mkFunction :: String -> Program cmd () -> Program (Construct cmd) ()
 mkFunction fun body = singleton $ Function fun body
-
---------------------------------------------------------------------------------
--- * Run Functions
---------------------------------------------------------------------------------
-
-runProgram :: ( EvalExp exp
-              , LitPred exp Bool
-              , LitPred exp Float)
-           => Program (CMD exp) a
-           -> IO a
-runProgram = interpretWithMonad runCMD
-
---------------------------------------------------------------------------------
--- **
-
-readWord :: IO.Handle -> IO String
-readWord h = do
-    eof <- IO.hIsEOF h
-    if eof
-      then return ""
-      else do
-          c  <- IO.hGetChar h
-          cs <- readWord h
-          return (c:cs)
-
-runCMD :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => CMD exp a -> IO a
-
-runCMD (Open path)            = fmap HandleEval $ IO.openFile path IO.ReadWriteMode
-runCMD (Close (HandleEval h)) = IO.hClose h
-runCMD (Put (HandleEval h) a) = IO.hPrint h (evalExp a)
-runCMD (Get (HandleEval h))   = do
-    w <- readWord h
-    case reads w of
-        [(f,"")] -> return $ litExp f
-        _        -> error "runCMD: Get: no parse"
-runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
-
-runCMD (NewRef a)           = fmap RefEval $ newIORef a
-runCMD (GetRef (RefEval r)) = readIORef r
-runCMD (SetRef (RefEval r) a) = writeIORef r a
-
-runCMD (NewArr i a)               = fmap ArrEval $ newArray (0, fromIntegral (evalExp i) - 1) a
-runCMD (GetArr i (ArrEval arr))   = readArray arr (fromIntegral (evalExp i))
-runCMD (SetArr i a (ArrEval arr)) = writeArray arr (fromIntegral (evalExp i)) a
-
-runCMD (UnsafeGetRef (RefEval r)) = readIORef r
-
-runCMD (If c t f)
-    | evalExp c = runProgram t
-    | otherwise = runProgram f
-
-runCMD (While cond body) = do
-    cond' <- runProgram cond
-    if evalExp cond'
-      then runProgram body >> runCMD (While cond body)
-      else return ()
-
-runCMD Break = error "runCMD: Break not implemented"
-
-runCMD (Printf format a) = Printf.printf format (show $ evalExp a)

@@ -4,10 +4,9 @@
 
 module Interpretation where
 
-import Expr (Expr, VarId)
-
 import Data.Constraint
 
+import Backend.C.Monad   (C)
 import Language.C.Syntax (Exp)
 
 --------------------------------------------------------------------------------
@@ -31,22 +30,22 @@ class EvalExp exp
 -------------------------------------------------------------------------------
 
 -- | General interface for compiling expressions
-class CompExp m exp
+class CompExp exp
   where
     -- | Predicate for variables
     type VarPred exp :: * -> Constraint
 
     -- | Variable expressions
-    varExp  :: VarPred exp a => VarId -> exp a
+    varExp  :: VarPred exp a => String -> exp a
 
     -- | Compilation of expressions
-    compExp :: exp a -> m Exp
+    compExp :: exp a -> C Exp
 
 --------------------------------------------------------------------------------
 -- **
 
 -- | General interface for compiling constructs
-class CompCMD m cmd
+class CompCMD cmd
   where
     -- | Compilation of constructs
-    compCMD :: cmd a -> m a
+    compCMD :: cmd a -> C a

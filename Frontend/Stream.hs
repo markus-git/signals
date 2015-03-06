@@ -6,7 +6,6 @@
 module Frontend.Stream where
 
 import Core (CMD, newRef, getRef, setRef)
-import Interpretation (VarPred)
 
 import Control.Applicative
 import Control.Monad
@@ -39,6 +38,13 @@ deriving instance Typeable Stream
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
+-- ** constructors
+
+-- | creates a stream from a program
+stream :: Program (CMD exp) (Program (CMD exp) (exp a)) -> Str exp a
+stream = Stream
+
+--------------------------------------------------------------------------------
 -- ** Combinatorial functions
 
 -- | creates and infinite stream by repeating @a@
@@ -64,8 +70,7 @@ zipWith f (Stream init1) (Stream init2) = Stream $ do
 -- ** Sequential functions
 
 -- | preappend @a@ to input stream
-delay :: (Typeable a, VarPred exp a)
-      => exp a -> Str exp a -> Str exp a
+delay :: Typeable a => exp a -> Str exp a -> Str exp a
 delay a (Stream init) = Stream $ do
   next <- init
   r    <- newRef a
