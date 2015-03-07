@@ -16,15 +16,15 @@ import Interpretation
 import           Frontend.Stream (Stream, Str)
 import qualified Frontend.Stream as S
 
+import Data.Dynamic
+import Data.Typeable
+
 import           Prelude ( ($), (.), id
                          , Num, (+), (-), (*), fromInteger
                          , Fractional, (/), fromRational
                          , Floating, (**), pi, sin
                          , Eq, Show, String)
 import qualified Prelude as P
-
-import Data.Dynamic
-import Data.Typeable
 
 --------------------------------------------------------------------------------
 -- *
@@ -79,7 +79,7 @@ data Signal exp a
 
   deriving (Typeable)
 
--- | ...
+-- | Signals with values ranging over the expression language
 newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 
 --------------------------------------------------------------------------------
@@ -116,7 +116,7 @@ instance (Typeable exp, Typeable a, Floating (exp a), Eq (exp a), Show a) => Flo
 todo = P.error "unsupported operation"
 
 --------------------------------------------------------------------------------
--- ** ...
+-- ** "Smart" constructors
 
 constS :: (Typeable a) => Str exp a -> Sig exp a
 constS = Sig . Const
@@ -134,7 +134,6 @@ mapS = Map
 
 --------------------------------------------------------------------------------
 -- ** User Interface
---------------------------------------------------------------------------------
 
 repeat :: (Typeable a) => exp a -> Sig exp a
 repeat = constS . S.repeat

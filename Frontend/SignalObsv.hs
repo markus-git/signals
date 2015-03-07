@@ -12,13 +12,10 @@ module Frontend.SignalObsv where
 
 import Interpretation
 
-import Frontend.Signal ( Signal(..), Sig(..)
-                       , StructT(..)
-                       , Empty, Struct, TStruct)
+import Frontend.Signal (Signal(..), Sig(..), StructT(..), Empty, Struct, TStruct)
 import Frontend.Stream (Stream(..), Str(..))
 
 import Control.Applicative hiding (Const)
-
 import Data.Dynamic
 import Data.Proxy
 import Data.Reify
@@ -74,7 +71,7 @@ data TSignal exp r
 type Node e = TSignal e Unique
 
 --------------------------------------------------------------------------------
---
+-- ** Helper functions
 
 edges :: TSignal e a -> [a]
 edges node =
@@ -122,18 +119,13 @@ instance ( Typeable a, Typeable b
 --------------------------------------------------------------------------------
 -- ** MuRef instances for sig
 
-
 instance (Typeable exp) => MuRef (Sig exp a)
   where
     type DeRef (Sig exp a) = TSignal exp
 
     mapDeRef f node = mapDeRef f (unSig node)
 
-instance ( Typeable a, Typeable b
-         , Typeable exp
---       , StructT a
---       , DomainT a ~ exp
-         ) =>
+instance (Typeable a, Typeable b, Typeable exp) =>
     MuRef (Sig exp a -> Sig exp b)
   where
     type DeRef (Sig exp a -> Sig exp b) = TSignal exp
@@ -143,25 +135,6 @@ instance ( Typeable a, Typeable b
 --------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
-
---------------------------------------------------------------------------------
-
--- | ...
-showTS :: Show r => TSignal exp r -> TSignal exp String
-showTS node =
-  case node of
-    (TLambda x y)   -> TLambda       (show x) (show y)
-    (TVar e)        -> TVar   e 
-    (TConst e)      -> TConst e
-    (TLift f x)     -> TLift  f      (show x)
-    (TMap t t' f x) -> TMap   t t' f (show x)
-    (TZip t t' x y) -> TZip   t t'   (show x) (show y)
-    (TFst t x)      -> TFst   t      (show x)
-    (TSnd t x)      -> TSnd   t      (show x)
-    (TDelay e x)    -> TDelay e      (show x)
-
-showP :: (Show a, Show b) => (a, TSignal e b) -> (String, TSignal e String)
-showP (x, y) = (show x, showTS y)
 
 instance Show a => Show (TSignal exp a) where
   show node = case node of

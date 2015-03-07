@@ -4,7 +4,6 @@
 
 module Backend.Compiler.Linker (
     Resolution(..)
-  , EStruct(..)
   , linker
   )
 where
@@ -14,6 +13,7 @@ import Frontend.Signal     (TStruct(..), Struct, Empty, tpair, tleft, tright, tl
 import Frontend.SignalObsv (TSignal(..), Node)
 
 import Backend.Knot
+import Backend.Ex
 
 import Control.Monad.Reader
 import Control.Monad.Writer
@@ -29,29 +29,25 @@ import Data.Typeable
 -- * Linking
 --------------------------------------------------------------------------------
 
--- | Untyped binary tree
-data EStruct exp
-  where
-    Ex :: Typeable a => TStruct exp a -> EStruct exp
-
-instance Show (EStruct e) where show _ = "Ex"
+-- | Untyped binary tree over reference names
+type TEx exp = Ex (TStruct exp)
 
 -- | ... I assume each index yeilds a tree with the expected type
 data Resolution symbol exp = Resolution
-  { _output :: Map symbol (EStruct exp)
-  , _input  :: Map symbol (EStruct exp)
+  { _output :: Map symbol (TEx exp)
+  , _input  :: Map symbol (TEx exp)
   }
 
 -- | Constraints over symbol to input/output tree
 data Constraint symbol exp
-  = In  (symbol, EStruct exp)
-  | Out (symbol, EStruct exp)
+  = In  (symbol, TEx exp)
+  | Out (symbol, TEx exp)
 
 --------------------------------------------------------------------------------
 
 -- | Attempts to fetch resolved value of index
-resolve :: (MonadReader (Resolution i exp) m, Ord i, Typeable a) => i -> m (TStruct exp a)
-resolve i =
+resolve :: (MonadReader (Resolution i exp) m, Ord i, Typeable a) => i -> TStruct exp a -> m (TStruct exp a)
+resolve i _ =
   do ex <- asks ((! i) . _output)
      return $ case ex of
        Ex t -> case gcast t of
@@ -91,32 +87,32 @@ link (i, TConst (c :: Stream exp (exp a))) =
 
 link (i, TLift (f :: Stream exp (exp a) -> Stream exp (exp b)) s) =
   do let t = undefined :: TStruct exp (Empty (exp a))
-     t' <- liftM (`asTypeOf` t) $ resolve s
+     t' <- resolve s t
      introduce i t'
      constrain i (tleaf (show i) :: TStruct exp (Empty (exp b)))
 
 link (i, TDelay (e :: exp a) s) =
   do let t = undefined :: TStruct exp (Empty (exp a))
-     t' <- liftM (`asTypeOf` t) $ resolve s
+     t' <- resolve s t
      introduce i t'
      constrain i (tleaf (show i) :: TStruct exp (Empty (exp a)))
 
 link (i, TMap ti to f s) =
-  do t' <- liftM (`asTypeOf` ti) $ resolve s
+  do t' <- resolve s ti
      introduce i t'
      constrain i $ mark (show i) to
 
 link (i, TZip tl tr l r) =
-  do tl' <- liftM (`asTypeOf` tl) $ resolve l
-     tr' <- liftM (`asTypeOf` tr) $ resolve r
+  do tl' <- resolve l tl
+     tr' <- resolve r tr
      constrain i $ tpair tl' tr'
 
 link (i, TFst t l) =
-  do t' <- liftM (`asTypeOf` t) $ resolve l
+  do t' <- resolve l t
      constrain i $ tleft t'
 
 link (i, TSnd t r) =
-  do t' <- liftM (`asTypeOf` t) $ resolve r
+  do t' <- resolve r t
      constrain i $ tright t'
 
 --------------------------------------------------------------------------------

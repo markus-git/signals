@@ -5,7 +5,8 @@
 {-# LANGUAGE FlexibleContexts    #-}
 
 module Backend.Compiler.Compiler (
-  compiler
+    compiler
+  , inspect_compiler
   )
 where
 
@@ -43,22 +44,13 @@ import Prelude hiding (reads)
 -- * Compiler
 --------------------------------------------------------------------------------
 
--- | This is all a bit hacky...
---   * I should generalize Structs
---   *     -- || --        Ex
---   *     -- || --        Resolution
-
--- | ...
+-- | Shorthand for programs using 'CMD' as their instruction set
 type Prog exp = Program (CMD exp)
 
--- | ...
-data Rx exp
-  where
-    Rx :: Typeable a => RStruct exp a -> Rx exp
+-- | Untyped binary trees over references
+type REx exp = Ex (RStruct exp)
 
-instance Show (Rx exp) where show _ = "rx. "
-
--- | ...
+-- | Binary trees over references
 data RStruct exp a
   where
     RLeaf :: Typeable a => C.Ref (exp a) -> RStruct exp (Empty (exp a))
@@ -76,7 +68,7 @@ data Enviroment symbol exp = Env
   }
 
 -- | Mapping from port id to its associated reference
-type State symbol exp = Map symbol (Rx exp)
+type State symbol exp = Map symbol (REx exp)
 
 -- | 
 type Type exp = ReaderT (Enviroment Unique exp)
@@ -88,10 +80,9 @@ type Type exp = ReaderT (Enviroment Unique exp)
 -- | ...
 apa :: (Typeable exp) => TStruct exp a -> Type exp (RStruct exp a)
 apa (TLeaf i) =
-  do --let u = read' i :: Unique
-     ex <- gets (! i)
+  do ex <- gets (!? i)
      return $ case ex of
-       Rx ref -> case gcast ref of
+       Ex ref -> case gcast ref of
          Nothing -> error "apa: type error"
          Just r  -> r
 apa (TPair l r) =
@@ -127,7 +118,7 @@ depa (Pair l r) =
 
 -- | Write
 hepa :: (Typeable a) => String -> Struct exp a -> Type exp ()
-hepa u s = depa s >>= \n -> modify (M.insert u $ Rx n)
+hepa u s = depa s >>= \n -> modify (M.insert u $ Ex n)
 
 --------------------------------------------------------------------------------
 
@@ -193,7 +184,7 @@ compiler' nodes links order input = Str.stream $
      return $
        do m <- run i $ mapM_ compile ns
           case m ! show l of
-            Rx (RLeaf a) -> fromJust $ gcast $ C.unsafeGetRef a
+            Ex (RLeaf a) -> fromJust $ gcast $ C.unsafeGetRef a
   where
     run :: Enviroment Unique e -> Type e () -> Prog e (State String e)
     run e = flip execStateT M.empty . flip runReaderT e
@@ -228,7 +219,7 @@ compiler' nodes links order input = Str.stream $
 
 --------------------------------------------------------------------------------
 
-compiler :: forall exp a b. (Typeable exp, Typeable a, Typeable b)
+compiler :: (Typeable exp, Typeable a, Typeable b)
          =>    (Sig exp a -> Sig exp b)
          -> IO (Str exp a -> Str exp b)
 compiler f =
@@ -241,7 +232,7 @@ compiler f =
      return $ case cycle of
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
-  
+
 --------------------------------------------------------------------------------
 -- * Buffers
 --------------------------------------------------------------------------------
@@ -252,3 +243,48 @@ data Buffer exp a = Buffer
   }
 
 instance Show (Buffer e a) where show _ = "buffer. "
+
+--------------------------------------------------------------------------------
+-- * Testing
+--------------------------------------------------------------------------------
+
+inspect_compiler :: (Typeable exp, Typeable a, Typeable b)
+                 =>    (Sig exp a -> Sig exp b)
+                 -> IO (Str exp a -> Str exp b)
+inspect_compiler f =
+  do (Graph nodes root) <- reifyGraph f
+
+     let links = linker nodes
+         order = sorter root nodes
+         cycle = cycles root nodes
+
+     putStrLn "=================================================="
+     putStrLn "= Inspecting Compiler"
+     putStrLn "=================================================="
+     putStrLn "- Nodes"
+     putStrLn "--------------------------------------------------"
+     putStrLn $ show nodes
+     putStrLn "--------------------------------------------------"
+     putStrLn "- Order"
+     putStrLn "--------------------------------------------------"
+     putStrLn $ show order
+     putStrLn "--------------------------------------------------"
+     putStrLn "- Input Links"
+     putStrLn "--------------------------------------------------"
+     putStrLn $ show $ _input links
+     putStrLn "--------------------------------------------------"
+     putStrLn "- Output Links"
+     putStrLn "--------------------------------------------------"
+     putStrLn $ show $ _output links
+     putStrLn "--------------------------------------------------"
+     
+     return $ case cycle of
+       True  -> error "found cycle in graph"
+       False -> compiler' nodes links order
+
+--------------------------------------------------------------------------------
+                                 
+m !? i = case M.lookup i m of
+           Just x  -> x
+           Nothing -> error $ "Can't find key " ++ show i ++
+                              " in map: \n"     ++ show m

@@ -96,6 +96,10 @@ eval_iir = eval (iir [1,2] [3,4])
 
 --------------------------------------------------------------------------------
 
+crash = test (iir [1,2] [3,4])
+
+--------------------------------------------------------------------------------
+
 -- |
 eval :: (S Float -> S Float) -> IO ()
 eval = connect_io >=> B.runProgram
@@ -103,6 +107,10 @@ eval = connect_io >=> B.runProgram
 -- | ...
 comp :: (S Float -> S Float) -> IO Doc
 comp = connect_io >=> B.cgen . mkFunction "main"
+
+-- |
+test :: (S Float -> S Float) -> IO Doc
+test = inspect_io >=> B.cgen . mkFunction "test"
 
 --------------------------------------------------------------------------------
 
@@ -128,17 +136,28 @@ connect_io s = do
 
     close inp
     close outp
-{-
-test :: IO Doc
-test = do
-  f <- testF
-  B.cgen $ mkFunction "main" f
 
-main :: IO ()
-main = do
-    code <- test
-    writeFile "fir.c" $ show code
+--------------------------------------------------------------------------------
 
-runFIR :: IO ()
-runFIR = testF >>= runProgram
--}
+inspect_io :: (S Float -> S Float) -> IO (P ())
+inspect_io s = do
+  prg <- inspect_compiler s
+  return $ do
+    inp  <- open "input"
+    outp <- open "output"
+
+    let (Stream init) = prg $ Str.stream $ return $ do
+          i     <- fget inp
+          isEOF <- feof inp
+          iff isEOF break (return ())
+            -- Apparently EOF can only be detected after one has tried to read past the end
+          return i
+
+    let setty = fput outp
+    getty <- init
+    while (return $ litExp True)
+          (do v <- getty
+              setty v)
+
+    close inp
+    close outp
