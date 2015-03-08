@@ -1,14 +1,14 @@
 module Examples.Misc where
 
 import Core
-import Expr
+-- import Expr -- ?
 import Interpretation
 
 import           Frontend.Signal     (Sig)
 import qualified Frontend.Signal     as S
 
 import qualified Frontend.SignalObsv as SO
-import qualified Frontend.SignalComp as SC
+-- import qualified Frontend.SignalComp as SC
 
 import qualified Backend.C           as B
 

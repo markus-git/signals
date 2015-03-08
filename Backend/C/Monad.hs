@@ -8,6 +8,7 @@ module Backend.C.Monad where
 import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Exception
+import Control.Monad.Exception.Instances
 import Data.List
 
 import Language.C.Quote.C

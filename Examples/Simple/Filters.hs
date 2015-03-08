@@ -1,4 +1,4 @@
-module Filters where
+module Examples.Simple.Filters where
 
 import Prelude hiding (break)
 
