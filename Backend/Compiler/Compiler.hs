@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Backend.Compiler.Compiler (
     compiler
@@ -16,11 +17,12 @@ import qualified Core as C
 import           Frontend.Stream (Stream, Str)
 import qualified Frontend.Stream as Str
 
-import           Frontend.Signal (Sig, Struct(..), TStruct(..), Empty)
+import           Frontend.Signal (Signal, Sig, Struct(..), TStruct(..), Empty)
 import qualified Frontend.Signal as S
 
 import Frontend.SignalObsv (TSignal(..), Node)
 
+import Backend.Ex
 import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
@@ -41,14 +43,15 @@ import qualified Data.Map as M
 import Prelude hiding (reads)
 
 --------------------------------------------------------------------------------
--- * Compiler
+-- *
 --------------------------------------------------------------------------------
 
 -- | Shorthand for programs using 'CMD' as their instruction set
 type Prog exp = Program (CMD exp)
 
--- | Untyped binary trees over references
-type REx exp = Ex (RStruct exp)
+--------------------------------------------------------------------------------
+-- * Channels
+--------------------------------------------------------------------------------
 
 -- | Binary trees over references
 data RStruct exp a
@@ -56,160 +59,173 @@ data RStruct exp a
     RLeaf :: Typeable a => C.Ref (exp a) -> RStruct exp (Empty (exp a))
     RPair :: RStruct exp a -> RStruct exp b -> RStruct exp (a, b)
 
+-- | Untyped binary trees over references
+type REx exp = Ex (RStruct exp)
+
+-- | ...
+data Channel symbol exp = C {
+    _ch_in  :: Map symbol (REx exp)
+  , _ch_out :: Map symbol (REx exp)
+  }
+
+--------------------------------------------------------------------------------
+
+-- |
+initChannels :: Resolution s e -> Prog e (Channel s e)
+initChannels res = do
+  ins  <- M.traverseWithKey (const makeChannel) $ _input  res
+  outs <- M.traverseWithKey (const makeChannel) $ _output res
+  return $ C {
+    _ch_in  = ins
+  , _ch_out = outs
+  }
+
+-- |
+makeChannel :: TEx e -> Prog e (REx e)
+makeChannel (Ex s) = makes s >>= return . Ex
+  where
+    makes :: TStruct e a -> Prog e (RStruct e a)
+    makes (TLeaf _)   = C.initRef >>= return . RLeaf
+    makes (TPair r l) = do
+      r' <- makes r
+      l' <- makes l
+      return $ RPair r' l'
+
+--------------------------------------------------------------------------------
+-- * Compiler
 --------------------------------------------------------------------------------
 
 -- | ...
 data Enviroment symbol exp = Env
-  { _links   :: Resolution symbol exp
-  , _buffers :: forall a. Map symbol (Buffer exp a) -- todo
-  , _firsts  :: Map symbol (Bepa exp)
-  , _inputs  :: Cepa exp 
+  { _links    :: Resolution symbol exp
+  , _channels :: Channel    symbol exp 
+  , _firsts   :: Map symbol (Ex (C.Ref :*: exp)) -- merge with _channels
+  , _inputs   :: Ex (Prog exp :*: exp)
 --, ...
   }
 
--- | Mapping from port id to its associated reference
-type State symbol exp = Map symbol (REx exp)
-
 -- | 
-type Type exp = ReaderT (Enviroment Unique exp)
-                  (StateT (State String exp)
-                     (Prog exp))
+type Type exp = ReaderT (Enviroment Unique exp) (Prog exp)
 
 --------------------------------------------------------------------------------
 
--- | ...
-apa :: (Typeable exp) => TStruct exp a -> Type exp (RStruct exp a)
-apa (TLeaf i) =
-  do ex <- gets (!? i)
-     return $ case ex of
-       Ex ref -> case gcast ref of
-         Nothing -> error "apa: type error"
-         Just r  -> r
-apa (TPair l r) =
-  do l' <- apa l
-     r' <- apa r
-     return $ RPair l' r'
+reads :: RStruct exp a -> Prog exp (Struct exp a)
+reads (RLeaf r)   = C.unsafeGetRef r >>= return . Leaf
+reads (RPair l r) = do
+  l' <- reads l
+  r' <- reads r
+  return $ Pair l' r'
 
--- | ...
-bepa :: RStruct exp a -> Type exp (Struct exp a)
-bepa (RLeaf r)   = lift (lift (C.unsafeGetRef r)) >>= return . Leaf
-bepa (RPair l r) =
-  do l' <- bepa l
-     r' <- bepa r
-     return $ Pair l' r'
+writes :: Struct exp a -> RStruct exp a -> Prog exp ()
+writes (Leaf s)   (RLeaf r)   = C.setRef r s
+writes (Pair l r) (RPair u v) = writes l u >> writes r v
 
 -- | Read
-cepa :: (Typeable exp, Typeable a) => Unique -> Struct exp a -> Type exp (Struct exp a)
-cepa i t =
-  do (Ex ts) <- asks ((! i) . _input . _links)
-     rs      <- apa ts
-     ss      <- bepa rs
-     return $ case gcast ss of
-       Nothing -> error "cepa: type error"
-       Just o  -> o `asTypeOf` t
+read_in :: Typeable a => Unique -> TStruct exp a -> Type exp (Struct exp a)
+read_in u _ =
+  do (Ex ch) <- asks ((! u) . _ch_in . _channels)
+     case gcast ch of
+       Just s  -> lift $ reads s
+       Nothing -> error "hepa: type error"
 
--- | ...
-depa :: Struct exp a -> Type exp (RStruct exp a)
-depa (Leaf a)   = lift (lift (C.newRef a)) >>= return . RLeaf
-depa (Pair l r) =
-  do l' <- depa l
-     r' <- depa r
-     return $ RPair l' r'
+-- | Read 
+read_out :: Typeable a => Unique -> TStruct exp a -> Type exp (Struct exp a)
+read_out u _ =
+  do (Ex ch) <- asks ((! u) . _ch_out . _channels)
+     case gcast ch of
+       Just s  -> lift $ reads s
+       Nothing -> error "!"
 
 -- | Write
-hepa :: (Typeable a) => String -> Struct exp a -> Type exp ()
-hepa u s = depa s >>= \n -> modify (M.insert u $ Ex n)
+write_out :: Typeable a => Unique -> Struct exp a -> Type exp ()
+write_out u s =
+  do (Ex ch) <- asks ((! u) . _ch_out . _channels)
+     case gcast ch of
+       Just r  -> lift $ writes s r
+       Nothing -> error "depa: type error"
 
 --------------------------------------------------------------------------------
 
 -- | ...
-compile :: forall exp. (Unique, Node exp) -> Type exp ()
-compile (i, TVar (_ :: TStruct exp a)) =
-  do let t = undefined :: Struct exp a
-     (Cepa x) <- asks (_inputs)
-     v <- lift $ lift $ liftProgram x
-     hepa (show i) ((fromJust $ gcast $ Leaf v) `asTypeOf` t)
-     
-compile (i, TConst (c :: Stream exp (exp a))) =
-  do v <- lift $ lift $ liftProgram $ Str.run c
-     hepa (show i) (Leaf v)
+compile :: (Unique, Node exp) -> Type exp ()
+compile (i, TVar t@(TLeaf _)) =
+  do input <- asks (apa t . _inputs)
+     value <- lift $ liftProgram input
+     write_out i (Leaf value)
+  where
+    apa :: Typeable e => TStruct exp (Empty (exp e)) -> Ex (f :*: g) -> f (g e)
+    apa _ = unwrap
+
+compile (i, TConst c) =
+  do value <- lift $ liftProgram $ Str.run c
+     write_out i (Leaf value)
 
 compile (i, TLift (f :: Stream exp (exp a) -> Stream exp (exp b)) _) =
-  do let t = undefined :: Struct exp (exp a)
-     (Leaf x) <- cepa i t
-     v <- lift $ lift $ liftProgram $ Str.run $ Str.repeat x
-     hepa (show i) (Leaf v)
+  do let t = undefined :: TStruct exp (Empty (exp a))
+     (Leaf input) <- read_in i t
+     value <- lift $ liftProgram $ Str.run $ f $ Str.repeat input
+     write_out i (Leaf value)
      
--- hackity hack
 compile (i, TDelay (e :: exp a) _) =
-  do let t = undefined :: Struct exp (Empty (exp a))
-         u = undefined :: C.Ref (exp a)
-     (Bepa r) <- asks ((! i) . _firsts)
-     (Leaf x) <- cepa i t
-     v <- lift $ lift $
-            do o <- C.unsafeGetRef r
-               C.setRef r $ fromJust $ cast x
-               return o
-     hepa (show i) (Leaf v)
-     
-compile (i, TMap _ _ (f :: Struct exp a -> Struct exp b) _) =
-  do let t = undefined :: Struct exp a
-     t' <- cepa i t
-     hepa (show i) (f t')
+  do let t = undefined :: TStruct exp (Empty (exp a))
+     (Leaf input) <- read_in i t
+     first <- asks (unwrap . (! i) . _firsts) :: Type exp (C.Ref (exp a))
+     value <- lift $ liftProgram $
+                do output <- C.unsafeGetRef first
+                   C.setRef first input
+                   return output
+     write_out i (Leaf value)
+
+compile (i, TMap ti to f _) =
+  do input <- read_in i ti
+     value <- return $ f input
+     write_out i value
      
 compile _ = return ()
 
 --------------------------------------------------------------------------------
 
--- just work already...
-data Apa e where
-  Apa :: Typeable a => e a -> Apa e
-
-data Bepa e where
-  Bepa :: Typeable a => C.Ref (e a) -> Bepa e
-
-data Cepa e where
-  Cepa :: Typeable a => Prog e (e a) -> Cepa e
-
 -- | ...
-compiler' :: forall e a b. (Typeable e, Typeable a, Typeable b)
-          => [(Unique, Node e)]  -- nodes
-          -> Resolution Unique e -- links
-          -> Map Unique Order    -- order
-          -> (Str e a -> Str e b)
+compiler' :: forall exp a b. (Typeable exp, Typeable a, Typeable b)
+          => [(Unique, Node exp)]
+          -> Resolution Unique exp
+          -> Map Unique Order
+          -> (Stream exp (exp a) -> Stream exp (exp b))
 compiler' nodes links order input = Str.stream $
-  do let ns = sort nodes
-     let l  = final ns
-     i <- init $ Str.run input
+  do let sorted = sort  nodes
+     let last   = final sorted
+     env <- init (Str.run input)
      return $
-       do m <- run i $ mapM_ compile ns
-          case m ! show l of
-            Ex (RLeaf a) -> fromJust $ gcast $ C.unsafeGetRef a
+       do let t = undefined :: TStruct exp (Empty (exp b))
+          (Leaf value) <- run env (mapM_ compile sorted >> read_out last t)
+          return value
   where
-    run :: Enviroment Unique e -> Type e () -> Prog e (State String e)
-    run e = flip execStateT M.empty . flip runReaderT e
+    run :: Enviroment Unique exp -> Type exp x -> Prog exp x
+    run = flip runReaderT
 
-    init :: Prog e (e a) -> Prog e (Enviroment Unique e)
-    init n =
-      do -- Create initial references for delay nodes
-         let (is, ds) = unzip [(i, Apa d) | (i, TDelay d _) <- nodes]
-         drs <- sequence $ map (\(Apa d) -> C.newRef d >>= return . Bepa) ds
-
-         -- Create enviroment
-         return $ Env
-           { _links   = links
-           , _buffers = M.empty
-           , _firsts  = M.fromList $ zip is drs
-           , _inputs  = Cepa n
+    -- Create initial eviroment
+    init :: Prog exp (exp a) -> Prog exp (Enviroment Unique exp)
+    init i =
+      do let m = M.fromList [ x | x@(_, TDelay {}) <- nodes]
+         firsts   <- M.traverseWithKey (const $ init_delay) m
+         channels <- initChannels links
+         return $ Env {
+             _links    = links
+           , _channels = channels
+           , _firsts   = firsts
+           , _inputs   = wrap i
            }
-
+      where
+        init_delay (TDelay d _) = C.newRef d >>= return . wrap
+        
     -- Sort graph nodes by the given ordering
-    sort :: [(Unique, Node e)] -> [(Unique, Node e)]
+    sort :: [(Unique, Node exp)] -> [(Unique, Node exp)]
     sort = fmap (fmap snd) . sortBy (compare `on` (fst . snd))
          . M.toList . M.intersectionWith (,) order
          . M.fromList
 
-    final :: [(Unique, Node e)] -> Unique
+    -- Find final reference to read output from
+    final :: [(Unique, Node exp)] -> Unique
     final = fst . last . filter (not . nop . snd)
       where nop (TLambda {}) = True
             nop (TZip {})    = True
@@ -233,16 +249,25 @@ compiler f =
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
 
---------------------------------------------------------------------------------
--- * Buffers
---------------------------------------------------------------------------------
 
-data Buffer exp a = Buffer
-  { getBuff :: exp Int -> Prog exp (exp a)
-  , putBuff :: exp a   -> Prog exp ()
-  }
 
-instance Show (Buffer e a) where show _ = "buffer. "
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 --------------------------------------------------------------------------------
 -- * Testing

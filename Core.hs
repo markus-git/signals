@@ -33,6 +33,7 @@ data CMD exp a
     Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
+    InitRef ::                         CMD exp (Ref (exp a))
     NewRef  :: exp a                -> CMD exp (Ref (exp a))
     GetRef  :: Ref (exp a)          -> CMD exp (exp a)
     SetRef  :: Ref (exp a) -> exp a -> CMD exp ()
@@ -100,6 +101,9 @@ feof   = singleton . Eof
 
 --------------------------------------------------------------------------------
 -- *** Variables
+
+initRef       :: ProgramT (CMD exp) m (Ref (exp a))
+initRef       = singleton InitRef
 
 newRef        :: exp a -> ProgramT (CMD exp) m (Ref (exp a))
 newRef e      = singleton (NewRef e)
