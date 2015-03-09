@@ -42,14 +42,15 @@ import qualified Data.Map as M
 import Prelude hiding (reads)
 
 --------------------------------------------------------------------------------
--- * Compiler
+-- *
 --------------------------------------------------------------------------------
 
 -- | Shorthand for programs using 'CMD' as their instruction set
 type Prog exp = Program (CMD exp)
 
--- | Untyped binary trees over references
-type REx exp = Ex (RStruct exp)
+--------------------------------------------------------------------------------
+-- * Channels
+--------------------------------------------------------------------------------
 
 -- | Binary trees over references
 data RStruct exp a
@@ -57,12 +58,46 @@ data RStruct exp a
     RLeaf :: Typeable a => C.Ref (exp a) -> RStruct exp (Empty (exp a))
     RPair :: RStruct exp a -> RStruct exp b -> RStruct exp (a, b)
 
+-- | Untyped binary trees over references
+type REx exp = Ex (RStruct exp)
+
+-- | ...
+data Channel symbol exp = C {
+    _ch_in  :: Map symbol (REx exp)
+  , _ch_out :: Map symbol (REx exp)
+  }
+
+--------------------------------------------------------------------------------
+
+-- |
+initChannels :: Resolution s e -> Prog e (Channel s e)
+initChannels res = do
+  ins  <- M.traverseWithKey (const makeChannel) $ _input  res
+  outs <- M.traverseWithKey (const makeChannel) $ _output res
+  return $ C {
+    _ch_in  = ins
+  , _ch_out = outs
+  }
+
+-- |
+makeChannel :: TEx e -> Prog e (REx e)
+makeChannel (Ex s) = makes s >>= return . Ex
+  where
+    makes :: TStruct e a -> Prog e (RStruct e a)
+    makes (TLeaf _)   = C.initRef >>= return . RLeaf
+    makes (TPair r l) = do
+      r' <- makes r
+      l' <- makes l
+      return $ RPair r' l'
+
+--------------------------------------------------------------------------------
+-- * Compiler
 --------------------------------------------------------------------------------
 
 -- | ...
 data Enviroment symbol exp = Env
   { _links   :: Resolution symbol exp
-  , _buffers :: forall a. Map symbol (Buffer exp a) -- todo
+--, _buffers :: todo
   , _firsts  :: Map symbol (Bepa exp)
   , _inputs  :: Cepa exp 
 --, ...
@@ -195,7 +230,7 @@ compiler' nodes links order input = Str.stream $
          -- Create enviroment
          return $ Env
            { _links   = links
-           , _buffers = M.empty
+         --, _buffers = M.empty
            , _firsts  = M.fromList $ zip is drs
            , _inputs  = Cepa n
            }

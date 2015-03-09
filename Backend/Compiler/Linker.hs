@@ -4,6 +4,7 @@
 
 module Backend.Compiler.Linker (
     Resolution(..)
+  , TEx
   , linker
   )
 where
