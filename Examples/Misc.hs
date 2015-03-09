@@ -1,7 +1,10 @@
 module Examples.Misc where
 
+{-
+-- TODO: these examples rely on Expr, which is no longer present
+
 import Core
--- import Expr -- ?
+import Expr -- ?
 import Interpretation
 
 import           Frontend.Signal     (Sig)
@@ -66,3 +69,5 @@ compile :: (Typeable a, Typeable b)
           =>    (Sig a -> Sig b)
           -> IO (Prg a -> Prg b)
 compile f = SC.compile (S.unSig . f . S.Sig)
+
+-}
