@@ -46,34 +46,28 @@ onesSig :: S (Complex Double)
 onesSig = S.repeat oneComplex
 
 --------------------------------------------------------------------------------
--- * FFT
+-- * FFT functions
 --------------------------------------------------------------------------------
 
--- Construct function operating on 2n-lists from function operating on n-list
+-- TODO: remove Int argument; calculate using length?
+fft :: Int -> [S (Complex Double)] -> [S (Complex Double)]
+fft = radix2
 
--- Applies a function to first part of splitted list, leaving second unchanged
-one :: ([a] -> [a]) -> ([a] -> [a])
-one f l = (f l) ++ (l)
-
--- Applies a function to both parts of a splitted list
-two :: ([a] -> [b]) -> ([a] -> [b])
-two f l = (f l) ++ (f l)
-
--- Applies the function f n times
-raised :: Int -> (a -> a) -> (a -> a)
-raised n f = (!! n) . iterate f
-
-{-
-(>->) :: Circuit m => (a -> m b) -> (b -> m c) -> (a -> m c)
--- I don't think we need this - we can use function composition instead
--}
-
+radix2 :: Int -> [S (Complex Double)] -> [S (Complex Double)]
+radix2 n = compose [stage i | i <- [1..n]] . bitRev n
+  where
+    stage i = bflys (i-1) . raised (n-i) two (twid i)
+    twid  i = one $ (decmap (2^(i-1))) (wMult (2^i))
 
 bfly :: [S (Complex Double)] -> [S (Complex Double)]
 bfly [i1, i2] = [i1 + i2, i1 - i2]
 
 bflys :: Int -> [S (Complex Double)] -> [S (Complex Double)]
 bflys n = unriffle . raised n two bfly . riffle
+
+bitRev :: Int -> [a] -> [a]
+-- could accomplish this using more haskelly methods?
+bitRev n = compose [raised (n-i) two riffle | i <- [1..n] ] 
 
 w :: Int -> Int -> Int 
 w n 0 = 1
@@ -108,14 +102,45 @@ minusJ = undefined
 -}
 
 
--- TODO: split in ut in only two?
--- Split what in two?
 
+--------------------------------------------------------------------------------
+-- * Helper functions
+--------------------------------------------------------------------------------
+
+-- | Splits a list in half.
+--   Lists should be of even length.
 splitTwo :: [a] -> ([a], [a])
 splitTwo xs = ( take len xs, drop len xs )
     where len = length xs `div` 2
 
--- how do splitTwo and unriffle relate to each other?
+-- Construct function operating on 2n-lists from function operating on n-list
+-- | Duplicates a list, applying the function f to the first half
+one :: ([a] -> [a]) -> ([a] -> [a])
+one f l = (f l) ++ (l)
+
+-- Construct function operating on 2n-lists from function operating on n-list
+-- | Duplicates a list, applying the function f to both halves
+two :: ([a] -> [b]) -> ([a] -> [b])
+two f l = (f l) ++ (f l)
+
+
+-- | Applies the function f n times
+raised :: Int -> (a -> a) -> (a -> a)
+raised n f = (!! n) . iterate f
+
+decmap :: Int -> (Int -> a -> b) -> ([a] -> [b])
+decmap n f = zipWith f [n-i | i <- [1..n]]
+
+-- | Composes a list of functions together
+compose :: [a -> a] -> a -> a
+compose fs v = foldl (flip (.)) id fs $ v
+
+
+{-
+(>->) :: Circuit m => (a -> m b) -> (b -> m c) -> (a -> m c)
+-- I don't think we need this - we can use function composition instead
+-}
+
 
 riffle :: [a] -> [a]
 riffle = riffle' . splitTwo
