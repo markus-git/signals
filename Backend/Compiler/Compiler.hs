@@ -21,6 +21,7 @@ import qualified Frontend.Signal as S
 
 import Frontend.SignalObsv (TSignal(..), Node)
 
+import Backend.Ex
 import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
@@ -161,10 +162,6 @@ compile _ = return ()
 
 --------------------------------------------------------------------------------
 
--- just work already...
-data Apa e where
-  Apa :: Typeable a => e a -> Apa e
-
 data Bepa e where
   Bepa :: Typeable a => C.Ref (e a) -> Bepa e
 
@@ -192,8 +189,8 @@ compiler' nodes links order input = Str.stream $
     init :: Prog e (e a) -> Prog e (Enviroment Unique e)
     init n =
       do -- Create initial references for delay nodes
-         let (is, ds) = unzip [(i, Apa d) | (i, TDelay d _) <- nodes]
-         drs <- sequence $ map (\(Apa d) -> C.newRef d >>= return . Bepa) ds
+         let (is, ds) = unzip [(i, Ex d) | (i, TDelay d _) <- nodes]
+         drs <- sequence $ map (\(Ex d) -> C.newRef d >>= return . Bepa) ds
 
          -- Create enviroment
          return $ Env
