@@ -1,9 +1,11 @@
 {-# LANGUAGE GADTs         #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Backend.Ex where
 
 import Data.Typeable
+import Data.Proxy
 
 --------------------------------------------------------------------------------
 -- * Existential types
@@ -32,5 +34,20 @@ wrap = Ex . T
 -- | Retreives the inner type, uses type casting
 unwrap :: Typeable e => Ex (f :*: g) -> f (g e)
 unwrap (Ex t) = case gcast t of
-  Just (T x) -> x
-  Nothing    -> error "unwrap: type error"
+                  Just (T x) -> x
+                  Nothing    -> error "unwrap: type error"
+
+
+
+
+
+
+
+-- | ...
+unwrap' :: forall e f g. Typeable e => Ex (f :*: g) -> f (g e)
+unwrap' (Ex (t :: (f :*: g) a)) = case gcast t of
+    Just (T x) -> x
+    Nothing    -> error
+      $  "!!: type error"
+      ++ "\n\t expected: " ++ show (typeOf (Proxy::Proxy e))
+      ++ "\n\t actual: "   ++ show (typeOf (Proxy::Proxy a))
