@@ -103,10 +103,8 @@ instance (Typeable exp) => MuRef (Signal exp a)
       (Delay a s)  -> TDelay a <$> f s
       (SVar  _)    -> pure $ TVar (rep (undefined :: Struct exp a))
 
-instance ( Typeable a, Typeable b
-         , Typeable exp
-         , StructT a
-         , DomainT a ~ exp
+instance ( Typeable a, Typeable b, Typeable exp
+         , StructT a,  DomainT a ~ exp
          ) =>
     MuRef (Signal exp a -> Signal exp b)
   where

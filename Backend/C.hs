@@ -86,6 +86,11 @@ compCMD' (Eof (HandleComp h)) = do
   return $ varExp sym
 
 -- ^ Mutable refrences
+compCMD' (InitRef) = do
+  let t = compTypeRep undefined -- todo
+  sym <- gensym "r"
+  addLocal [cdecl| float $id:sym; |]
+  return $ RefComp sym
 compCMD' (NewRef exp) = do
   let t = compTypeRep undefined -- todo
   sym <- gensym "r"
@@ -214,7 +219,6 @@ runProgram :: ( EvalExp exp
 runProgram = interpretWithMonad runCMD
 
 --------------------------------------------------------------------------------
--- **
 
 readWord :: IO.Handle -> IO String
 readWord h = do
@@ -226,8 +230,9 @@ readWord h = do
           cs <- readWord h
           return (c:cs)
 
-runCMD :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => CMD exp a -> IO a
+--------------------------------------------------------------------------------
 
+runCMD :: (EvalExp exp, LitPred exp Bool, LitPred exp Float) => CMD exp a -> IO a
 runCMD (Open path)            = fmap HandleEval $ IO.openFile path IO.ReadWriteMode
 runCMD (Close (HandleEval h)) = IO.hClose h
 runCMD (Put (HandleEval h) a) = IO.hPrint h (evalExp a)
@@ -238,8 +243,9 @@ runCMD (Get (HandleEval h))   = do
         _        -> error "runCMD: Get: no parse"
 runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
 
-runCMD (NewRef a)           = fmap RefEval $ newIORef a
-runCMD (GetRef (RefEval r)) = readIORef r
+runCMD (InitRef)              = fmap RefEval $ newIORef undefined -- ...
+runCMD (NewRef a)             = fmap RefEval $ newIORef a
+runCMD (GetRef (RefEval r))   = readIORef r
 runCMD (SetRef (RefEval r) a) = writeIORef r a
 
 runCMD (NewArr i a)               = fmap ArrEval $ newArray (0, fromIntegral (evalExp i) - 1) a
@@ -251,13 +257,11 @@ runCMD (UnsafeGetRef (RefEval r)) = readIORef r
 runCMD (If c t f)
     | evalExp c = runProgram t
     | otherwise = runProgram f
-
 runCMD (While cond body) = do
     cond' <- runProgram cond
     if evalExp cond'
       then runProgram body >> runCMD (While cond body)
       else return ()
-
 runCMD Break = error "runCMD: Break not implemented"
 
 runCMD (Printf format a) = Printf.printf format (show $ evalExp a)
