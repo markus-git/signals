@@ -238,9 +238,12 @@ runCMD (Close (HandleEval h)) = IO.hClose h
 runCMD (Put (HandleEval h) a) = IO.hPrint h (evalExp a)
 runCMD (Get (HandleEval h))   = do
     w <- readWord h
+    -- TODO: readWord reads the entire string of "1 2 3 4 ...",
+    -- so ``reads w`` always has remaining string,
+    -- so [(f,"")] case is never matched. 
     case reads w of
         [(f,"")] -> return $ litExp f
-        _        -> error "runCMD: Get: no parse"
+        val      -> error $ "runCMD: Get: no parse" ++ show val
 runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
 
 runCMD (InitRef)              = fmap RefEval $ newIORef undefined -- ...
