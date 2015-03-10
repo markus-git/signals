@@ -128,6 +128,14 @@ read_in u _ =
        Just s  -> lift $ reads s
        Nothing -> error "hepa: type error"
 
+-- | Read 
+read_out :: Typeable a => Unique -> TStruct exp a -> Type exp (Struct exp a)
+read_out u _ =
+  do (Ex ch) <- asks ((! u) . _ch_out . _channels)
+     case gcast ch of
+       Just s  -> lift $ reads s
+       Nothing -> error "!"
+
 -- | Write
 write_out :: Typeable a => Unique -> Struct exp a -> Type exp ()
 write_out u s =
@@ -189,7 +197,7 @@ compiler' nodes links order input = Str.stream $
      env <- init (Str.run input)
      return $
        do let t = undefined :: TStruct exp (Empty (exp b))
-          (Leaf value) <- run env (mapM_ compile sorted >> read_in last t)
+          (Leaf value) <- run env (mapM_ compile sorted >> read_out last t)
           return value
 
   where
