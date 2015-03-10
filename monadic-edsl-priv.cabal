@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Interpretation, Core, Frontend.Stream, Frontend.SignalObsv, Frontend.Signal, Examples.Misc, Examples.Simple.Filters, Examples.Simple.Expr, Backend.Knot, Backend.C, Backend.Compiler.Sorter, Backend.Compiler.Linker, Backend.Compiler.Cycles, Backend.Compiler.Compiler, Backend.C.Monad
+  exposed-modules:     Interpretation, Core, Frontend.Stream, Frontend.SignalObsv, Frontend.Signal, Examples.Simple.Filters, Examples.Simple.Expr, Backend.Knot, Backend.C, Backend.Compiler.Sorter, Backend.Compiler.Linker, Backend.Compiler.Cycles, Backend.Compiler.Compiler, Backend.C.Monad
   -- other-modules:       
   other-extensions:    ConstraintKinds, TypeFamilies, MultiParamTypeClasses, FlexibleContexts, FlexibleInstances, GADTs, DeriveDataTypeable, ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, KindSignatures, QuasiQuotes, RecursiveDo, Rank2Types, BangPatterns, GeneralizedNewtypeDeriving
   build-depends:       base >=4.7 && <4.8,
