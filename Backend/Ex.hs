@@ -1,11 +1,23 @@
 {-# LANGUAGE GADTs         #-}
 {-# LANGUAGE TypeOperators #-}
+
+---------------------------------------- Testing
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+----------------------------------------
 
 module Backend.Ex where
 
 import Data.Typeable
 import Data.Proxy
+
+---------------------------------------- Testing
+import Frontend.Signal (TStruct(..))
+----------------------------------------
 
 --------------------------------------------------------------------------------
 -- * Existential types
@@ -37,17 +49,14 @@ unwrap (Ex t) = case gcast t of
                   Just (T x) -> x
                   Nothing    -> error "unwrap: type error"
 
+--------------------------------------------------------------------------------
+-- * Testing
+--------------------------------------------------------------------------------
 
+instance Show (Ex (TStruct e))
+  where
+    show (Ex s) = showTS s
 
-
-
-
-
--- | ...
-unwrap' :: forall e f g. Typeable e => Ex (f :*: g) -> f (g e)
-unwrap' (Ex (t :: (f :*: g) a)) = case gcast t of
-    Just (T x) -> x
-    Nothing    -> error
-      $  "!!: type error"
-      ++ "\n\t expected: " ++ show (typeOf (Proxy::Proxy e))
-      ++ "\n\t actual: "   ++ show (typeOf (Proxy::Proxy a))
+showTS :: TStruct e a -> String
+showTS (TLeaf c) = show c
+showTS (TPair l r) = "(" ++ showTS l ++ "," ++ showTS r ++ ")"

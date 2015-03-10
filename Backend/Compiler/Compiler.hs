@@ -50,6 +50,22 @@ import Prelude hiding (reads)
 type Prog exp = Program (CMD exp)
 
 --------------------------------------------------------------------------------
+
+compiler :: (Typeable exp, Typeable a, Typeable b)
+         =>    (Sig exp a -> Sig exp b)
+         -> IO (Str exp a -> Str exp b)
+compiler f =
+  do (Graph nodes root) <- reifyGraph f
+
+     let links = linker nodes
+         order = sorter root nodes
+         cycle = cycles root nodes
+
+     return $ case cycle of
+       True  -> error "found cycle in graph"
+       False -> compiler' nodes links order
+
+--------------------------------------------------------------------------------
 -- * Channels
 --------------------------------------------------------------------------------
 
@@ -69,12 +85,14 @@ data Channel symbol exp = C {
   }
 
 --------------------------------------------------------------------------------
+-- hacky solution for now
 
 -- |
-initChannels :: Resolution s e -> Prog e (Channel s e)
+initChannels :: (Ord s, Read s, Typeable e) => Resolution s e -> Prog e (Channel s e)
 initChannels res = do
-  ins  <- M.traverseWithKey (const makeChannel) $ _input  res
   outs <- M.traverseWithKey (const makeChannel) $ _output res
+--ins  <- M.traverseWithKey (const makeChannel) $ _input  res
+  let ins = M.map (copyChannel outs) $ _input res
   return $ C {
     _ch_in  = ins
   , _ch_out = outs
@@ -90,6 +108,14 @@ makeChannel (Ex s) = makes s >>= return . Ex
       r' <- makes r
       l' <- makes l
       return $ RPair r' l'
+
+-- |
+copyChannel :: forall e s. (Ord s, Read s, Typeable e) => Map s (REx e) -> TEx e -> REx e
+copyChannel m (Ex s) = Ex $ copys s
+  where
+    copys :: TStruct e a -> RStruct e a
+    copys (TLeaf i)   = case m ! read i of (Ex (RLeaf r)) -> case gcast r of Just x -> RLeaf x
+    copys (TPair l r) = RPair (copys l) (copys r)
 
 --------------------------------------------------------------------------------
 -- * Compiler
@@ -120,6 +146,8 @@ writes :: Struct exp a -> RStruct exp a -> Prog exp ()
 writes (Leaf s)   (RLeaf r)   = C.setRef r s
 writes (Pair l r) (RPair u v) = writes l u >> writes r v
 
+--------------------------------------------------------------------------------
+
 -- | Read
 read_in :: Typeable a => Unique -> TStruct exp a -> Type exp (Struct exp a)
 read_in u _ =
@@ -134,7 +162,7 @@ read_out u _ =
   do (Ex ch) <- asks ((! u) . _ch_out . _channels)
      case gcast ch of
        Just s  -> lift $ reads s
-       Nothing -> error "!"
+       Nothing -> error "bepa: type error"
 
 -- | Write
 write_out :: Typeable a => Unique -> Struct exp a -> Type exp ()
@@ -207,9 +235,14 @@ compiler' nodes links order input = Str.stream $
     -- Create initial eviroment
     init :: Prog exp (exp a) -> Prog exp (Enviroment Unique exp)
     init i =
-      do let m = M.fromList [ x | x@(_, TDelay {}) <- nodes]
-         firsts   <- M.traverseWithKey (const $ init_delay) m
-         channels <- initChannels links
+      do let delays = M.fromList [ x | x@(_, TDelay {}) <- nodes]
+             fnodes = map fst $ filterNOP nodes
+             flinks = Resolution {
+                 _output = M.filterWithKey (\k _ -> k `elem` fnodes) $ _output links
+               , _input  = M.filterWithKey (\k _ -> k `elem` fnodes) $ _input  links
+               }
+         firsts   <- M.traverseWithKey (const $ init_delay) delays
+         channels <- initChannels flinks
          return $ Env {
              _links    = links
            , _channels = channels
@@ -227,28 +260,16 @@ compiler' nodes links order input = Str.stream $
 
     -- Find final reference to read output from
     final :: [(Unique, Node exp)] -> Unique
-    final = fst . last . filter (not . nop . snd)
+    final = fst . last . filterNOP
+
+    -- Filter unused nodes
+    filterNOP :: [(Unique, Node exp)] -> [(Unique, Node exp)]
+    filterNOP = filter (not . nop . snd)
       where nop (TLambda {}) = True
             nop (TZip {})    = True
             nop (TFst {})    = True
             nop (TSnd {})    = True
             nop _            = False
-
---------------------------------------------------------------------------------
-
-compiler :: (Typeable exp, Typeable a, Typeable b)
-         =>    (Sig exp a -> Sig exp b)
-         -> IO (Str exp a -> Str exp b)
-compiler f =
-  do (Graph nodes root) <- reifyGraph f
-
-     let links = linker nodes
-         order = sorter root nodes
-         cycle = cycles root nodes
-
-     return $ case cycle of
-       True  -> error "found cycle in graph"
-       False -> compiler' nodes links order
 
 --------------------------------------------------------------------------------
 -- * Buffers
@@ -328,7 +349,7 @@ merge_chains nodes chains =
 -- * Testing
 --------------------------------------------------------------------------------
 
-inspect_compiler :: (Typeable exp, Typeable a, Typeable b, Num (exp Int))
+inspect_compiler :: (Typeable exp, Typeable a, Typeable b)
                  =>    (Sig exp a -> Sig exp b)
                  -> IO (Str exp a -> Str exp b)
 inspect_compiler f =
@@ -338,8 +359,6 @@ inspect_compiler f =
          order = sorter root nodes
          cycle = cycles root nodes
 
-   --let chains = M.map (const "Buff.") $ snd $ opt_delay_chains $ M.fromList nodes
-     
      putStrLn "=================================================="
      putStrLn "= Inspecting Compiler"
      putStrLn "=================================================="
@@ -360,13 +379,6 @@ inspect_compiler f =
      putStrLn $ show $ _output links
      putStrLn "--------------------------------------------------"
 
-{-
-     putStrLn "- Buffers"
-     putStrLn "--------------------------------------------------"
-     putStrLn $ show $ chains
-     putStrLn "--------------------------------------------------"
--}
-     
      return $ case cycle of
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
