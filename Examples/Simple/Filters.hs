@@ -1,4 +1,7 @@
-module Examples.Simple.Filters where
+module Examples.Simple.Filters (
+  eval,
+  comp)
+where
 
 import Prelude hiding (break)
 

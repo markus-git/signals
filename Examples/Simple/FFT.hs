@@ -6,6 +6,8 @@ import Core
 import Interpretation
 
 import Examples.Simple.Expr
+import Examples.Simple.Filters (eval, comp)
+
 import Frontend.Signal (Sig)
 import Frontend.Stream (Str, Stream(..))
 import Backend.Compiler.Compiler
