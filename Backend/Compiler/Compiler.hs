@@ -20,7 +20,7 @@ import qualified Frontend.Stream as Str
 import           Frontend.Signal (Signal, Sig, Struct(..), TStruct(..), Empty)
 import qualified Frontend.Signal as S
 
-import Frontend.SignalObsv (TSignal(..), Node)
+import Frontend.SignalObsv (TSignal(..), Node, edges)
 
 import Backend.Ex
 import Backend.Compiler.Cycles
@@ -34,7 +34,7 @@ import Control.Monad.Operational
 import Data.Typeable
 import Data.Reify (Unique, Graph(..), reifyGraph)
 import Data.Maybe (fromJust)
-import Data.List  (sortBy)
+import Data.List  (sortBy, mapAccumR)
 import Data.Function (on)
 
 import           Data.Map (Map, (!))
@@ -48,6 +48,22 @@ import Prelude hiding (reads)
 
 -- | Shorthand for programs using 'CMD' as their instruction set
 type Prog exp = Program (CMD exp)
+
+--------------------------------------------------------------------------------
+
+compiler :: (Typeable exp, Typeable a, Typeable b)
+         =>    (Sig exp a -> Sig exp b)
+         -> IO (Str exp a -> Str exp b)
+compiler f =
+  do (Graph nodes root) <- reifyGraph f
+
+     let links = linker nodes
+         order = sorter root nodes
+         cycle = cycles root nodes
+
+     return $ case cycle of
+       True  -> error "found cycle in graph"
+       False -> compiler' nodes links order
 
 --------------------------------------------------------------------------------
 -- * Channels
@@ -69,12 +85,14 @@ data Channel symbol exp = C {
   }
 
 --------------------------------------------------------------------------------
+-- hacky solution for now
 
 -- |
-initChannels :: Resolution s e -> Prog e (Channel s e)
+initChannels :: (Ord s, Read s, Typeable e) => Resolution s e -> Prog e (Channel s e)
 initChannels res = do
-  ins  <- M.traverseWithKey (const makeChannel) $ _input  res
   outs <- M.traverseWithKey (const makeChannel) $ _output res
+--ins  <- M.traverseWithKey (const makeChannel) $ _input  res
+  let ins = M.map (copyChannel outs) $ _input res
   return $ C {
     _ch_in  = ins
   , _ch_out = outs
@@ -90,6 +108,14 @@ makeChannel (Ex s) = makes s >>= return . Ex
       r' <- makes r
       l' <- makes l
       return $ RPair r' l'
+
+-- |
+copyChannel :: forall e s. (Ord s, Read s, Typeable e) => Map s (REx e) -> TEx e -> REx e
+copyChannel m (Ex s) = Ex $ copys s
+  where
+    copys :: TStruct e a -> RStruct e a
+    copys (TLeaf i)   = case m ! read i of (Ex (RLeaf r)) -> case gcast r of Just x -> RLeaf x
+    copys (TPair l r) = RPair (copys l) (copys r)
 
 --------------------------------------------------------------------------------
 -- * Compiler
@@ -120,6 +146,8 @@ writes :: Struct exp a -> RStruct exp a -> Prog exp ()
 writes (Leaf s)   (RLeaf r)   = C.setRef r s
 writes (Pair l r) (RPair u v) = writes l u >> writes r v
 
+--------------------------------------------------------------------------------
+
 -- | Read
 read_in :: Typeable a => Unique -> TStruct exp a -> Type exp (Struct exp a)
 read_in u _ =
@@ -134,7 +162,7 @@ read_out u _ =
   do (Ex ch) <- asks ((! u) . _ch_out . _channels)
      case gcast ch of
        Just s  -> lift $ reads s
-       Nothing -> error "!"
+       Nothing -> error "bepa: type error"
 
 -- | Write
 write_out :: Typeable a => Unique -> Struct exp a -> Type exp ()
@@ -199,6 +227,7 @@ compiler' nodes links order input = Str.stream $
        do let t = undefined :: TStruct exp (Empty (exp b))
           (Leaf value) <- run env (mapM_ compile sorted >> read_out last t)
           return value
+
   where
     run :: Enviroment Unique exp -> Type exp x -> Prog exp x
     run = flip runReaderT
@@ -206,9 +235,14 @@ compiler' nodes links order input = Str.stream $
     -- Create initial eviroment
     init :: Prog exp (exp a) -> Prog exp (Enviroment Unique exp)
     init i =
-      do let m = M.fromList [ x | x@(_, TDelay {}) <- nodes]
-         firsts   <- M.traverseWithKey (const $ init_delay) m
-         channels <- initChannels links
+      do let delays = M.fromList [ x | x@(_, TDelay {}) <- nodes]
+             fnodes = map fst $ filterNOP nodes
+             flinks = Resolution {
+                 _output = M.filterWithKey (\k _ -> k `elem` fnodes) $ _output links
+               , _input  = M.filterWithKey (\k _ -> k `elem` fnodes) $ _input  links
+               }
+         firsts   <- M.traverseWithKey (const $ init_delay) delays
+         channels <- initChannels flinks
          return $ Env {
              _links    = links
            , _channels = channels
@@ -226,7 +260,11 @@ compiler' nodes links order input = Str.stream $
 
     -- Find final reference to read output from
     final :: [(Unique, Node exp)] -> Unique
-    final = fst . last . filter (not . nop . snd)
+    final = fst . last . filterNOP
+
+    -- Filter unused nodes
+    filterNOP :: [(Unique, Node exp)] -> [(Unique, Node exp)]
+    filterNOP = filter (not . nop . snd)
       where nop (TLambda {}) = True
             nop (TZip {})    = True
             nop (TFst {})    = True
@@ -234,40 +272,78 @@ compiler' nodes links order input = Str.stream $
             nop _            = False
 
 --------------------------------------------------------------------------------
+-- * Buffers
+--------------------------------------------------------------------------------
 
-compiler :: (Typeable exp, Typeable a, Typeable b)
-         =>    (Sig exp a -> Sig exp b)
-         -> IO (Str exp a -> Str exp b)
-compiler f =
-  do (Graph nodes root) <- reifyGraph f
+data Buffer exp a = Buffer
+  { getBuff :: exp Int -> Program (CMD exp) (exp a)
+  , putBuff :: exp a   -> Program (CMD exp) ()
+  }
 
-     let links = linker nodes
-         order = sorter root nodes
-         cycle = cycles root nodes
+newBuff
+  :: forall exp a. (Num (exp Int), Integral (exp Int))
+  => exp Int -> exp a -> Program (CMD exp) (Buffer exp a)
+newBuff size init =
+  do arr <- C.newArr size init
+     ir  <- C.newRef (0 :: exp Int)
+     let get j = do i <- C.unsafeGetRef ir
+                    C.getArr ((i + (size - j - 1)) `mod` size) arr
+     let put a = do i <- C.unsafeGetRef ir
+                    C.setArr i a arr
+                    -- missing iff
+     return $ Buffer get put
 
-     return $ case cycle of
-       True  -> error "found cycle in graph"
-       False -> compiler' nodes links order
-
-
-
-
-
-
-
-
-
-
+--------------------------------------------------------------------------------
 
 
+opt_delay_chains :: (Typeable e, Typeable a, Num (e Int))
+  => Map Unique (Node e)
+  -> ( Map Unique (Node e)
+     , Map Unique [e a])
+opt_delay_chains nodes =
+  let x = find_chains nodes
+      (y, buffs) = buffer_chains x
+      z = merge_chains nodes y
+  in  (z, buffs)
 
+find_chains :: Map Unique (Node e) -> Map Unique [(Unique, Node e)]
+find_chains nodes =
+  let delays = M.foldrWithKey (\k n -> M.insert (edge n) (k, n)) M.empty
+             $ M.filter isDelay nodes
+      heads  = M.foldr (M.delete . fst) delays delays
+  in  M.map (flip chain delays) heads
+  where
+    chain :: (Unique, Node e) -> Map Unique (Unique, Node e) -> [(Unique, Node e)] 
+    chain v@(i, _) m = v : maybe [] (flip chain m) (M.lookup i m)
 
+    edge :: Node e -> Unique
+    edge = head . edges
 
+    isDelay :: Node e -> Bool
+    isDelay (TDelay {}) = True
+    isDelay _           = False
+  
+buffer_chains
+  :: forall e a. (Typeable e, Typeable a, Num (e Int))
+  => Map Unique [(Unique, Node e)]
+  -> ( Map Unique [(Unique, Node e)]
+     , Map Unique [e a])
+buffer_chains chains =
+  let vals  = M.map (map val) chains
+      buffs = M.mapWithKey (\k -> snd . mapAccumR (acc k) 1) chains
+  in (buffs, vals)
+  where
+    val     (i, TDelay v _) = fromJust $ cast v
+    acc k n (i, TDelay v _) = (n+1, (i, TDBuff k $ fromIntegral n))
 
-
-
-
-
+merge_chains
+  :: Map Unique (Node e)
+  -> Map Unique [(Unique, Node e)]
+  -> Map Unique (Node e)
+merge_chains nodes chains =
+  let nodes' = M.foldr (flip $ foldr (\(u,n) -> M.adjust (const n) u)) nodes chains
+      heads' = M.foldrWithKey (\k _ -> M.insert (-k) (TVBuff k)) M.empty chains
+  in  M.union nodes' heads'
 
 --------------------------------------------------------------------------------
 -- * Testing
@@ -302,7 +378,7 @@ inspect_compiler f =
      putStrLn "--------------------------------------------------"
      putStrLn $ show $ _output links
      putStrLn "--------------------------------------------------"
-     
+
      return $ case cycle of
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
