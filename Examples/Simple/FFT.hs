@@ -6,7 +6,8 @@ import Core
 import Interpretation
 
 import Examples.Simple.Expr
-import Examples.Simple.Filters (eval, comp)
+-- These are irrelevant: we want to handle list of signals
+-- import Examples.Simple.Filters (eval, comp)
 
 import Frontend.Signal (Sig)
 import Frontend.Stream (Str, Stream(..))
@@ -46,6 +47,64 @@ oneComplex = 1.0
 
 onesSig :: S (Complex Double)
 onesSig = S.repeat oneComplex
+
+--------------------------------------------------------------------------------
+-- * Test our FFT
+--------------------------------------------------------------------------------
+
+-- We use comp and eval from Example.Filters.
+
+-- Assumptions:
+-- Input is of size 8
+
+-- TODO:
+-- How should we structure input when we have list of signals?
+
+-- Idea:
+-- row 0 == sample of all signals at t=0,
+-- row 1 == sample of all signals at t=1,
+-- ... ?
+
+test_fft = comp (fft 8)
+eval_fft = eval (fft 8)
+
+--------------------------------------------------------------------------------
+-- * Evaluating and compiling lists of signals
+--------------------------------------------------------------------------------
+
+-- |
+eval :: ([S (Complex Double)] -> [S (Complex Double)]) -> IO ()
+eval = connect_io >=> B.runProgram
+
+-- | ...
+comp :: ([S (Complex Double)] -> [S (Complex Double)]) -> IO Doc
+comp = connect_io >=> B.cgen . mkFunction "main"
+
+-- TODO
+connect_io :: ([S (Complex Double)] -> [S (Complex Double)]) -> IO (P ())
+connect_io s = undefined 
+{-  do 
+  prg <- compiler s
+  return $ do
+    inp  <- open "input"
+    outp <- open "output"
+
+    let (Stream init) = prg $ Str.stream $ return $ do
+          i     <- fget inp
+          isEOF <- feof inp
+          iff isEOF break (return ())
+            -- Apparently EOF can only be detected after one has tried to read past the end
+          return i
+
+    let setty = fput outp
+    getty <- init
+    while (return $ litExp True)
+          (do v <- getty
+              setty v)
+
+    close inp
+    close outp
+-}
 
 --------------------------------------------------------------------------------
 -- * FFT functions

@@ -1,0 +1,9 @@
+Running fft in matlab for reference yields:
+
+x = [1 2 3 4 5 6 7 8]
+fft(x) =   36.0000 + 0.0000i  -4.0000 + 9.6569i  -4.0000 + 4.0000i  -4.0000 + 1.6569i  -4.0000 + 0.0000i  -4.0000 - 1.6569i  -4.0000 - 4.0000i  -4.0000 - 9.6569i
+
+Question:
+What does this correspond to when using lists of signals?
+[S.repeat 1, S.repeat 2, ..., S.repeat 8] ?
+
