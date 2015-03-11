@@ -33,10 +33,10 @@ data CMD exp a
     Eof   :: Handle              -> CMD exp (exp Bool)
 
     -- ^ Mutable references (IORef in Haskell)
-    InitRef ::                         CMD exp (Ref (exp a))
-    NewRef  :: exp a                -> CMD exp (Ref (exp a))
-    GetRef  :: Ref (exp a)          -> CMD exp (exp a)
-    SetRef  :: Ref (exp a) -> exp a -> CMD exp ()
+    InitRef :: Typeable a =>                         CMD exp (Ref (exp a))
+    NewRef  :: Typeable a => exp a                -> CMD exp (Ref (exp a))
+    GetRef  :: Typeable a => Ref (exp a)          -> CMD exp (exp a)
+    SetRef  ::               Ref (exp a) -> exp a -> CMD exp ()
 
     -- ^ Mutable arrays     (IOArray in Haskell)
     NewArr :: Integral n => exp n -> exp a                -> CMD exp (Arr (exp a))
@@ -45,6 +45,7 @@ data CMD exp a
 
     -- no new var. is assigned.
     UnsafeGetRef :: Ref (exp a) -> CMD exp (exp a)
+    UnsafeGetArr :: Integral n => exp n -> Arr (exp a) -> CMD exp (exp a)
 
     -- ^ Control structures | Todo: Move to seperate data class
     If    :: exp Bool
@@ -102,13 +103,13 @@ feof   = singleton . Eof
 --------------------------------------------------------------------------------
 -- *** Variables
 
-initRef       :: ProgramT (CMD exp) m (Ref (exp a))
+initRef       :: Typeable a => ProgramT (CMD exp) m (Ref (exp a))
 initRef       = singleton InitRef
 
-newRef        :: exp a -> ProgramT (CMD exp) m (Ref (exp a))
+newRef        :: Typeable a => exp a -> ProgramT (CMD exp) m (Ref (exp a))
 newRef e      = singleton (NewRef e)
 
-getRef        :: Ref (exp a) -> ProgramT (CMD exp) m (exp a)
+getRef        :: Typeable a => Ref (exp a) -> ProgramT (CMD exp) m (exp a)
 getRef r      = singleton (GetRef r)
 
 setRef        :: Ref (exp a) -> exp a -> ProgramT (CMD exp) m ()
@@ -131,11 +132,14 @@ setArr n a = singleton . SetArr n a
 
 -- | Like 'getRef' but assumes that the reference will not be modified later
 --   in the program
-unsafeGetRef ::  Ref (exp a) -> ProgramT (CMD exp) m (exp a)
+unsafeGetRef :: Ref (exp a) -> ProgramT (CMD exp) m (exp a)
 unsafeGetRef = singleton . UnsafeGetRef
   -- TODO: It would be possible to make a conservative analysis to find out if
   --       uses of `unsafeGetRef` are safe. Even better, the compiler could
   --       automatically treat `getRef` as `unsafeGetRef` whenever possible.
+
+unsafeGetArr :: Integral n => exp n -> Arr (exp a) -> ProgramT (CMD exp) m (exp a)
+unsafeGetArr i = singleton . UnsafeGetArr i
 
 --------------------------------------------------------------------------------
 -- **
@@ -174,3 +178,12 @@ data Construct cmd a
 
 mkFunction :: String -> Program cmd () -> Program (Construct cmd) ()
 mkFunction fun body = singleton $ Function fun body
+
+--------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
+class EEq exp a
+  where
+    (==:) :: exp a -> exp a -> exp Bool
+    (/=:) :: exp a -> exp a -> exp Bool

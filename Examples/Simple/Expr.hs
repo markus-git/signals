@@ -4,9 +4,11 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Examples.Simple.Expr where
 
+import Core (EEq(..))
 import Interpretation
 
 import Backend.C.Monad
@@ -120,6 +122,14 @@ i2n = I2N
 todo = error "todo in expr" -- I'll add these later
 
 --------------------------------------------------------------------------------
+-- **
+
+instance Eq a => EEq Expr a
+  where
+    (==:) = eq
+    (/=:) = neq
+
+--------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
@@ -131,6 +141,9 @@ fls = Val False
 
 eq :: Eq a => Expr a -> Expr a -> Expr Bool
 eq = Eq
+
+neq :: Eq a => Expr a -> Expr a -> Expr Bool
+neq a b = Not $ a `eq` b
 
 leq :: Ord a => Expr a -> Expr a -> Expr Bool
 leq = LEq

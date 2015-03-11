@@ -63,8 +63,9 @@ data TSignal exp r
     TDelay  :: (Typeable a, Typeable exp) => exp a -> r -> TSignal exp r
 
     -- ^ Buffers
-    TVBuff  :: r ->            TSignal exp r
-    TDBuff  :: r -> exp Int -> TSignal exp r
+    TBuff   :: (Typeable a, Typeable exp)
+            => proxy (exp a)
+            -> r -> TSignal exp r
 
   deriving (Typeable)
 
@@ -145,5 +146,4 @@ instance Show a => Show (TSignal exp a) where
     (TFst _ s)     -> "fst. "   ++ show s
     (TSnd _ s)     -> "snd. "   ++ show s
     (TDelay _ s)   -> "delay. " ++ show s
-    (TVBuff r)     -> "vbuff ." ++ show r
-    (TDBuff r _)   -> "dbuff ." ++ show r
+    (TBuff _ r)    -> "dbuff ." ++ show r

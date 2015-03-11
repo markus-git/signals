@@ -14,7 +14,7 @@ import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Exception
 import Control.Monad.Operational
-import Data.Typeable (TypeRep, typeOf)
+import Data.Typeable
 import Data.IORef
 import Data.Array.IO.Safe
 import qualified System.IO as IO
@@ -40,18 +40,6 @@ compile :: CompCMD cmd => Program cmd a -> C a
 compile = interpretWithMonad compCMD
 
 --------------------------------------------------------------------------------
-{-
--- We cannot get this general compiler to work until we embed Typeable and
--- VarPred into some CMD constructs, which ruins a lot..
--- So this is a TODO for now at least
-
-instance (CompExp exp, VarPred exp Int, ...) => CompCMD (CMD exp)
-  where
-    compCMD = compCMD'
-
-compCMD' :: (CompExp exp, VarPred exp Int, ...) => CMD exp a -> C a
--}
-
 
 instance CompCMD (CMD Expr)
   where
@@ -86,23 +74,22 @@ compCMD' (Eof (HandleComp h)) = do
   return $ varExp sym
 
 -- ^ Mutable refrences
-compCMD' (InitRef) = do
-  let t = compTypeRep undefined -- todo
+compCMD' cmd@(InitRef) = do
+  let t = compTypeRep (typeOfP3 cmd)
   sym <- gensym "r"
-  addLocal [cdecl| float $id:sym; |]
+  addLocal [cdecl| $ty:t $id:sym; |]
   return $ RefComp sym
-compCMD' (NewRef exp) = do
-  let t = compTypeRep undefined -- todo
+compCMD' cmd@(NewRef exp) = do
+  let t = compTypeRep (typeOfP3 cmd)
   sym <- gensym "r"
   v   <- compExp exp
-  addLocal [cdecl| float $id:sym; |]
+  addLocal [cdecl| $ty:t $id:sym; |]
   addStm   [cstm| $id:sym = $v; |]
   return $ RefComp sym
-compCMD' (GetRef (RefComp ref)) = do
---let t = compTypeRep $ typeOf (undefined :: a)
+compCMD' cmd@(GetRef (RefComp ref)) = do
+  let t = compTypeRep (typeOfP2 cmd)
   sym <- gensym "r"
---addLocal [cdecl| $ty:t $id:sym; |]
-  addLocal [cdecl| float $id:sym; |]
+  addLocal [cdecl| $ty:t $id:sym; |]
   addStm   [cstm| $id:sym = $id:ref; |]
   return $ varExp sym
 compCMD' (SetRef (RefComp ref) exp) = do
@@ -132,6 +119,8 @@ compCMD' (SetArr expi expv (ArrComp arr)) = do
 -- ^ Unsafe
 compCMD' (UnsafeGetRef (RefComp ref)) =
   return $ varExp ref
+compCMD' (UnsafeGetArr expi (ArrComp arr)) =
+  undefined
 
 -- ^ Control structures
 compCMD' (If b t f) = do
@@ -172,7 +161,17 @@ compTypeRep trep = case show trep of
     "Bool"  -> [cty| int   |]
     "Int"   -> [cty| int   |]  -- todo: should only use fix-width Haskell ints
     "Float" -> [cty| float |]
-    
+    x       -> error x
+
+typeOfP1 :: forall proxy a. Typeable a => proxy a -> TypeRep
+typeOfP1 _ = typeOf (undefined :: a)
+
+typeOfP2 :: forall proxy1 proxy2 a. Typeable a => proxy1 (proxy2 a) -> TypeRep
+typeOfP2 p = typeOf (undefined :: a)
+
+typeOfP3 :: forall proxy1 proxy2 proxy3 a. Typeable a => proxy1 (proxy2 (proxy3 a)) -> TypeRep
+typeOfP3 p = typeOf (undefined :: a)
+
 getTimeDef :: C.Definition
 getTimeDef = [cedecl|
 // From http://stackoverflow.com/questions/2349776/how-can-i-benchmark-c-code-easily
@@ -206,6 +205,15 @@ cgen' :: CompCMD cmd => Flags -> Program cmd a -> IO Doc
 cgen' flags ma = do
     (_,cenv) <- runC (compile ma) (defaultCEnv flags)
     return $ ppr $ cenvToCUnit cenv
+
+genMain :: CompCMD cmd => Program cmd a -> IO Doc
+genMain prog = do
+    (_,cenv) <- runC main (defaultCEnv Flags)
+    return $ ppr $ cenvToCUnit cenv
+  where
+    main = do
+      (params,items) <- inNewFunction $ compile prog >> addStm [cstm| return 0; |]
+      addGlobal [cedecl| int main($params:params){ $items:items }|]
 
 --------------------------------------------------------------------------------
 -- * Evaluation of programs
@@ -243,7 +251,7 @@ runCMD (Get (HandleEval h))   = do
         _        -> error "runCMD: Get: no parse"
 runCMD (Eof (HandleEval h)) = fmap litExp $ IO.hIsEOF h
 
-runCMD (InitRef)              = fmap RefEval $ newIORef undefined -- ...
+runCMD (InitRef)              = fmap RefEval $ newIORef undefined
 runCMD (NewRef a)             = fmap RefEval $ newIORef a
 runCMD (GetRef (RefEval r))   = readIORef r
 runCMD (SetRef (RefEval r) a) = writeIORef r a
