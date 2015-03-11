@@ -342,7 +342,7 @@ find_chains nodes =
   let delays = M.foldrWithKey (\k n -> M.insert (head $ edges n) (k, n)) M.empty
              $ M.fromList [ d | d@(i, TDelay {}) <- nodes ]
       heads  = M.foldr (M.delete . fst) delays delays
-  in  M.filter ((<1) . length) $ M.map (flip chain delays) heads
+  in  M.filter ((>1) . length) $ M.map (flip chain delays) heads
   where
     chain v@(i, _) m = v : maybe [] (flip chain m) (M.lookup i m)
 

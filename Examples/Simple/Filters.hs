@@ -88,8 +88,8 @@ iir (a:as) bs s = o
 -- for eval you will need to make sure there is an input file, called "input",
 -- to read from. Its a standard file of numbers seperated by a space.
 
-test_fir = comp (fir [1,2])
-eval_fir = eval (fir [1,2])
+test_fir = comp (fir [1,2,3])
+eval_fir = eval (fir [1,2,3])
 
 test_iir = comp (iir [1,2] [3,4]) -- crashes! why?!..
 eval_iir = eval (iir [1,2] [3,4])
