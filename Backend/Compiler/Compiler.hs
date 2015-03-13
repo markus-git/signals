@@ -66,7 +66,7 @@ compiler f =
 
      return $ case cycle of
        True  -> error "found cycle in graph"
-       False -> compiler' nodes links order
+       False -> compiler' nodes links order False
 
 --------------------------------------------------------------------------------
 -- * Channels
@@ -246,9 +246,10 @@ compiler' :: forall exp a b.
           => [(Unique, Node exp)]
           -> Resolution Unique exp
           -> Map Unique Order
+          -> Bool
           -> (Stream exp (exp a) -> Stream exp (exp b))
-compiler' nodes links order input = Str.stream $
-  do (nodes', buffers) <- opt_delay_chains nodes
+compiler' nodes links order opt input = Str.stream $
+  do (nodes', buffers) <- if opt then opt_delay_chains nodes else return (nodes, M.empty)
      env               <- init (Str.run input) buffers
      return $
        do let t      = undefined :: TStruct exp (Empty (exp b))
@@ -430,7 +431,7 @@ inspect_compiler f =
 
      return $ \input -> case cycle of
        True  -> error "found cycle in graph"
-       False -> compiler' nodes links order input
+       False -> compiler' nodes links order True input
 
 --------------------------------------------------------------------------------
                                  
