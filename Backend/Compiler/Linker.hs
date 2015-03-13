@@ -9,22 +9,19 @@ module Backend.Compiler.Linker (
   )
 where
 
-import Frontend.Stream     (Stream)
-import Frontend.Signal     (TStruct(..), Struct, Empty, tpair, tleft, tright, tleaf)
-import Frontend.SignalObsv (TSignal(..), Node)
-
+import Frontend.Stream  (Stream)
+import Frontend.Signal  (TStruct(..), Struct, Empty, pair, leaf, tleft, tright)
+import Frontend.TSignal (TSignal(..), Node)
 import Backend.Knot
 import Backend.Ex
-
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.Identity
-
-import           Data.Map (Map, (!))
-import qualified Data.Map as M
-
-import Data.Reify    (Unique, Graph(..), reifyGraph)
+import Data.Map (Map, (!))
+import Data.Reify
 import Data.Typeable
+
+import qualified Data.Map as M
 
 --------------------------------------------------------------------------------
 -- * Linking
@@ -84,19 +81,19 @@ link (i, TVar t) =
   do constrain i $ mark (show i) t
 
 link (i, TConst (c :: Stream exp (exp a))) =
-  do constrain i (tleaf (show i) :: TStruct exp (Empty (exp a))) 
+  do constrain i (leaf (show i) :: TStruct exp (Empty (exp a))) 
 
 link (i, TLift (f :: Stream exp (exp a) -> Stream exp (exp b)) s) =
   do let t = undefined :: TStruct exp (Empty (exp a))
      t' <- resolve s t
      introduce i t'
-     constrain i (tleaf (show i) :: TStruct exp (Empty (exp b)))
+     constrain i (leaf (show i) :: TStruct exp (Empty (exp b)))
 
 link (i, TDelay (e :: exp a) s) =
   do let t = undefined :: TStruct exp (Empty (exp a))
      t' <- resolve s t
      introduce i t'
-     constrain i (tleaf (show i) :: TStruct exp (Empty (exp a)))
+     constrain i (leaf (show i) :: TStruct exp (Empty (exp a)))
 
 link (i, TMap ti to f s) =
   do t' <- resolve s ti
@@ -106,7 +103,7 @@ link (i, TMap ti to f s) =
 link (i, TZip tl tr l r) =
   do tl' <- resolve l tl
      tr' <- resolve r tr
-     constrain i $ tpair tl' tr'
+     constrain i $ pair tl' tr'
 
 link (i, TFst t l) =
   do t' <- resolve l t
@@ -114,7 +111,7 @@ link (i, TFst t l) =
 
 link (i, TSnd t r) =
   do t' <- resolve r t
-     constrain i $ tright t'
+     constrain i $ tright t
 
 --------------------------------------------------------------------------------
 

@@ -8,18 +8,15 @@
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Frontend.SignalObsv where
+module Frontend.TSignal where
 
-import Interpretation
-
-import Frontend.Signal (Signal(..), Sig(..), StructT(..), Empty, Struct, TStruct)
-import Frontend.Stream (Stream(..), Str(..))
-
+import Core
+import Frontend.Signal
+import Frontend.Stream
 import Control.Applicative hiding (Const)
 import Data.Dynamic
 import Data.Proxy
 import Data.Reify
-import Data.Typeable
 
 --------------------------------------------------------------------------------
 -- * Graph representation of Signals
@@ -30,51 +27,34 @@ data TSignal exp r
     -- ^ Signal functions
     TLambda :: r -> r -> TSignal exp r
 
-    TVar    :: (Typeable a, Typeable exp)
-            => TStruct exp a
-            -> TSignal exp r
+    TVar    :: Typeable a => TStruct exp a -> TSignal exp r
 
     -- ^ Signal
-    TConst  :: (Typeable a, Typeable exp)
-            => Stream exp (exp a) -> TSignal exp r
-
-    TLift   :: (Typeable a, Typeable b, Typeable exp)
-            => (Stream exp (exp a) -> Stream exp (exp b))
-            -> r -> TSignal exp r
-
-    TMap    :: (Typeable a, Typeable b, Typeable exp)
+    TConst  :: (P exp a, Typeable exp) => Str exp a -> TSignal exp r
+    TLift   :: (P exp a, P exp b, Typeable exp) => (Str exp a -> Str exp b) -> r -> TSignal exp r
+    
+    TMap    :: (Typeable a, Typeable b)
             => TStruct exp a -> TStruct exp b
             -> (Struct exp a -> Struct exp b)
-            -> r -> TSignal exp r
+            -> r
+            -> TSignal exp r
 
-    TZip    :: (Typeable a, Typeable b)
-            => TStruct exp a
-            -> TStruct exp b
-            -> r -> r -> TSignal exp r
+    TZip    :: (Typeable a, Typeable b) => TStruct exp a -> TStruct exp b -> r -> r -> TSignal exp r
+    TFst    :: (Typeable a, Typeable b) => TStruct exp (a, b)             -> r      -> TSignal exp r
+    TSnd    :: (Typeable a, Typeable b) => TStruct exp (a, b)             -> r      -> TSignal exp r
 
-    TFst    :: (Typeable a, Typeable b)
-            => TStruct exp (a, b)
-            -> r -> TSignal exp r
-
-    TSnd    :: (Typeable a, Typeable b)
-            => TStruct exp (a, b)
-            -> r -> TSignal exp r
-
-    TDelay  :: (Typeable a, Typeable exp) => exp a -> r -> TSignal exp r
+    TDelay  :: (P exp a, Typeable exp) => exp a -> r -> TSignal exp r
 
     -- ^ Buffers
-    TBuff   :: (Typeable a, Typeable exp)
-            => proxy (exp a)
-            -> r -> TSignal exp r
+    TBuff   :: P exp a => proxy (exp a) -> r -> TSignal exp r
 
-  deriving (Typeable)
-
+-- | 
 type Node e = TSignal e Unique
 
 --------------------------------------------------------------------------------
 -- ** Helper functions
 
-edges :: TSignal e a -> [a]
+edges :: TSignal exp a -> [a]
 edges node =
   case node of
     TLambda x y  -> [x, y]
@@ -90,10 +70,9 @@ edges node =
 --------------------------------------------------------------------------------
 -- ** MuRef instances for signals
 
-instance (Typeable exp) => MuRef (Signal exp a)
+instance Typeable exp => MuRef (Signal exp a)
   where
     type DeRef (Signal exp a) = TSignal exp
-
     mapDeRef f node = case node of
       (Const sf)   -> pure $ TConst sf
       (Lift  sf s) -> TLift sf <$> f s
@@ -104,13 +83,10 @@ instance (Typeable exp) => MuRef (Signal exp a)
       (Delay a s)  -> TDelay a <$> f s
       (SVar  _)    -> pure $ TVar (rep (undefined :: Struct exp a))
 
-instance ( Typeable a, Typeable b, Typeable exp
-         , StructT a,  DomainT a ~ exp
-         ) =>
+instance (Typeable a, Typeable b, Typeable exp, StructT a,  DomainT a ~ exp) =>
     MuRef (Signal exp a -> Signal exp b)
   where
     type DeRef (Signal exp a -> Signal exp b) = TSignal exp
-
     mapDeRef f sf =
       let (v, sg) = let a = SVar (toDyn sf) in (a, sf a)
        in TLambda <$> f v <*> f sg
@@ -118,24 +94,21 @@ instance ( Typeable a, Typeable b, Typeable exp
 --------------------------------------------------------------------------------
 -- ** MuRef instances for sig
 
-instance (Typeable exp) => MuRef (Sig exp a)
+instance Typeable exp => MuRef (Sig exp a)
   where
     type DeRef (Sig exp a) = TSignal exp
-
     mapDeRef f node = mapDeRef f (unSig node)
 
-instance (Typeable a, Typeable b, Typeable exp) =>
-    MuRef (Sig exp a -> Sig exp b)
+instance (P exp a, Typeable b, Typeable exp) => MuRef (Sig exp a -> Sig exp b)
   where
     type DeRef (Sig exp a -> Sig exp b) = TSignal exp
-
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
 
 --------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
 
-instance Show a => Show (TSignal exp a) where
+instance Show (TSignal exp Unique) where
   show node = case node of
     (TLambda i b)  -> "lam. "   ++ show i ++ " " ++ show b
     (TVar _)       -> "var. "

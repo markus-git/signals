@@ -1,47 +1,28 @@
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE ConstraintKinds    #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Frontend.Stream where
 
-import Core (CMD, newRef, getRef, setRef)
-
+import Core
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Operational
-
-import Data.Typeable (Typeable)
-
 import Prelude (($))
-import qualified Prelude as P
 
 --------------------------------------------------------------------------------
 -- * Streams
 --------------------------------------------------------------------------------
 
 -- | ...
-data Stream exp a
-  where
-    Stream :: Program (CMD exp) (Program (CMD exp) a) -> Stream exp a
+data Stream exp a where Stream :: Prog exp (Prog exp a) -> Stream exp a
 
 -- | ...
 type Str exp a = Stream exp (exp a)
 
 --------------------------------------------------------------------------------
--- ** Instances
-
-deriving instance Typeable Stream
-
---------------------------------------------------------------------------------
--- * User Interface
---------------------------------------------------------------------------------
-
---------------------------------------------------------------------------------
--- ** constructors
+-- ** Constructors
 
 -- | creates a stream from a program
-stream :: Program (CMD exp) (Program (CMD exp) (exp a)) -> Str exp a
+stream :: Prog exp (Prog exp (exp a)) -> Str exp a
 stream = Stream
 
 --------------------------------------------------------------------------------
@@ -70,10 +51,10 @@ zipWith f (Stream init1) (Stream init2) = Stream $ do
 -- ** Sequential functions
 
 -- | preappend @a@ to input stream
-delay :: Typeable a => exp a -> Str exp a -> Str exp a
+delay :: P exp a => exp a -> Str exp a -> Str exp a
 delay a (Stream init) = Stream $ do
   next <- init
-  r    <- newRef a
+  r    <- initRef a
   return $ do
     o <- getRef r
     v <- next
@@ -83,5 +64,6 @@ delay a (Stream init) = Stream $ do
 --------------------------------------------------------------------------------
 -- ** Run Functions
 
-run :: Stream exp a -> Program (CMD exp) a
+-- | ...
+run :: Stream exp a -> Prog exp a
 run (Stream init) = join init

@@ -4,14 +4,12 @@ module Backend.Compiler.Sorter (
   )
 where
 
-import Frontend.SignalObsv (TSignal(..), Node, edges)
-
+import Frontend.TSignal (TSignal(..), Node, edges)
 import Control.Arrow
 import Control.Monad.State
+import Data.Reify 
+import Data.Map (Map, (!))
 
-import Data.Reify (Graph(..), Unique, reifyGraph)
-
-import           Data.Map (Map, (!))
 import qualified Data.Map as M
 
 --------------------------------------------------------------------------------

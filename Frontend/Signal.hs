@@ -11,73 +11,60 @@
 
 module Frontend.Signal where
 
-import Interpretation
-
-import           Frontend.Stream (Stream, Str)
-import qualified Frontend.Stream as S
-
+import Core
 import Data.Dynamic
-import Data.Typeable
+import Frontend.Stream (Str)
+import Prelude ( ($), (.), id
+               , Num, (+), (-), (*), fromInteger
+               , Fractional, (/), fromRational
+               , Floating, (**), pi, sin
+               , Eq, Show, String)
 
-import           Prelude ( ($), (.), id
-                         , Num, (+), (-), (*), fromInteger
-                         , Fractional, (/), fromRational
-                         , Floating, (**), pi, sin
-                         , Eq, Show, String)
-import qualified Prelude as P
+import qualified Prelude         as P
+import qualified Frontend.Stream as Str
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
+-- | 0-tuple value
+data Empty a deriving Typeable
+
 -- | ...
 data Signal exp a
   where
     -- ^ lifts consant streams into signals
-    Const :: Typeable a => Stream exp (exp a) -> Signal exp (Empty (exp a))
+    Const :: P exp a
+          => Str exp a -> Signal exp (Empty (exp a))
 
     -- ^ lifts stream transformers into signal transformers, possibly state-full
-    Lift  :: (Typeable a, Typeable b)
-          => (Stream exp (exp a)         -> Stream exp (exp b))
-          -> (Signal exp (Empty (exp a)) -> Signal exp (Empty (exp b)))
+    Lift  :: (P exp a, P exp b)
+          => (Str exp a -> Str exp b) -> (Signal exp (Empty (exp a)) -> Signal exp (Empty (exp b)))
 
     -- ^ maps a function over nested tuples to a function over signals
-    Map   :: ( Typeable a, Typeable b
-             , StructT a, StructT b
-             , DomainT a ~ exp
-             , DomainT b ~ DomainT a)
+    Map   :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
           => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 
     -- ^ joins together two nodes
-    Zip   :: ( Typeable a, Typeable b
-             , StructT a, StructT b
-             , DomainT a ~ exp
-             , DomainT b ~ DomainT a)
+    Zip   :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
           => Signal exp a -> Signal exp b -> Signal exp (a, b)
 
     -- ^ breaks apart a signal of pairs, returning the first
-    Fst   :: ( Typeable a, Typeable b
-             , StructT a, StructT b
-             , DomainT a ~ exp
-             , DomainT b ~ DomainT a)
+    Fst   :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
           => Signal exp (a, b) -> Signal exp a
 
     -- ^ breaks apart a signal of pairs, returning the second
-    Snd   :: ( Typeable a, Typeable b
-             , StructT a, StructT b
-             , DomainT a ~ exp
-             , DomainT b ~ DomainT a)
+    Snd   :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
            => Signal exp (a, b) -> Signal exp b
 
     -- ^ prepends a value to the input signal
-    Delay :: Typeable a
-          => exp a -> Signal exp (Empty (exp a)) -> Signal exp (Empty (exp a))
+    Delay :: P exp a => exp a -> Signal exp (Empty (exp a)) -> Signal exp (Empty (exp a))
 
     -- ^ dummy argument used in observable sharing
     SVar  :: (Typeable a, StructT a, DomainT a ~ exp)
           => Dynamic -> Signal exp a
 
-  deriving (Typeable)
+  deriving Typeable
 
 -- | Signals with values ranging over the expression language
 newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
@@ -85,7 +72,7 @@ newtype Sig exp a = Sig {unSig :: Signal exp (Empty (exp a))}
 --------------------------------------------------------------------------------
 -- ** Instances
 
-instance (Typeable exp, Typeable a, Num (exp a), Eq (exp a), Show a) => Num (Sig exp a)
+instance (Typeable exp, P exp a, Num (exp a)) => Num (Sig exp a)
   where
     fromInteger = repeat . fromInteger
     (+)         = zipWith (+)
@@ -94,14 +81,14 @@ instance (Typeable exp, Typeable a, Num (exp a), Eq (exp a), Show a) => Num (Sig
 
     abs = todo; signum = todo;
 
-instance (Typeable exp, Typeable a, Fractional (exp a), Eq (exp a), Show a) => Fractional (Sig exp a)
+instance (Typeable exp, P exp a, Fractional (exp a)) => Fractional (Sig exp a)
   where
     fromRational = repeat . fromRational
     (/)          = zipWith (/)
 
     recip = todo;
 
-instance (Typeable exp, Typeable a, Floating (exp a), Eq (exp a), Show a) => Floating (Sig exp a)
+instance (Typeable exp, P exp a, Floating (exp a)) => Floating (Sig exp a)
   where
     pi   = repeat pi
     sin  = map sin
@@ -118,33 +105,29 @@ todo = P.error "unsupported operation"
 --------------------------------------------------------------------------------
 -- ** "Smart" constructors
 
-constS :: (Typeable a) => Str exp a -> Sig exp a
+constS :: P exp a => Str exp a -> Sig exp a
 constS = Sig . Const
 
-liftS :: (Typeable a, Typeable b)
-      => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
+liftS :: (P exp a, P exp b) => (Str exp a -> Str exp b) -> Sig exp a -> Sig exp b
 liftS f = Sig . Lift f . unSig
 
-mapS :: ( Typeable a, Typeable b
-        , StructT a, StructT b
-        , DomainT a ~ exp
-        , DomainT b ~ DomainT a)
+mapS :: (Typeable a, Typeable b, StructT a, StructT b, DomainT a ~ exp, DomainT b ~ DomainT a)
      => (Struct exp a -> Struct exp b) -> Signal exp a -> Signal exp b
 mapS = Map
+
+delay :: P exp a => exp a -> Sig exp a -> Sig exp a
+delay e = Sig . Delay e . unSig
 
 --------------------------------------------------------------------------------
 -- ** User Interface
 
-repeat :: (Typeable a) => exp a -> Sig exp a
-repeat = constS . S.repeat
+repeat :: P exp a => exp a -> Sig exp a
+repeat = constS . Str.repeat
 
-map :: (Typeable a, Typeable b) => (exp a -> exp b) -> Sig exp a -> Sig exp b
-map f = liftS $ S.map f
+map :: (P exp a, P exp b) => (exp a -> exp b) -> Sig exp a -> Sig exp b
+map f = liftS $ Str.map f
 
-delay :: (Typeable a) => exp a -> Sig exp a -> Sig exp a
-delay e = Sig . Delay e . unSig
-
-zipWith :: (Typeable exp, Typeable a, Typeable b, Typeable c)
+zipWith :: (Typeable exp, P exp a, P exp b, P exp c)
         => (exp a -> exp b -> exp c)
         -> Sig exp a -> Sig exp b -> Sig exp c
 zipWith f = P.curry $ lift $ P.uncurry f
@@ -153,41 +136,36 @@ zipWith f = P.curry $ lift $ P.uncurry f
 -- * Generalised lifting of Signals
 --------------------------------------------------------------------------------
 
--- | 0-tuple value
-data Empty a deriving Typeable
-
 -- | Representation of nested tuples as a binary tree
 data Struct exp a
   where
-    Leaf :: Typeable a => exp a -> Struct exp (Empty (exp a))
+    Leaf :: P exp a => exp a -> Struct exp (Empty (exp a))
     Pair :: Struct exp a -> Struct exp b -> Struct exp (a, b)
-  deriving
-    Typeable
 
 -- | Similar to `Struct`, with id's at the leafs
 data TStruct exp a
   where
-    TLeaf :: Typeable a => String -> TStruct exp (Empty (exp a))
+    TLeaf :: P exp a => String -> TStruct exp (Empty (exp a))
     TPair :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
-  deriving
-    Typeable
 
 --------------------------------------------------------------------------------
 
-tpair  :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
-tpair l r = TPair l r
+pair     :: TStruct exp a -> TStruct exp b -> TStruct exp (a, b)
+pair l r = TPair l r
 
-tleaf  :: Typeable a => String -> TStruct exp (Empty (exp a))
-tleaf s = TLeaf s
+leaf     :: P exp a => String -> TStruct exp (Empty (exp a))
+leaf s   = TLeaf s
+
+--------------------------------------------------------------------------------
 
 tleft  :: TStruct exp (a, b) -> TStruct exp a
-tleft  ~t = case t of (TPair l _) -> l
+tleft  t = case t of (TPair l _) -> l
 
 tright :: TStruct exp (a, b) -> TStruct exp b
-tright ~t = case t of (TPair _ r) -> r
+tright t = case t of (TPair _ r) -> r
 
 tid    :: TStruct exp (Empty (exp a)) -> String
-tid    ~t = case t of (TLeaf i) -> i
+tid    t = case t of (TLeaf i) -> i
 
 --------------------------------------------------------------------------------
 -- ** Conversion between signals and tuples
@@ -217,8 +195,10 @@ instance StructS (Sig exp a)
     fromS = unSig
     toS   = Sig
 
-instance ( StructS a, StructT (Internal a), Typeable (Internal a)
-         , StructS b, StructT (Internal b), Typeable (Internal b)
+instance ( Typeable (Internal a)
+         , Typeable (Internal b)
+         , StructS a, StructT (Internal a)
+         , StructS b, StructT (Internal b)
          , Domain a ~ Domain b
          , DomainT (Internal a) ~ DomainT (Internal b)
          , DomainT (Internal a) ~ Domain a
@@ -240,7 +220,7 @@ class StructT a
 
     rep :: c (DomainT a) a -> TStruct (DomainT a) a
 
-instance Typeable a => StructT (Empty (exp a))
+instance P exp a => StructT (Empty (exp a))
   where
     type DomainT (Empty (exp a)) = exp
 
@@ -273,7 +253,7 @@ class StructE a
     fromE :: Struct (DomainE a) a -> Normal a
     toE   :: Normal a -> Struct (DomainE a) a
 
-instance Typeable a => StructE (Empty (exp a))
+instance P exp a => StructE (Empty (exp a))
   where
     type Normal  (Empty (exp a)) = exp a
     type DomainE (Empty (exp a)) = exp
@@ -298,7 +278,10 @@ instance ( StructE a
 
 -- | ...
 lift
-  :: ( -- ...
+  :: (-- P (Domain s1) (Internal s1)
+      --, P (Domain s2) (Internal s2)
+
+       -- ...
        StructT (Internal s1) , StructT (Internal s2)
      , DomainT (Internal s1) ~ Domain s2
      , DomainT (Internal s2) ~ Domain s2

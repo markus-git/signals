@@ -7,39 +7,30 @@
 
 module Backend.Compiler.Compiler (
     compiler
-  , inspect_compiler
   )
 where
 
-import           Core (CMD, EEq(..))
-import qualified Core as C
-
-import           Frontend.Stream (Stream, Str)
-import qualified Frontend.Stream as Str
-
-import           Frontend.Signal (Signal, Sig, Struct(..), TStruct(..), Empty)
-import qualified Frontend.Signal as S
-
-import Frontend.SignalObsv (TSignal(..), Node, edges)
-
+import Core
+import Frontend.Stream (Stream, Str)
+import Frontend.Signal (Signal, Sig, Struct(..), TStruct(..), Empty)
+import Frontend.TSignal 
 import Backend.Ex
 import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
-
 import Control.Monad.Reader
 import Control.Monad.State hiding (State)
-import Control.Monad.Operational
-
-import Data.Typeable
-import Data.Reify (Unique, Graph(..), reifyGraph)
-import Data.Maybe (fromJust)
-import Data.List  (sortBy, mapAccumR)
+import Data.Reify
+import Data.Maybe       (fromJust)
+import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
-import Data.Function (on)
-
-import           Data.Map (Map, (!))
-import qualified Data.Map as M
+import Data.Function    (on)
+import Data.Map         (Map, (!))
+import Data.Constraint
+import qualified Core            as C
+import qualified Frontend.Stream as Str
+import qualified Frontend.Signal as S
+import qualified Data.Map        as M
 
 import Prelude hiding (reads)
 
@@ -47,14 +38,7 @@ import Prelude hiding (reads)
 -- *
 --------------------------------------------------------------------------------
 
--- | Shorthand for programs using 'CMD' as their instruction set
-type Prog exp = Program (CMD exp)
-
---------------------------------------------------------------------------------
-
-compiler :: ( Typeable exp, Typeable a, Typeable b
-            , EEq exp Int, Num (exp Int), Integral (exp Int)
-            )
+compiler :: (Typeable exp, P exp a, P exp b)
          =>    (Sig exp a -> Sig exp b)
          -> IO (Str exp a -> Str exp b)
 compiler f =
@@ -66,7 +50,7 @@ compiler f =
 
      return $ case cycle of
        True  -> error "found cycle in graph"
-       False -> compiler' nodes links order
+       False -> undefined -- compiler' nodes links order
 
 --------------------------------------------------------------------------------
 -- * Channels
@@ -75,7 +59,7 @@ compiler f =
 -- | Binary trees over references
 data RStruct exp a
   where
-    RLeaf :: Typeable a => C.Ref (exp a) -> RStruct exp (Empty (exp a))
+    RLeaf :: P exp a => C.Ref a -> RStruct exp (Empty (exp a))
     RPair :: RStruct exp a -> RStruct exp b -> RStruct exp (a, b)
 
 -- | Untyped binary trees over references
@@ -94,19 +78,17 @@ data Channel symbol exp = C {
 initChannels :: (Ord s, Read s, Typeable e) => Resolution s e -> Prog e (Channel s e)
 initChannels res = do
   outs <- M.traverseWithKey (const makeChannel) $ _output res
---ins  <- M.traverseWithKey (const makeChannel) $ _input  res
-  let ins = M.map (copyChannel outs) $ _input res
   return $ C {
-    _ch_in  = ins
+    _ch_in  = M.map (copyChannel outs) $ _input res
   , _ch_out = outs
   }
 
 -- |
-makeChannel :: TEx e -> Prog e (REx e)
+makeChannel :: forall e. TEx e -> Prog e (REx e)
 makeChannel (Ex s) = makes s >>= return . Ex
   where
     makes :: TStruct e a -> Prog e (RStruct e a)
-    makes (TLeaf _)   = C.initRef >>= return . RLeaf
+    makes x@(TLeaf _) = C.newRef >>= return . RLeaf
     makes (TPair r l) = do
       r' <- makes r
       l' <- makes l
@@ -128,8 +110,7 @@ copyChannel m (Ex s) = Ex $ copys s
 data Enviroment symbol exp = Env
   { _links    :: Resolution symbol exp
   , _channels :: Channel    symbol exp 
-  , _firsts   :: Map symbol (Ex (C.Ref :*: exp)) -- merge with _channels
-  , _buffers  :: Map symbol (Ex (Buffer exp))
+  , _firsts   :: Map symbol (Ex C.Ref) -- merge with _channels
   , _inputs   :: Ex (Prog exp :*: exp)
 --, ...
   }
@@ -140,7 +121,7 @@ type Type exp = ReaderT (Enviroment Unique exp) (Prog exp)
 --------------------------------------------------------------------------------
 
 reads :: RStruct exp a -> Prog exp (Struct exp a)
-reads (RLeaf r)   = C.unsafeGetRef r >>= return . Leaf
+reads (RLeaf r)   = C.unsafeFreezeRef r >>= return . Leaf
 reads (RPair l r) = do
   l' <- reads l
   r' <- reads r
@@ -178,23 +159,8 @@ write_out u s =
 
 --------------------------------------------------------------------------------
 
-read_buffer :: (Typeable a, Num (exp Int)) => Unique -> Type exp (exp a)
-read_buffer u =
-  do (Ex buff) <- asks ((! u) . _buffers)
-     case gcast buff of
-       Just b  -> lift $ getBuff b
-       Nothing -> error "apa: type error"
-
-write_buffer :: forall exp. Typeable exp => Unique -> Type exp ()
-write_buffer u =
-  do (Ex (buff :: Buffer exp a)) <- asks ((! u) . _buffers)
-     (Leaf e) <- read_out u (undefined :: TStruct exp (Empty (exp a)))
-     lift $ putBuff buff e
-
---------------------------------------------------------------------------------
-
 -- | ...
-compile :: (Typeable exp, Num (exp Int)) => (Unique, Node exp) -> Type exp ()
+compile :: (Typeable exp) => (Unique, Node exp) -> Type exp ()
 compile (i, TVar t@(TLeaf _)) =
   do input <- asks (apa t . _inputs)
      value <- lift $ liftProgram input
@@ -218,15 +184,14 @@ compile (i, TLift (f :: Stream exp (exp a) -> Stream exp (exp b)) _) =
 compile (i, TDelay (e :: exp a) _) =
   do let t = undefined :: TStruct exp (Empty (exp a))
      (Leaf input) <- read_in i t
-     first <- asks (unwrap . (! i) . _firsts) :: Type exp (C.Ref (exp a))
+     (Ex   first) <- asks ((! i) . _firsts)
+     let f = case gcast first of
+               Just x  -> x
+               Nothing -> error "!"
      value <- lift $ liftProgram $
-                do output <- C.unsafeGetRef first
-                   C.setRef first input
+                do output <- C.unsafeFreezeRef f
+                   C.setRef f input
                    return output
-     write_out i (Leaf value)
-
-compile (i, TBuff (_ :: proxy (exp a)) u) =
-  do value <- read_buffer u :: Type exp (exp a)
      write_out i (Leaf value)
 
 compile (i, TMap ti to f _) =
@@ -239,35 +204,27 @@ compile _ = return ()
 --------------------------------------------------------------------------------
 
 -- | ...
-compiler' :: forall exp a b.
-             ( Typeable exp, Typeable a, Typeable b
-             , EEq exp Int, Num (exp Int), Integral (exp Int)
-             )
+compiler' :: forall exp a b. (Typeable exp, P exp a, P exp b)
           => [(Unique, Node exp)]
           -> Resolution Unique exp
           -> Map Unique Order
           -> (Stream exp (exp a) -> Stream exp (exp b))
 compiler' nodes links order input = Str.stream $
-  do (nodes', buffers) <- opt_delay_chains nodes
-     env               <- init (Str.run input) buffers
+  do env <- init (Str.run input)
      return $
-       do let t      = undefined :: TStruct exp (Empty (exp b))
-              sorted = sort   nodes'
-              last   = final  sorted
-              keys   = M.keys buffers
-              
-          (Leaf value) <- flip runReaderT env $
-            do mapM_ compile sorted
-               forM_ keys write_buffer
-               read_out last t
-
+       do let sorted = sort   nodes
+          let last   = final  sorted
+          (Leaf value) <- flip runReaderT env
+                        $ do let t = undefined :: TStruct exp (Empty (exp b))
+                             mapM_ compile sorted
+                             read_out last t
           return value
 
   where
     -- Create initial eviroment
-    init :: Prog exp (exp a) -> Map Unique (Ex (Buffer exp)) -> Prog exp (Enviroment Unique exp)
-    init i b =
-      do let delays = M.fromList [ x | x@(_, TDelay {}) <- nodes]
+    init :: Prog exp (exp a) -> Prog exp (Enviroment Unique exp)
+    init i =
+      do let delays = M.fromList [ x | x@(_, TDelay {}) <- nodes] :: Map Unique (Node exp)
              fnodes = map fst $ filterNOP nodes
              flinks = Resolution {
                  _output = M.filterWithKey (\k _ -> k `elem` fnodes) $ _output links
@@ -279,11 +236,11 @@ compiler' nodes links order input = Str.stream $
              _links    = links
            , _channels = channels
            , _firsts   = firsts
-           , _buffers  = b
            , _inputs   = wrap i
            }
       where
-        init_delay (TDelay d _) = C.newRef d >>= return . wrap
+        init_delay :: Node exp -> Prog exp (Ex C.Ref)
+        init_delay (TDelay d _) = C.initRef d >>= return . Ex
         
     -- Sort graph nodes by the given ordering
     sort :: [(Unique, Node exp)] -> [(Unique, Node exp)]
@@ -304,10 +261,28 @@ compiler' nodes links order input = Str.stream $
             nop (TSnd {})    = True
             nop _            = False
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 --------------------------------------------------------------------------------
 -- * Buffers
 --------------------------------------------------------------------------------
-
+{-
 data Buffer exp a = Buffer
   { getBuff :: Program (CMD exp) (exp a)
   , putBuff :: exp a -> Program (CMD exp) ()
@@ -391,14 +366,12 @@ opt_delay_chains :: (EEq e Int, Num (e Int), Integral (e Int))
 opt_delay_chains nodes =
   do (chains, buffers) <- buffer_chains $ find_chains nodes
      return (replace_chains nodes chains, buffers)
-
+-}
 --------------------------------------------------------------------------------
 -- * Testing
 --------------------------------------------------------------------------------
-
-inspect_compiler :: ( Typeable exp, Typeable a, Typeable b
-                    , EEq exp Int, Num (exp Int), Integral (exp Int)
-                    )
+{-
+inspect_compiler :: (Typeable exp, Typeable a, Typeable b)
                  =>    (Sig exp a -> Sig exp b)
                  -> IO (Str exp a -> Str exp b)
 inspect_compiler f =
@@ -431,10 +404,17 @@ inspect_compiler f =
      return $ \input -> case cycle of
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order input
-
+-}
 --------------------------------------------------------------------------------
-                                 
-m !? i = case M.lookup i m of
-           Just x  -> x
-           Nothing -> error $ "Can't find key " ++ show i ++
-                              " in map: \n"     ++ show m
+-- ** Testing Ex
+{-
+instance Show (Ex c) where show _ = "Ex"
+
+instance Show (Ex (TStruct e))
+  where
+    show (Ex s) = showTS s
+
+showTS :: TStruct e a -> String
+showTS (TLeaf c) = show c
+showTS (TPair l r) = "(" ++ showTS l ++ "," ++ showTS r ++ ")"
+-}
