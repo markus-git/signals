@@ -94,10 +94,8 @@ data Channel symbol exp = C {
 initChannels :: (Ord s, Read s, Typeable e) => Resolution s e -> Prog e (Channel s e)
 initChannels res = do
   outs <- M.traverseWithKey (const makeChannel) $ _output res
---ins  <- M.traverseWithKey (const makeChannel) $ _input  res
-  let ins = M.map (copyChannel outs) $ _input res
   return $ C {
-    _ch_in  = ins
+    _ch_in  = M.map (copyChannel outs) $ _input res
   , _ch_out = outs
   }
 
@@ -213,9 +211,12 @@ compile (i, TLift (f :: Stream exp (exp a) -> Stream exp (exp b)) _) =
      value <- lift $ liftProgram $ Str.run $ f $ Str.repeat input
      write_out i (Leaf value)
 
--- I could remove the extra variable (value) if updating all delay
--- values was the last thing I did in the compiler, like for buffers.
+-- I could remove the extra variable (value), todo...
 compile (i, TDelay (e :: exp a) _) =
+  do first  <- asks (unwrap . (! i) . _firsts) :: Type exp (C.Ref (exp a))
+     output <- lift $ C.unsafeGetRef first
+     write_out i (Leaf output)
+{-
   do let t = undefined :: TStruct exp (Empty (exp a))
      (Leaf input) <- read_in i t
      first <- asks (unwrap . (! i) . _firsts) :: Type exp (C.Ref (exp a))
@@ -224,7 +225,7 @@ compile (i, TDelay (e :: exp a) _) =
                    C.setRef first input
                    return output
      write_out i (Leaf value)
-
+-}
 compile (i, TBuff (_ :: proxy (exp a)) u) =
   do value <- read_buffer u :: Type exp (exp a)
      write_out i (Leaf value)
@@ -253,13 +254,15 @@ compiler' nodes links order opt input = Str.stream $
      env               <- init (Str.run input) buffers
      return $
        do let t      = undefined :: TStruct exp (Empty (exp b))
+              delays = [ d | d@(_, TDelay {}) <- nodes]
               sorted = sort   nodes'
               last   = final  sorted
               keys   = M.keys buffers
               
           (Leaf value) <- flip runReaderT env $
             do mapM_ compile sorted
-               forM_ keys write_buffer
+               forM_ keys    write_buffer
+               forM_ delays  update_delay
                read_out last t
 
           return value
@@ -268,7 +271,7 @@ compiler' nodes links order opt input = Str.stream $
     -- Create initial eviroment
     init :: Prog exp (exp a) -> Map Unique (Ex (Buffer exp)) -> Prog exp (Enviroment Unique exp)
     init i b =
-      do let delays = M.fromList [ x | x@(_, TDelay {}) <- nodes]
+      do let delays = M.fromList [ d | d@(_, TDelay {}) <- nodes]
              fnodes = map fst $ filterNOP nodes
              flinks = Resolution {
                  _output = M.filterWithKey (\k _ -> k `elem` fnodes) $ _output links
@@ -283,9 +286,18 @@ compiler' nodes links order opt input = Str.stream $
            , _buffers  = b
            , _inputs   = wrap i
            }
-      where
-        init_delay (TDelay d _) = C.newRef d >>= return . wrap
-        
+
+    -- ...
+    init_delay :: Node exp -> Prog exp (Ex (C.Ref :*: exp))
+    init_delay (TDelay d _) = C.newRef d >>= return . wrap
+
+    -- ...
+    update_delay :: (Unique, Node exp) -> Type exp ()
+    update_delay (i, TDelay (e :: exp x) _) =
+      do first <- asks (unwrap . (! i) . _firsts) :: Type exp (C.Ref (exp a))
+         (Leaf input) <- read_in i (undefined :: TStruct exp (Empty (exp a)))
+         lift $ liftProgram $ C.setRef first input
+
     -- Sort graph nodes by the given ordering
     sort :: [(Unique, Node exp)] -> [(Unique, Node exp)]
     sort = fmap (fmap snd) . sortBy (compare `on` (fst . snd))
