@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs            #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE KindSignatures   #-}
 
 module Frontend.Stream where
 
@@ -12,58 +12,30 @@ import Prelude (($))
 -- * Streams
 --------------------------------------------------------------------------------
 
--- | ...
-data Stream exp a where Stream :: Prog exp (Prog exp a) -> Stream exp a
-
--- | ...
-type Str exp a = Stream exp (exp a)
-
---------------------------------------------------------------------------------
--- ** Constructors
-
--- | creates a stream from a program
-stream :: Prog exp (Prog exp (exp a)) -> Str exp a
-stream = Stream
+-- | Imperative model of co-iterative streams
+data Stream (instr :: (* -> *) -> * -> *) (a :: *)
+  where
+    Stream :: Program instr (Program instr a) -> Stream instr a
+    
+-- | `Shorthand` for streams which produce values of type `exp a`
+type Str instr a = Stream instr (IExp instr a)
 
 --------------------------------------------------------------------------------
--- ** Combinatorial functions
 
--- | creates and infinite stream by repeating @a@
-repeat :: exp a -> Str exp a
+-- | ...
+repeat :: (e ~ IExp instr) => e a -> Str instr a
 repeat a = Stream $ return $ return a
 
--- | point-wise transform each value produced with @f@
-map :: (exp a -> exp b) -> Str exp a -> Str exp b
-map f (Stream init) = Stream $ fmap (fmap f) init
-
--- | joined two streams using @f@ to merge produced elements
-zipWith :: (exp a -> exp b -> exp c)
-        -> Str exp a -> Str exp b -> Str exp c
-zipWith f (Stream init1) (Stream init2) = Stream $ do
-  next1 <- init1
-  next2 <- init2
-  return $ do
-    a <- next1
-    b <- next2
-    return $ f a b
-
---------------------------------------------------------------------------------
--- ** Sequential functions
-
--- | preappend @a@ to input stream
-delay :: P exp a => exp a -> Str exp a -> Str exp a
-delay a (Stream init) = Stream $ do
-  next <- init
-  r    <- initRef a
-  return $ do
-    o <- getRef r
-    v <- next
-    setRef r v
-    return o
-
---------------------------------------------------------------------------------
--- ** Run Functions
-
 -- | ...
-run :: Stream exp a -> Prog exp a
+map :: (e ~ IExp instr) => (e a -> e b) -> Str instr a -> Str instr b
+map f (Stream init) = Stream $ do
+  next <- init
+  return $ do
+    value <- next
+    return $ f value
+
+--------------------------------------------------------------------------------
+
+-- | Run stream to produce transition action
+run :: Stream instr a -> Program instr a
 run (Stream init) = join init
