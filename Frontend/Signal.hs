@@ -17,11 +17,11 @@ import qualified Frontend.Stream as S
 
 import Data.Dynamic (Dynamic)
 import Prelude ( Eq, Show, String, ($), (.), id 
-               , Num,        (+), (-), (*), fromInteger
-               , Fractional, (/), fromRational
+               , Num,        (+), (-), (*), fromInteger, abs, signum
+               , Fractional, (/), fromRational, recip
                , Floating,   (**), pi, sin
                , curry, uncurry
-               , undefined
+               , undefined, error
                )
 
 --------------------------------------------------------------------------------
@@ -118,6 +118,38 @@ delay :: ( e ~ IExp instr, Typeable e
          )
       => e a -> Sig instr a -> Sig instr a
 delay a = Sig . Delay a . unSig
+
+--------------------------------------------------------------------------------
+
+instance ( Num (IExp instr a)
+         , IPred instr a
+         , Typeable (IExp instr)
+         , Typeable instr
+         , Typeable a
+         ) =>
+    Num (Sig instr a)
+  where
+    fromInteger = repeat . fromInteger
+    (+)         = zipWith (+)
+    (*)         = zipWith (*)
+    (-)         = zipWith (-)
+
+    abs = todo; signum = todo;
+
+instance ( Fractional (IExp instr a)
+         , IPred instr a
+         , Typeable (IExp instr)
+         , Typeable instr
+         , Typeable a
+         ) =>
+    Fractional (Sig instr a)
+  where
+    fromRational = repeat . fromRational
+    (/)          = zipWith (/)
+
+    recip = todo;
+
+todo = error "unsupported operation"
 
 --------------------------------------------------------------------------------
 -- * Nested Signals
