@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeOperators    #-}
-{-# LANGUAGE GADTs            #-}
-{-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE TypeOperators   #-}
 {-# LANGUAGE ConstraintKinds #-}
 
 module Examples.Filters where
@@ -13,7 +10,7 @@ import Language.Embedded.Backend.C
 import Text.PrettyPrint.Mainland
 
 import Frontend.Signal (Sig)
-import Frontend.Stream (Str)
+import Frontend.Stream (Stream(..), Str)
 import Backend.Compiler.Compiler
 
 import qualified Frontend.Signal as S
@@ -24,9 +21,16 @@ import qualified Text.Printf     as Printf
 -- *
 --------------------------------------------------------------------------------
 
-type E   = Expr    -- short-hand for expression
-type S   = Sig E   --      --||--    signals
-type Prg = Prog E  --      --||--    programs
+type Pred = VarPred E
+
+type CMD
+  =   RefCMD Pred E
+  :+: ControlCMD  E
+  :+: FileCMD     E
+  :+: ConsoleCMD  E
+
+type E   = Expr      -- short-hand for expression
+type S   = Sig CMD   --      --||--    signals
 
 --------------------------------------------------------------------------------
 -- ** FIR Filter
@@ -58,52 +62,40 @@ iir (a:as) bs s = o
 -- *
 --------------------------------------------------------------------------------
 
-prl :: (f p e :<: g) => Tag p e g prog a -> Maybe (f p e prog a)
-prl = prj . unTag
+type Prog = Program CMD 
 
-inl :: (f p e :<: g) => f p e prog a -> Tag p e g prog a
-inl = Tag . inj
-
-apa :: ( RefCMD (P exp) exp :<: cmd
-       , ControlCMD     exp :<: cmd
-       )
-    => (Tag (P exp) exp (CMD exp) prog a)
-    -> (Tag (P exp) exp cmd prog a)
-apa c | Just (NewRef) <- prl c = inl $ NewRef
-  --  | Just (If a b c) <- prl c = inl $ If a b c
-
-bepa :: ( RefCMD (P exp) exp :<: cmd
-        , ControlCMD     exp :<: cmd
-        )
-     => Prog exp a -> Program (Tag (P exp) exp cmd) a
-bepa = interpretWithMonad (singleton . apa)
-
---------------------------------------------------------------------------------
-
-type CMD2 exp
-  =   RefCMD (P exp) exp
-  :+: ControlCMD  exp
-  :+: FileCMD     exp
-  :+: ConsoleCMD  exp
-
-type Prg2 = Program (Tag (P E) E (CMD2 E)) 
-
-connect_io :: P E Float => (S Float -> S Float) -> IO (Prg2 ())
+connect_io :: (S Float -> S Float) -> IO (Prog ())
 connect_io s = do
   prog <- compiler s
   return $ do
     inp <- open "input"
     out <- open "output"
-    ref <- newRef :: Prg2 (Ref Float)
-    let str  = Str.run $ prog $ Str.stream $ return $ getRef ref :: Prg (E Float)
-       
-        p    = bepa str :: Program (Tag (P E) E (CMD2 E)) (E Float)
-    let cont = fmap Not $ feof inp
+    ref <- newRef :: Prog (Ref Float)
+
+    let stream = Str.run $ prog
+               $ Stream  $ return
+               $ getRef ref
+
+    let cont = fmap Not $ feof inp :: Prog (E Bool)
+
     while cont $ do
       v <- fget inp
       setRef ref v
-      o <- p
+      o <- stream
       fput out o
+
     close inp
     close out
-     
+
+--------------------------------------------------------------------------------
+
+compFIR :: IO Doc
+compFIR = do
+  p <- connect_io $ fir [1,2]
+  prettyCGen $ wrapMain $ interpret p
+ 
+
+compIIR :: IO Doc
+compIIR = do
+  p <- connect_io $ iir [1,2] [3,1]
+  prettyCGen $ wrapMain $ interpret p
