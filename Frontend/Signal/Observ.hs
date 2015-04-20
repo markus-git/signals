@@ -5,6 +5,8 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE UndecidableInstances #-} -- !
+
 module Frontend.Signal.Observ where
 
 import Core
@@ -27,52 +29,73 @@ data TSignal (instr :: (* -> *) -> * -> *) (ref :: *)
   where
     TLambda :: ref -> ref -> TSignal instr ref
 
-    TVar    :: TSignal instr ref
+    TVar    :: (Typeable a)
+            => Suple instr a -> TSignal instr ref
     
-    TConst  :: Stream instr a -> TSignal instr ref
+    TConst  :: (Typeable a, IPred instr a)
+            => Stream instr (IExp instr a) -> TSignal instr ref
 
-    TLift   :: (Stream instr a -> Stream instr b) -> ref -> TSignal instr ref
+    TLift   :: (Typeable a, Typeable b, IPred instr a, IPred instr b)
+            => (Stream instr (IExp instr a) -> Stream instr (IExp instr b))
+            -> ref
+            -> TSignal instr ref
 
-    TMap    :: (Tuple (IExp instr) a -> Tuple (IExp instr) b) -> ref -> TSignal instr ref
+    TDelay  :: (Typeable a, IPred instr a)
+            => IExp instr a
+            -> ref
+            -> TSignal instr ref
 
-    TJoin   :: Suple (IExp instr) a -> Suple (IExp instr) b
-            -> ref -> ref -> TSignal instr ref
+    TMap    :: (Typeable a, Typeable b)
+            =>  Suple instr a -> Suple instr b
+            -> (Tuple instr a -> Tuple instr b)
+            -> ref
+            -> TSignal instr ref
 
-    TLeft   :: ref -> TSignal instr ref
+    TJoin   :: (Typeable a, Typeable b)
+            => Suple instr a -> Suple instr b
+            -> ref
+            -> ref
+            -> TSignal instr ref
 
-    TRight  :: ref -> TSignal instr ref
+    TLeft   :: (Typeable a, Typeable b)
+            => Suple instr (a, b)
+            -> ref
+            -> TSignal instr ref
 
-    TDelay  :: (IExp instr) a -> TSignal instr ref
+    TRight  :: (Typeable a, Typeable b)
+            => Suple instr (a, b)
+            -> ref
+            -> TSignal instr ref
 
 type Node instr = TSignal instr Unique
 
 --------------------------------------------------------------------------------
 -- **
-{-
-instance MuRef (Sig instr a)
-  where
-    type DeRef (Sig instr a) = TSignal instr
 
-    mapDeRef f = mapDeRef f . unSig
--}
 instance MuRef (Signal instr a)
   where
     type DeRef (Signal instr a) = TSignal instr
 
     mapDeRef f node = case node of
---      (Const   s) -> pure $ TConst s
---      (Lift sf s) -> TLift sf <$> f s
---      (Map  tf s) -> TMap  tf <$> f s
+      (Var _) -> pure $ TVar (rep (undefined :: Signal instr a))
+        
+      (Const   s) -> pure $ TConst s
+      (Lift sf s) -> TLift sf <$> f s
+      (Delay a s) -> TDelay a <$> f s
 
-      (Join  l r) -> TJoin  <$> f l <*> f r
-        where
-          sl = rep l
-          sr = rep r
-      
---      (Left  l)   -> TLeft  <$> f l
---      (Right r)   -> TRight <$> f r
+      (Map (tf :: Tuple instr a1 -> Tuple instr a) s)
+        -> let sl = rep (undefined :: Signal instr a1)
+               sr = rep (undefined :: Signal instr a)
+            in TMap sl sr tf <$> f s
 
-instance (Typeable instr, Typeable a, Typeable b) => MuRef (Signal instr a -> Signal instr b)
+
+      (Join l r) -> TJoin  (rep l) (rep r) <$> f l <*> f r
+      (Left l)   -> TLeft  (rep l) <$> f l
+      (Right  r) -> TRight (rep r) <$> f r
+
+-- todo : we dont need typeable of instr, as it doesn't contribute to a safer var construction
+instance (Instr a ~ instr, Rep a, Typeable instr, Typeable a, Typeable b) =>
+    MuRef (Signal instr a -> Signal instr b)
   where
     type DeRef (Signal instr a -> Signal instr b) = TSignal instr
 
@@ -81,14 +104,29 @@ instance (Typeable instr, Typeable a, Typeable b) => MuRef (Signal instr a -> Si
       in TLambda <$> f v <*> f g
 
 --------------------------------------------------------------------------------
+
+instance MuRef (Sig instr a)
+  where
+    type DeRef (Sig instr a) = TSignal instr
+
+    mapDeRef f = mapDeRef f . unSig
+
+instance (IPred instr a, Typeable instr, Typeable a, Typeable b) =>
+    MuRef (Sig instr a -> Sig instr b)
+  where
+    type DeRef (Sig instr a -> Sig instr b) = TSignal instr
+
+    mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
+
+--------------------------------------------------------------------------------
 -- ** 
 
 edges :: Node instr -> [Unique]
 edges node = case node of
-  (TLambda a b) -> [a, b]
-  (TLift _ a)   -> [a]
-  (TMap  _ a)   -> [a]
-  (TJoin a b)   -> [a, b]
-  (TLeft a)     -> [a]
-  (TRight a)    -> [a]
-  _             -> []
+  (TLambda a b)     -> [a, b]
+  (TLift _ a)       -> [a]
+  (TMap  _ _ _ a)   -> [a]
+  (TJoin _ _ a b)   -> [a, b]
+  (TLeft _ a)       -> [a]
+  (TRight _ a)      -> [a]
+  _                 -> []

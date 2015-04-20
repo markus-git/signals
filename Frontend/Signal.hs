@@ -5,6 +5,8 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE UndecidableInstances #-} -- !
+
 module Frontend.Signal where
 
 import Core
@@ -29,56 +31,107 @@ import Prelude ( Eq, Show, String, ($), (.), id
 data Signal (instr :: (* -> *) -> * -> *) (a :: *)
   where
     -- ^ ...
-    Const :: Stream instr a -> Signal instr (Empty a)
+    Const :: (Typeable a, IPred instr a)
+          => Stream instr (IExp instr a)
+          -> Signal instr (Empty instr a)
 
     -- ^ ...
-    Lift  :: (Stream instr a -> Stream instr b) -> Signal instr (Empty a) -> Signal instr (Empty b)
+    Lift  :: (Typeable a, Typeable b, IPred instr a, IPred instr b)
+          => (Stream instr (IExp instr a) -> Stream instr (IExp instr b))
+          -> Signal instr (Empty instr a)
+          -> Signal instr (Empty instr b)
+
+    Delay :: (Typeable a, IPred instr a)
+          => IExp   instr a
+          -> Signal instr (Empty instr a)
+          -> Signal instr (Empty instr a)
 
     -- ^ ...
-    Map   :: (IExp instr ~ Domain a, Domain a ~ Domain b)
-          => (Tuple (IExp instr) a -> Tuple (IExp instr) b) -> Signal instr a -> Signal instr b
+    Map   :: ( Typeable a, Typeable b
+             , Instr a ~ instr, Instr b ~ instr
+             , Rep a, Rep b
+             )
+          => (Tuple instr a -> Tuple instr b)
+          -> Signal instr a
+          -> Signal instr b
 
     -- ^ ...
-    Join  :: (IExp instr ~ Domain a, Domain a ~ Domain b, Puple a, Puple b)
-          => Signal instr a -> Signal instr b -> Signal instr (a, b)
+    Join  :: ( Typeable a, Typeable b
+             , Instr a ~ instr, Instr b ~ instr
+             , Rep a, Rep b
+             )
+          => Signal instr a
+          -> Signal instr b
+          -> Signal instr (a, b)
 
     -- ^ ...
-    Left  :: (IExp instr ~ Domain a, Domain a ~ Domain b, Puple a)
-          => Signal instr (a, b) -> Signal instr a
+    Left  :: ( Typeable a, Typeable b
+             , Instr a ~ instr, Instr b ~ instr
+             , Rep a, Rep b
+             )
+          => Signal instr (a, b)
+          -> Signal instr a
 
     -- ^ ...
-    Right :: (IExp instr ~ Domain a, Domain a ~ Domain b, Puple b)
-          => Signal instr (a, b) -> Signal instr b
+    Right :: ( Typeable a, Typeable b
+             , Instr a ~ instr, Instr b ~ instr
+             , Rep a, Rep b
+             )
+          => Signal instr (a, b)
+          -> Signal instr b
 
     -- ^ ...
-    Var   :: Dynamic -> Signal instr a
+    Var   :: (Typeable a, Instr a ~ instr, Rep a)
+          => Dynamic
+          -> Signal instr a
 
 -- | `Shorthand` for signals which produce values of type `exp a`
-newtype Sig instr a = Sig { unSig :: Signal instr (Empty (IExp instr a)) }
+newtype Sig instr a = Sig { unSig :: Signal instr (Empty instr a) }
 
 --------------------------------------------------------------------------------
 
-repeat :: (e ~ IExp instr) => e a -> Sig instr a
+repeat :: ( e ~ IExp instr, Typeable e
+          , IPred instr a, Typeable a
+          )
+       => e a -> Sig instr a
 repeat = Sig . Const . S.repeat
 
-map :: (e ~ IExp instr) => (e a -> e b) -> Sig instr a -> Sig instr b
+map :: ( e ~ IExp instr, Typeable e
+       , IPred instr a, Typeable a
+       , IPred instr b, Typeable b
+       )
+    => (e a -> e b) -> Sig instr a -> Sig instr b
 map f = Sig . Lift (S.map f) . unSig
 
-zipWith :: (e ~ IExp instr) => (e a -> e b -> e c) -> Sig instr a -> Sig instr b -> Sig instr c
+zipWith :: (e ~ IExp instr, Typeable e, Typeable instr
+           , IPred instr a, Typeable a
+           , IPred instr b, Typeable b
+           , IPred instr c, Typeable c
+           )
+        => (e a -> e b -> e c) -> Sig instr a -> Sig instr b -> Sig instr c
 zipWith f = curry $ lift $ uncurry f
+
+--------------------------------------------------------------------------------
+
+delay :: ( e ~ IExp instr, Typeable e
+         , IPred instr a, Typeable a
+         )
+      => e a -> Sig instr a -> Sig instr a
+delay a = Sig . Delay a . unSig
 
 --------------------------------------------------------------------------------
 -- * Nested Signals
 --------------------------------------------------------------------------------
 
-type family   Domain a :: * -> *
-type instance Domain (Empty (expr a)) = expr
-type instance Domain (a, b)           = Domain a
+type family Instr  a :: (* -> *) -> * -> *
+type instance Instr (Sig    instr a) = instr
+type instance Instr (Signal instr a) = instr
+type instance Instr (Empty  instr a) = instr
+type instance Instr (a, b)           = Instr a
 
 -- | Conversion between signals and tuples
 class SSignal a
   where
-    type Instr    a :: (* -> *) -> * -> *
     type Internal a :: *
     
     sugarS   :: a -> Signal (Instr a) (Internal a)
@@ -89,34 +142,40 @@ class STuple a
   where
     type Normal a :: *
     
-    sugarE   :: Normal a -> Tuple (Domain a) a 
-    desugarE :: Tuple (Domain a) a -> Normal a
+    sugarE   :: Normal a -> Tuple (Instr a) a 
+    desugarE :: Tuple (Instr a) a -> Normal a
 
 --------------------------------------------------------------------------------
 
 instance SSignal (Sig instr a)
   where
-    type Instr    (Sig instr a) = instr
-    type Internal (Sig instr a) = Empty (IExp instr a)
+    type Internal (Sig instr a) = Empty instr a
 
     sugarS   = unSig
     desugarS = Sig
 
-instance SSignal (Signal instr (Empty a))
+instance SSignal (Signal instr (Empty instr a))
   where
-    type Instr    (Signal instr (Empty a)) = instr
-    type Internal (Signal instr (Empty a)) = Empty a
+    type Internal (Signal instr (Empty instr a)) = Empty instr a
 
     sugarS   = id
     desugarS = id
 
-instance ( SSignal a, SSignal b, Instr a ~ Instr b
-         , Puple  (Internal a), Puple (Internal b)
-         , Domain (Internal a) ~ IExp   (Instr a)
-         , Domain (Internal a) ~ Domain (Internal b))
+instance ( SSignal a, SSignal b
+         , Instr a ~ Instr b
+         , Instr a ~ Instr (Internal a)
+         , Instr b ~ Instr (Internal b)
+
+         , Rep (Internal a)
+         , Rep (Internal b)
+           
+         , Typeable (IExp (Instr a))
+         , Typeable (IExp (Instr b))
+         , Typeable (Internal a)
+         , Typeable (Internal b)
+         )
     => SSignal (a, b)
   where
-    type Instr    (a, b) = Instr a
     type Internal (a, b) = (Internal a, Internal b)
 
     sugarS   (a, b) = Join (sugarS a) (sugarS b)
@@ -124,14 +183,14 @@ instance ( SSignal a, SSignal b, Instr a ~ Instr b
 
 --------------------------------------------------------------------------------
 
-instance STuple (Empty (expr a))
+instance (IPred instr a, Typeable a) => STuple (Empty instr a)
   where
-    type Normal (Empty (expr a)) = expr a
+    type Normal (Empty instr a) = IExp instr a
 
     sugarE            = Leaf
     desugarE (Leaf a) = a
 
-instance (STuple a, STuple b, Domain a ~ Domain b) => STuple (a, b)
+instance (STuple a, STuple b, Instr a ~ Instr b) => STuple (a, b)
   where
     type Normal (a, b) = (Normal a, Normal b)
 
@@ -145,51 +204,49 @@ instance (STuple a, STuple b, Domain a ~ Domain b) => STuple (a, b)
 lift :: ( SSignal a
         , SSignal b
         , Instr a ~ Instr b
+          
         , STuple (Internal a)
         , STuple (Internal b)
-        , Domain (Internal a) ~ IExp (Instr a)
-        , Domain (Internal b) ~ IExp (Instr b)
+        , Instr  (Internal a) ~ Instr a
+        , Instr  (Internal b) ~ Instr b
+
+        , Rep (Internal a)
+        , Rep (Internal b)
+          
+        , Typeable (Internal a)
+        , Typeable (Internal b)
+        , Typeable (IExp (Instr (Internal a)))
+        , Typeable (IExp (Instr (Internal b)))
         )
      => (Normal (Internal a) -> Normal (Internal b)) -> a -> b
 lift f = desugarS . Map (sugarE . f . desugarE) . sugarS
-
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
--- | ...
-type family   Phantom tup
-type instance Phantom (a,b)         = (Phantom a, Phantom b)
-type instance Phantom (Empty (e a)) = Empty (Shantom e a)
-
--- | Phantom type used to have tuples over string while maintaining type information
-data Shantom (c :: * -> *) (a :: *) = S String
-
--- | Tuples over strings
-type Suple c a = Tuple (Shantom c) (Phantom a)
 -- | ..
-class Puple a
+class Rep a
   where
-    represent :: Tuple (Domain a) a -> Suple (Domain a) a
+    represent :: Tuple (Instr a) a -> Suple (Instr a) a
 
 --------------------------------------------------------------------------------
 
-instance Puple (Empty (expr a))
+instance (IPred instr a, Typeable a) => Rep (Empty instr a)
   where
-    represent _ = Leaf (S "")
+    represent _ = Seaf ""
 
-instance (Domain a ~ Domain b, Puple a, Puple b) => Puple (a, b)
+instance (Instr a ~ Instr b, Rep a, Rep b) => Rep (a, b)
   where
-    represent (_ :: Tuple (Domain a) (a, b)) = Branch (represent left) (represent right)
+    represent (_ :: Tuple (Instr a) (a, b)) = Sranch (represent left) (represent right)
       where
-        left  = undefined :: Tuple (Domain a) a
-        right = undefined :: Tuple (Domain b) b
+        left  = undefined :: Tuple (Instr a) a
+        right = undefined :: Tuple (Instr b) b
 
 --------------------------------------------------------------------------------
 -- ** 
 
 -- | ...
-rep :: forall instr a. (Domain a ~ IExp instr, Puple a) => Signal instr a -> Suple (IExp instr) a
-rep _ = represent (undefined :: Tuple (IExp instr) a)
+rep :: forall c instr a. (Rep a, Instr a ~ instr) => c instr a -> Suple instr a
+rep _ = represent (undefined :: Tuple instr a)
 

@@ -16,15 +16,43 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Interpretation, Core, Frontend.Stream, Frontend.SignalObsv, Frontend.Signal, Examples.Simple.Filters, Examples.Simple.Expr, Backend.Knot, Backend.C, Backend.Compiler.Sorter, Backend.Compiler.Linker, Backend.Compiler.Cycles, Backend.Compiler.Compiler, Backend.C.Monad
+  exposed-modules:     Core,
+                       Frontend.Stream,
+                       Frontend.Signal,
+                       Frontend.Signal.Observ,
+                       Backend.Knot,
+                       Backend.Ex,
+                       Backend.Nested,
+--                       Backend.C,
+                       Backend.C.Monad,
+                       Backend.Compiler.Sorter,
+                       Backend.Compiler.Linker,
+                       Backend.Compiler.Cycles
+--                      Backend.Compiler.Compiler
   -- other-modules:       
-  other-extensions:    ConstraintKinds, TypeFamilies, MultiParamTypeClasses, FlexibleContexts, FlexibleInstances, GADTs, DeriveDataTypeable, ScopedTypeVariables, StandaloneDeriving, UndecidableInstances, KindSignatures, QuasiQuotes, RecursiveDo, Rank2Types, BangPatterns, GeneralizedNewtypeDeriving
-  build-depends:       base >=4.7 && <4.8,
+  other-extensions:    ConstraintKinds,
+                       TypeFamilies,
+--                       MultiParamTypeClasses,
+                       FlexibleContexts,
+                       FlexibleInstances,
+                       GADTs,
+                       DeriveDataTypeable,
+                       ScopedTypeVariables,
+--                       StandaloneDeriving,
+--                       UndecidableInstances,
+                       KindSignatures,
+                       QuasiQuotes,
+                       RecursiveDo,
+                       Rank2Types
+--                       BangPatterns,
+--                       GeneralizedNewtypeDeriving
+                       
+  build-depends:       base >=4.7,
                        constraints >=0.4 && <0.5,
-                       operational >=0.2 && <0.3,
                        array >=0.5 && <0.6,
                        mtl >=2.2 && <2.3,
                        containers >=0.5 && <0.6,
+                       imperative-edsl,
                        -- greater versions break 
                        monad-control < 1.0, 
                        -- control-monad-exception >= 0.11.1 && < 0.12,

@@ -4,7 +4,7 @@ module Backend.Compiler.Sorter (
   )
 where
 
-import Frontend.TSignal (TSignal(..), Node, edges)
+import Frontend.Signal.Observ (TSignal(..), Node, edges)
 import Control.Arrow
 import Control.Monad.State
 import Data.Reify 
@@ -47,6 +47,7 @@ adjacent :: Unique -> State (i, Map Unique (s, o, Node e)) [Unique]
 adjacent u = get >>= return . edges . (\(_, _, n) -> n) . (! u) . snd
 
 --------------------------------------------------------------------------------
+-- **
 
 -- | Standard depth-first ordering of a graph
 --

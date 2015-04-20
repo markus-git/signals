@@ -3,10 +3,11 @@ module Backend.Compiler.Cycles (
   )
 where
 
-import Frontend.TSignal
+import Frontend.Signal.Observ
+
 import Control.Monad.State
 import Data.Reify (Graph(..), Unique, reifyGraph)
-import Data.Map (Map, (!))
+import Data.Map   (Map, (!))
 
 import qualified Data.Map as M
 
