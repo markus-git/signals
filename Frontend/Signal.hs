@@ -32,12 +32,21 @@ import Prelude ( Eq, Show, String, ($), (.), id
 
 data Signal (instr :: (* -> *) -> * -> *) (a :: *)
   where
-    Const :: Stream instr a
-          -> Signal instr a
+    -- ^ ...
+    Const :: ( Typeable a, VarPred e a
+             , e ~ IExp instr
+             )
+          => Stream instr (F e (Identity a))
+          -> Signal instr (Identity a)
 
-    Map   :: (Stream instr a -> Stream instr b)
-          -> (Signal instr a -> Signal instr b)
-    
+    -- ^ ...
+    Map   :: ( Typeable a --, VarPred (IExp instr) a
+             , Typeable b --, VarPred (IExp instr) b
+             , e ~ IExp instr
+             )
+          => (Stream instr (F e a) -> Stream instr (F e b))
+          -> (Signal instr a       -> Signal instr b)
+
     -- ^ ...
     Join  :: ( Witness a, Typeable a
              , Witness b, Typeable b
@@ -60,16 +69,18 @@ data Signal (instr :: (* -> *) -> * -> *) (a :: *)
           => Signal instr (a, b)
           -> Signal instr b
 
+    -- ^ ...
+--  Var   :: (Witness a, Typeable a) => Dynamic -> Signal instr a
+
 -- | `Shorthand` for signals which produce values of type `exp a`
 newtype Sig instr a = Sig { runSig :: Signal instr (Identity a) }
 
 --------------------------------------------------------------------------------
 -- **
-{-
+
 lift0 :: (e ~ IExp i, VarPred e a, Typeable a) => e a -> Sig i a
 lift0 = Sig . Const . S.repeat
--}
-{-
+
 lift1 :: forall i e a b.
        ( e ~ IExp i
        , Witness a, Typeable a --, VarPred e a
@@ -88,25 +99,33 @@ lift2 :: forall i e a b c.
     => (e a -> e b -> e c) -> Sig i a -> Sig i b -> Sig i c
 lift2 f = curry $ lift z $ uncurry f
   where z = undefined :: proxy i (Identity a, Identity b) (Identity c)
--}
+
 --------------------------------------------------------------------------------
 -- * Nested Signals
 --------------------------------------------------------------------------------
 
 data Wit a
   where
-    WE :: Wit (e a)
-    WP :: (Witness a, Witness b) => Wit a -> Wit b -> Wit (a, b)
+    WE :: Typeable a => Wit (Identity a)
+          
+    WP :: ( Witness a, Typeable a
+          , Witness b, Typeable b
+          )
+          => Wit a -> Wit b -> Wit (a, b)
 
 class Witness a
   where
     wit :: Wit a
 
-instance forall e a. Witness (e a)
+instance Typeable a => Witness (Identity a)
   where
     wit = WE
 
-instance forall a b. (Witness a, Witness b) => Witness (a, b)
+instance forall a b.
+    ( Witness a, Typeable a
+    , Witness b, Typeable b
+    )
+    => Witness (a, b)
   where
     wit = WP (wit :: Wit a) (wit :: Wit b)
 
@@ -117,7 +136,6 @@ type family Packed (i :: (* -> *) -> * -> *) a :: *
 type instance Packed i (Identity a) = Sig i a
 type instance Packed i (a, b)       = (Packed i a, Packed i b)
 
-{-
 pack :: forall i a. Witness a => Signal i a -> Packed i a
 pack s = go (wit :: Wit a) s
   where
@@ -131,17 +149,17 @@ unpack s = go (wit :: Wit a) s
     go :: Wit a -> Packed i a -> Signal i a
     go (WE)     s = runSig s
     go (WP l r) s = Join (unpack (fst s)) (unpack (snd s))
--}
+
 --------------------------------------------------------------------------------
 -- **
 
-type family F (e :: * -> *) (a :: *) :: *
-type instance F e (e a)  = Identity a
+type family F (e :: * -> *) a :: *
+type instance F e (Identity a) = e a
 type instance F e (a, b) = (F e a, F e b)
 
 --------------------------------------------------------------------------------
 -- **
-{-
+
 lift :: forall proxy i e a b.
         ( Witness a, Typeable a
         , Witness b, Typeable b
@@ -157,5 +175,5 @@ lift _ f = pack . h . unpack
 
 stream :: (a -> b) -> (Stream i a -> Stream i b)
 stream f (Stream s) = Stream $ fmap (fmap f) s
--}
+
 --------------------------------------------------------------------------------
