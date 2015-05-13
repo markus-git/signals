@@ -1,5 +1,4 @@
-{-# LANGUAGE TypeOperators   #-}
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Examples.Filters where
 
@@ -21,13 +20,11 @@ import qualified Text.Printf     as Printf
 -- *
 --------------------------------------------------------------------------------
 
-type Pred = VarPred E
-
 type CMD
-  =   RefCMD Pred E
+  =   RefCMD      E
   :+: ControlCMD  E
   :+: FileCMD     E
-  :+: ConsoleCMD  E
+  :+: ControlCMD  E
 
 type E   = Expr      -- short-hand for expression
 type S   = Sig CMD   --      --||--    signals
@@ -68,8 +65,8 @@ connect_io :: (S Float -> S Float) -> IO (Prog ())
 connect_io s = do
   prog <- compiler s
   return $ do
-    inp <- open "input"
-    out <- open "output"
+    inp <- fopen "input"  ReadMode
+    out <- fopen "output" WriteMode
     ref <- newRef :: Prog (Ref Float)
 
     let stream = Str.run $ prog
@@ -84,18 +81,20 @@ connect_io s = do
       o <- stream
       fput out o
 
-    close inp
-    close out
+    fclose inp
+    fclose out
 
 --------------------------------------------------------------------------------
 
 compFIR :: IO Doc
 compFIR = do
   p <- connect_io $ fir [1,2]
-  prettyCGen $ wrapMain $ interpret p
+  return $ prettyCGen $ wrapMain $ interpret p
  
 
 compIIR :: IO Doc
 compIIR = do
   p <- connect_io $ iir [1,2] [3,1]
-  prettyCGen $ wrapMain $ interpret p
+  return $ prettyCGen $ wrapMain $ interpret p
+
+--------------------------------------------------------------------------------

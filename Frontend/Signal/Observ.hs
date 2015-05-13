@@ -1,11 +1,8 @@
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
-{-# LANGUAGE UndecidableInstances #-} -- !
 
 module Frontend.Signal.Observ where
 
@@ -16,6 +13,7 @@ import Frontend.Stream (Stream, Str)
 
 import Control.Applicative hiding (Const)
 import Data.Dynamic
+import Data.Functor.Identity
 import Data.Proxy
 import Data.Reify
 
@@ -25,22 +23,38 @@ import Prelude hiding (Either(..))
 -- * Graph representation of Signals
 --------------------------------------------------------------------------------
 
-data TSignal (instr :: (* -> *) -> * -> *) (ref :: *)
+data Obsv (instr :: (* -> *) -> * -> *) (ref :: *)
   where
+    OConst :: ( Typeable a, VarPred e a
+              , e ~ IExp instr
+              )
+              => Stream instr (F e (Identity a))
+              -> ref
+              -> Obsv i ref
+              
+    OMap   :: ( Typeable a
+              , Typeable b
+              , e ~ IExp instr
+              )
+              => (Stream instr (F e a) -> Stream instr (F e b))
+              -> ref
+              -> ref
+              -> Obsv i ref
+{-
     TLambda :: ref -> ref -> TSignal instr ref
 
     TVar    :: (Typeable a)
             => Suple instr a -> TSignal instr ref
-    
-    TConst  :: (Typeable a, IPred instr a)
+               
+    TConst  :: (Typeable a, VarPred (IExp instr) a)
             => Stream instr (IExp instr a) -> TSignal instr ref
 
-    TLift   :: (Typeable a, Typeable b, IPred instr a, IPred instr b)
+    TLift   :: (Typeable a, Typeable b, VarPred (IExp instr) a, VarPred (IExp instr) b)
             => (Stream instr (IExp instr a) -> Stream instr (IExp instr b))
             -> ref
             -> TSignal instr ref
 
-    TDelay  :: (Typeable a, IPred instr a)
+    TDelay  :: (Typeable a, VarPred (IExp instr) a)
             => IExp instr a
             -> ref
             -> TSignal instr ref
@@ -66,12 +80,12 @@ data TSignal (instr :: (* -> *) -> * -> *) (ref :: *)
             => Suple instr (a, b)
             -> ref
             -> TSignal instr ref
-
-type Node instr = TSignal instr Unique
+-}
+--type Node instr = TSignal instr Unique
 
 --------------------------------------------------------------------------------
 -- **
-
+{-
 instance MuRef (Signal instr a)
   where
     type DeRef (Signal instr a) = TSignal instr
@@ -102,25 +116,25 @@ instance (Instr a ~ instr, Rep a, Typeable instr, Typeable a, Typeable b) =>
     mapDeRef f node =
       let (v, g) = let a = Var (toDyn node) in (a, node a)
       in TLambda <$> f v <*> f g
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 instance MuRef (Sig instr a)
   where
     type DeRef (Sig instr a) = TSignal instr
 
     mapDeRef f = mapDeRef f . unSig
 
-instance (IPred instr a, Typeable instr, Typeable a, Typeable b) =>
+instance (VarPred (IExp instr) a, Typeable instr, Typeable a, Typeable b) =>
     MuRef (Sig instr a -> Sig instr b)
   where
     type DeRef (Sig instr a -> Sig instr b) = TSignal instr
 
     mapDeRef f sf = mapDeRef f (unSig . sf . Sig)
-
+-}
 --------------------------------------------------------------------------------
 -- ** 
-
+{-
 edges :: Node instr -> [Unique]
 edges node = case node of
   (TLambda a b)     -> [a, b]
@@ -130,3 +144,4 @@ edges node = case node of
   (TLeft _ a)       -> [a]
   (TRight _ a)      -> [a]
   _                 -> []
+-}

@@ -23,12 +23,10 @@ library
                        Backend.Knot,
                        Backend.Ex,
                        Backend.Nested,
---                       Backend.C,
-                       Backend.C.Monad,
                        Backend.Compiler.Sorter,
                        Backend.Compiler.Linker,
                        Backend.Compiler.Cycles
---                      Backend.Compiler.Compiler
+                       Backend.Compiler.Compiler
   -- other-modules:       
   other-extensions:    ConstraintKinds,
                        TypeFamilies,
@@ -39,7 +37,7 @@ library
                        DeriveDataTypeable,
                        ScopedTypeVariables,
 --                       StandaloneDeriving,
---                       UndecidableInstances,
+                       UndecidableInstances,
                        KindSignatures,
                        QuasiQuotes,
                        RecursiveDo,
@@ -56,8 +54,8 @@ library
                        -- greater versions break 
                        monad-control < 1.0, 
                        -- control-monad-exception >= 0.11.1 && < 0.12,
-                       exception-transformers >= 0.3.0.4 && < 0.4,
-                       exception-mtl >= 0.3.0.5 && < 0.4,
+                       exception-transformers >= 0.3.0.4 && < 0.5,
+                       exception-mtl >= 0.3.0.5 && < 0.5,
                        data-reify >= 0.6 && <0.7,
                        language-c-quote >= 0.10 && < 0.11,
                        mainland-pretty >= 0.2.7 && < 0.3

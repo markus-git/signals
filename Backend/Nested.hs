@@ -4,8 +4,8 @@
 module Backend.Nested where
 
 import Data.Functor.Identity
-
 import Data.Typeable (Typeable) -- !
+
 import Core -- !
 
 --------------------------------------------------------------------------------
@@ -18,7 +18,7 @@ data Empty (instr :: (* -> *) -> * -> *) (a :: *)
 -- | n-value tuple over instrontainers
 data Tuple instr a
   where
-    Leaf   :: (IPred instr a, Typeable a)
+    Leaf   :: (VarPred (IExp instr) a, Typeable a)
            => IExp instr a
            -> Tuple instr (Empty instr a)
 
@@ -31,7 +31,7 @@ data Tuple instr a
 
 data Suple instr a
   where
-    Seaf   :: (IPred instr a, Typeable a)
+    Seaf   :: (VarPred (IExp instr) a, Typeable a)
            => String
            -> Suple instr (Empty instr a)
            
@@ -41,7 +41,7 @@ data Suple instr a
 
 data Ruple instr a
   where
-    Reaf   :: (IPred instr a, Typeable a)
+    Reaf   :: (VarPred (IExp instr) a, Typeable a)
            => Ref a
            -> Ruple instr (Empty instr a)
            
@@ -49,3 +49,4 @@ data Ruple instr a
            -> Ruple instr b
            -> Ruple instr (a, b)
 
+--------------------------------------------------------------------------------

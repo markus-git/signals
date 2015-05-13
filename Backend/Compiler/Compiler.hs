@@ -22,6 +22,10 @@ import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
 
+import qualified Core            as C
+import qualified Frontend.Stream as Str
+import qualified Frontend.Signal as S
+
 import Control.Monad.Reader
 import Control.Monad.State hiding (State)
 import Data.Reify
@@ -31,9 +35,7 @@ import Data.Traversable (traverse)
 import Data.Function    (on)
 import Data.Map         (Map, (!))
 import Data.Constraint
-import qualified Core            as C
-import qualified Frontend.Stream as Str
-import qualified Frontend.Signal as S
+
 import qualified Data.Map        as M
 
 import Prelude hiding (reads)
@@ -42,8 +44,8 @@ import Prelude hiding (reads)
 -- *
 --------------------------------------------------------------------------------
 
-compiler :: ( IPred instr a
-            , RefCMD (IPred instr) (IExp instr) :<: instr
+compiler :: ( RefCMD  (IExp instr) :<: instr
+            , VarPred (IExp instr) a
             , MapInstr instr
             , Typeable instr, Typeable a, Typeable b
             )
@@ -79,7 +81,7 @@ data Channel symbol instr = C {
 -- hacky solution for now
 
 -- |
-initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IPred instr) (IExp instr) :<: instr)
+initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IExp instr) :<: instr)
              => Resolution s instr
              -> Prog instr (Channel s instr)
 initChannels res = do
@@ -90,7 +92,7 @@ initChannels res = do
   }
 
 -- |
-makeChannel :: forall instr. (RefCMD (IPred instr) (IExp instr) :<: instr) 
+makeChannel :: forall instr. (RefCMD (IExp instr) :<: instr) 
             => TEx instr
             -> Prog instr (REx instr)
 makeChannel (Ex s) = makes s >>= return . Ex
@@ -132,16 +134,16 @@ type Type instr = ReaderT (Enviroment Unique instr) (Prog instr)
 
 --------------------------------------------------------------------------------
 
-reads :: (RefCMD (IPred instr) (IExp instr) :<: instr)
+reads :: (RefCMD (IExp instr) :<: instr)
       => Ruple instr a
       -> Prog  instr (Tuple instr a)
-reads (Reaf   r)   = C.unsafeFreezeRef r >>= return . Leaf
+reads (Reaf   r)   = C.getRef r >>= return . Leaf
 reads (Rranch l r) = do
   l' <- reads l
   r' <- reads r
   return $ Branch l' r'
 
-writes :: (RefCMD (IPred instr) (IExp instr) :<: instr)
+writes :: (RefCMD (IExp instr) :<: instr)
        => Tuple instr a
        -> Ruple instr a
        -> Prog  instr ()
@@ -151,7 +153,7 @@ writes (Branch l r) (Rranch u v) = writes l u >> writes r v
 --------------------------------------------------------------------------------
 
 -- | Read
-read_in :: (RefCMD (IPred instr) (IExp instr) :<: instr, Typeable a)
+read_in :: (RefCMD (IExp instr) :<: instr, Typeable a)
         => Unique
         -> Suple instr a
         -> Type  instr (Tuple instr a)
@@ -162,7 +164,7 @@ read_in u _ =
        Nothing -> error "hepa: type error"
 
 -- | Read 
-read_out :: (RefCMD (IPred instr) (IExp instr) :<: instr, Typeable a)
+read_out :: (RefCMD (IExp instr) :<: instr, Typeable a)
          => Unique
          -> Suple instr a
          -> Type  instr (Tuple instr a)
@@ -173,7 +175,7 @@ read_out u _ =
        Nothing -> error "bepa: type error"
 
 -- | Write
-write_out :: (RefCMD (IPred instr) (IExp instr) :<: instr, Typeable a)
+write_out :: (RefCMD (IExp instr) :<: instr, Typeable a)
           => Unique
           -> Tuple instr a
           -> Type  instr ()
@@ -186,7 +188,7 @@ write_out u s =
 --------------------------------------------------------------------------------
 
 -- | ...
-compile :: (RefCMD (IPred instr) (IExp instr) :<: instr, MapInstr instr, Typeable instr)
+compile :: (RefCMD (IExp instr) :<: instr, MapInstr instr, Typeable instr)
         => (Unique, Node instr)
         -> Type instr ()
 compile (i, TVar t@(Seaf _)) =
@@ -217,7 +219,7 @@ compile (i, TDelay (e :: IExp instr a) _) =
                Just x  -> x
                Nothing -> error "!"
      value <- lift $ liftProgram $
-                do output <- C.unsafeFreezeRef f
+                do output <- C.getRef f
                    C.setRef f input
                    return output
      write_out i (Leaf value)
@@ -234,7 +236,7 @@ compile _ = return ()
 -- | ...
 compiler' :: forall instr a b.
              ( Typeable instr, Typeable a, Typeable b
-             , RefCMD (IPred instr) (IExp instr) :<: instr
+             , RefCMD (IExp instr) :<: instr
              , MapInstr instr
              )
           => [(Unique, Node instr)]
@@ -293,3 +295,4 @@ compiler' nodes links order input = Stream $
             nop (TRight  {}) = True
             nop _            = False
 
+--------------------------------------------------------------------------------
