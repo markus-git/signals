@@ -32,20 +32,22 @@ import Prelude ( Eq, Show, String, ($), (.), id
 
 data Signal (instr :: (* -> *) -> * -> *) (a :: *)
   where
-    -- ^ ...
+    -- ^ ... F e (Identity a) ~ (e a) ...
     Const :: ( Typeable a, VarPred e a
              , e ~ IExp instr
              )
-          => Stream instr (F e (Identity a))
+          => Stream instr (e a)
           -> Signal instr (Identity a)
 
     -- ^ ...
-    Map   :: ( Typeable a --, VarPred (IExp instr) a
-             , Typeable b --, VarPred (IExp instr) b
+    Map   :: ( Witness a, Typeable a --, VarPred e a
+             , Witness b, Typeable b --, VarPred e b
              , e ~ IExp instr
              )
-          => (Stream instr (F e a) -> Stream instr (F e b))
-          -> (Signal instr a       -> Signal instr b)
+          => (   Stream instr (F instr a)
+              -> Stream instr (F instr b))
+          -> Signal instr a
+          -> Signal instr b
 
     -- ^ ...
     Join  :: ( Witness a, Typeable a
@@ -70,7 +72,7 @@ data Signal (instr :: (* -> *) -> * -> *) (a :: *)
           -> Signal instr b
 
     -- ^ ...
---  Var   :: (Witness a, Typeable a) => Dynamic -> Signal instr a
+    Var   :: (Witness a, Typeable a) => Dynamic -> Signal instr a
 
 -- | `Shorthand` for signals which produce values of type `exp a`
 newtype Sig instr a = Sig { runSig :: Signal instr (Identity a) }
@@ -132,7 +134,11 @@ instance forall a b.
 --------------------------------------------------------------------------------
 -- **
 
-type family Packed (i :: (* -> *) -> * -> *) a :: *
+type family F (i :: (* -> *) -> * -> *) (a :: *) :: *
+type instance F i (Identity a) = IExp i a
+type instance F i (a, b) = (F i a, F i b)
+
+type family Packed (i :: (* -> *) -> * -> *) (a :: *) :: *
 type instance Packed i (Identity a) = Sig i a
 type instance Packed i (a, b)       = (Packed i a, Packed i b)
 
@@ -141,7 +147,7 @@ pack s = go (wit :: Wit a) s
   where
     go :: Wit a -> Signal i a -> Packed i a
     go (WE)     s = Sig s
-    go (WP l r) s = (pack (Left s), pack (Right s))
+    go (WP l r) s = (,) (pack (Left s)) (pack (Right s))
     
 unpack :: forall i a. Witness a => Packed i a -> Signal i a
 unpack s = go (wit :: Wit a) s
@@ -153,24 +159,17 @@ unpack s = go (wit :: Wit a) s
 --------------------------------------------------------------------------------
 -- **
 
-type family F (e :: * -> *) a :: *
-type instance F e (Identity a) = e a
-type instance F e (a, b) = (F e a, F e b)
-
---------------------------------------------------------------------------------
--- **
-
 lift :: forall proxy i e a b.
         ( Witness a, Typeable a
         , Witness b, Typeable b
         , e ~ IExp i
         )
      => proxy i a b
-     -> (F e a      -> F e b)
+     -> (F i a      -> F i b)
      -> (Packed i a -> Packed i b)
 lift _ f = pack . h . unpack
   where
-    g = stream f       :: Stream i (F e a) -> Stream i (F e b)
+    g = stream f       :: Stream i (F i a) -> Stream i (F i b)
     h = Map (stream f) :: Signal i a       -> Signal i b
 
 stream :: (a -> b) -> (Stream i a -> Stream i b)
