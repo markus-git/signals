@@ -15,11 +15,11 @@ data Ex c
   where
     Ex :: Typeable a => c a -> Ex c
 
--- | Wrapper type for nested containers
-newtype (f :*: g) e = T (f (g e))
-
 --------------------------------------------------------------------------------
 -- ** Helper functinons for generalized existential types
+
+-- | Wrapper type for nested containers
+newtype (f :*: g) e = T (f (g e))
 
 -- | Hides the inner argument, wrapping the types
 wrap :: Typeable e => f (g e) -> Ex (f :*: g)
@@ -30,3 +30,5 @@ unwrap :: Typeable e => Ex (f :*: g) -> f (g e)
 unwrap (Ex t) = case gcast t of
                   Just (T x) -> x
                   Nothing    -> error "unwrap: type error"
+
+--------------------------------------------------------------------------------

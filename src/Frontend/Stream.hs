@@ -36,9 +36,6 @@ map f (Stream s) = Stream $ fmap (fmap f) s
 --------------------------------------------------------------------------------
 -- **
 
-stream :: Program instr (IExp instr a) -> Stream instr (IExp instr a)
-stream prg = Stream $ return prg
-
 -- | Run stream to produce transition action
 run :: Stream instr a -> Program instr a
 run (Stream init) = join init
