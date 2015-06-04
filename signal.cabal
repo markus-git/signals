@@ -20,6 +20,7 @@ library
                        Backend.Knot,
                        Backend.Ex,
                        Backend.Nested
+                       Backend.VHDL.Syntax
 --                       Backend.Compiler.Sorter,
 --                       Backend.Compiler.Linker,
 --                       Backend.Compiler.Cycles
