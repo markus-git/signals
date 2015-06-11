@@ -755,29 +755,30 @@ data DiscreteRange =
     element_subtype_definition ::= subtype_indication
 -}
 
-data RecordTypeDefiniton = RecordTypeDefiniton [ElementDeclaration]
-
-data ElementDeclaration = ElementDeclaration {
-    elemd_identifier_list         :: IdentifierList
-  , elemd_record_type_simple_name :: ()
+data RecordTypeDefiniton = RecordTypeDefiniton {
+    rectd_element_declaration :: [ElementDeclaration]
+  , rectd_type_simple_name    :: SimpleName
   }
 
-type IdentifierList = [Identifier]
+data ElementDeclaration = ElementDeclaration {
+    elemd_identifier_list    :: IdentifierList
+  , elemd_subtype_definition :: ElementSubtypeDefinition
+  }
 
-type ElementSubtypeDefinition = ()
+type IdentifierList           = [Identifier]
+
+type ElementSubtypeDefinition = SubtypeIndication
 
 --------------------------------------------------------------------------------
 -- * 3.3 Access types
-
 {-
     access_type_definition ::= ACCESS subtype_indication
 -}
 
-data AccessTypeDefinition = AccessTypeDefinition ()
+data AccessTypeDefinition = AccessTypeDefinition SubtypeIndication
 
 --------------------------------------------------------------------------------
 -- ** 3.3.1 Incomplete type declarations
-
 {-
     incomplete_type_declaration ::= TYPE identifier ;
 -}
@@ -791,12 +792,11 @@ data IncompleteTypeDeclaration = IncompleteTypeDeclaration Identifier
 
 --------------------------------------------------------------------------------
 -- * 3.4 File types
-
 {-
     file_type_definition ::= FILE OF type_mark
 -}
 
-data FileTypeDeclaration = FileTypeDeclaration ()
+data FileTypeDefinition = FileTypeDefinition TypeMark
 
 --------------------------------------------------------------------------------
 -- ** 3.4.1 File operations
@@ -815,7 +815,6 @@ data FileTypeDeclaration = FileTypeDeclaration ()
 --                                Declarations
 --
 --------------------------------------------------------------------------------
-
 {-
     declaration ::=
         type_declaration
@@ -833,11 +832,22 @@ data FileTypeDeclaration = FileTypeDeclaration ()
       | package_declaration
 -}
 
-data Declaration = Declaration ()
+data Declaration = 
+    DType          TypeDeclaration
+  | DSubtype       SubtypeDeclaration
+  | DObject        ObjectDeclaration
+  | DAlias         AliasDeclaration
+  | DComponent     ComponentDeclaration
+  | DAttribute     AttributeDeclaration
+  | DGroupTemplate GroupTemplateDeclaration
+  | DGroup         GroupDeclaration
+  | DEntity        EntityDeclaration
+  | DConfiguration ConfigurationDeclaration
+  | DSubprogram    SubprogramDeclaration
+  | DPackage       PackageDeclaration
 
 --------------------------------------------------------------------------------
 -- * 4.1 Type declarations
-
 {-
     type_declaration ::=
         full_type_declaration
@@ -851,22 +861,25 @@ data Declaration = Declaration ()
       | composite_type_definition
       | access_type_definition
       | file_type_definition
+      | protected_type_definition  -- missing from ref. manual
 -}
 
-data TypeDeclaration =
-    TDFull    ()
-  | TDPartial ()
+data TypeDeclaration = TDFull FullTypeDeclaration | TDPartial IncompleteTypeDeclaration
 
 data FullTypeDeclaration = FullTypeDeclaration {
-    fullt_identifier      :: Identifier
-  , fullt_type_definition :: TypeDefinition
+    ftd_identifier      :: Identifier
+  , ftd_type_definition :: TypeDefinition
   }
 
-data TypeDefinition = TypeDefinition ()
+data TypeDefinition =
+    TDScalar       ScalarTypeDefinition
+  | TDComposite CompositeTypeDefinition
+  | TDAccess       AccessTypeDefinition
+  | TDFile           FileTypeDefinition
+--  | TDProt      ProtectedTypeDefinition
 
 --------------------------------------------------------------------------------
 -- * 4.2 Subtype declarations
-
 {-
     subtype_declaration ::=
       SUBTYPE identifier IS subtype_indication ;
@@ -884,30 +897,25 @@ data TypeDefinition = TypeDefinition ()
 -}
 
 data SubtypeDeclaration = SubtypeDeclaration {
-    subtyp_identifier :: Identifier
-  , subtyp_indication :: ()
+    sd_identifier               :: Identifier
+  , sd_indication               :: SubtypeIndication
   }
 
 data SubtypeIndication = SubtypeIndication {
-    subind_resolution_function_name :: Maybe ()
-  , subind_type_mark                :: ()
-  , subind_constraint               :: Maybe ()
+    si_resolution_function_name :: Maybe Name
+  , si_type_mark                :: TypeMark
+  , si_constraint               :: Maybe Constraint
   }
 
-data TypeMark =
-    TMName ()
-  | TMSub  ()
+data TypeMark   = TMType Name | TMSubtype Name
 
-data Constraint =
-    CRange ()
-  | CIndex ()
+data Constraint = CRange RangeConstraint | CIndex IndexConstraint
 
 --------------------------------------------------------------------------------
 -- * 4.3 Objects
 
 --------------------------------------------------------------------------------
 -- ** 4.3.1 Object declarations
-
 {-
     object_declaration ::=
         constant_declaration
@@ -924,7 +932,6 @@ data ObjectDeclaration =
 
 --------------------------------------------------------------------------------
 -- *** 4.3.1.1 Constant declarations
-
 {-
     constant_declaration ::=
       CONSTANT identifier_list : subtype_indication [ := expression ] ;
@@ -933,12 +940,11 @@ data ObjectDeclaration =
 data ConstantDeclaration = ConstantDeclaration {
     const_identifier_list    :: IdentifierList
   , const_subtype_indication :: SubtypeIndication
-  , const_expression         :: Maybe ()
+  , const_expression         :: Maybe Expression
   }
 
 --------------------------------------------------------------------------------
 -- *** 4.3.1.2 Signal declarations
-
 {-
     signal_declaration ::=
       SIGNAL identifier_list : subtype_indication [ signal_kind ] [ := expression ] ;
@@ -950,29 +956,27 @@ data SignalDeclaration = SignalDeclaration {
     signal_identifier_list    :: IdentifierList
   , signal_subtype_indication :: SubtypeIndication
   , signal_kind               :: SignalKind
-  , signal_expression         :: Maybe ()
+  , signal_expression         :: Maybe Expression
   }
 
 data SignalKind = Register | Bus
 
 --------------------------------------------------------------------------------
 -- *** 4.3.1.3 Variable declarations
-
 {-
-variable_declaration ::=
-	[ SHARED ] VARIABLE identifier_list : subtype_indication [ := expression ] ;
+    variable_declaration ::=
+      [ SHARED ] VARIABLE identifier_list : subtype_indication [ := expression ] ;
 -}
 
 data VariableDeclaration = VariableDeclaration {
-    var_shared             :: ()
+    var_shared             :: Bool
   , var_identifier_list    :: IdentifierList
   , var_subtype_indication :: SubtypeIndication
-  , var_expression         :: Maybe ()
+  , var_expression         :: Maybe Expression
   }
 
 --------------------------------------------------------------------------------
 -- *** 4.3.1.4 File declarations
-
 {-
     file_declaration ::=
       FILE identifier_list : subtype_indication [ file_open_information ] ;
@@ -984,21 +988,20 @@ data VariableDeclaration = VariableDeclaration {
 -}
 
 data FileDeclaration = FileDeclaration {
-    file_identifier_list    :: IdentifierList
-  , file_subtype_indication :: SubtypeIndication
-  , file_open_information   :: FileOpenInformation
+    fd_identifier_list      :: IdentifierList
+  , fd_subtype_indication   :: SubtypeIndication
+  , fd_open_information     :: FileOpenInformation
   }
 
 data FileOpenInformation = FileOpenInformation {
-    file_open_kind_expression :: Maybe ()
-  , file_logical_name         :: FileLogicalName
+    foi_open_kind_expression :: Maybe Expression
+  , foi_logical_name         :: FileLogicalName
   }
 
-type FileLogicalName = ()
+type FileLogicalName = Expression
 
 --------------------------------------------------------------------------------
 -- ** 4.3.2 Interface declarations
-
 {-
     interface_declaration ::=
         interface_constant_declaration
@@ -1023,26 +1026,25 @@ type FileLogicalName = ()
 
 data InterfaceDeclaration
   = InterfaceConstantDeclaration {
-        iconst_constant           :: Maybe ()
+        iconst_constant           :: Bool
       , iconst_identifier_list    :: IdentifierList
-      , iconst_in                 :: Maybe ()
       , iconst_subtype_indication :: SubtypeIndication
-      , iconst_static_expression  :: Maybe ()
+      , iconst_static_expression  :: Maybe Expression
     }
   | InterfaceSignalDeclaration {
-        isig_signal               :: Maybe ()
+        isig_signal               :: Bool
       , isig_identifier_list      :: IdentifierList
-      , isig_mode                 :: Maybe ()
+      , isig_mode                 :: Maybe Mode
       , isig_subtype_indication   :: SubtypeIndication
-      , isig_bus                  :: Maybe ()
-      , isig_static_expression    :: Maybe ()
+      , isig_bus                  :: Bool
+      , isig_static_expression    :: Maybe Expression
     }
   | InterfaceVariableDeclaration {
-        ivar_variable             :: Maybe ()
+        ivar_variable             :: Bool
       , ivar_identifier_list      :: IdentifierList
-      , ivar_mode                 :: Maybe ()
+      , ivar_mode                 :: Maybe Mode
       , ivar_subtype_indication   :: SubtypeIndication
-      , ivar_static_expression    :: Maybe ()
+      , ivar_static_expression    :: Maybe Expression
     }
   | InterfaceFileDeclaration {
         ifile_identifier_list     :: IdentifierList
@@ -1053,7 +1055,6 @@ data Mode = In | Out | InOut | Buffer | Linkage
 
 --------------------------------------------------------------------------------
 -- *** 4.3.2.1 Interface lists
-
 {-
     interface_list ::= interface_element { ; interface_element }
 
@@ -1066,7 +1067,6 @@ data InterfaceElement = InterfaceElement InterfaceDeclaration
 
 --------------------------------------------------------------------------------
 -- *** 4.3.2.2 Association lists
-
 {-
     association_element ::=
       [ formal_part => ] actual_part
@@ -1098,37 +1098,36 @@ data InterfaceElement = InterfaceElement InterfaceDeclaration
 -}
 
 data AssociationElement = AssociationElement {
-    assoc_formal_part :: ()
-  , assoc_actual_part :: ()
+    assoc_formal_part :: FormalPart
+  , assoc_actual_part :: ActualPart
   }
 
-data AssociationList = AssociationList [()]
+data AssociationList = AssociationList [AssociationElement]
 
 data FormalDesignator =
-    FDGen   ()
-  | FDPort  ()
-  | FDParam ()
+    FDGeneric   Name
+  | FDPort      Name
+  | FDParameter Name
 
 data FormalPart =
-    FPDesig ()
-  | FPFun   ()
-  | FPType  ()
+    FPDesignator          FormalDesignator
+  | FPFunction   Name     FormalDesignator
+  | FPType       TypeMark FormalDesignator
 
 data ActualDesignator =
-    ADExp  ()
-  | ADSig  ()
-  | ADVar  ()
-  | ADFile ()
+    ADExpression  Expression
+  | ADSignal      Name
+  | ADVariable    Name
+  | ADFile        Name
   | ADOpen
 
 data ActualPart =
-    APDesig ()
-  | APFun   ()
-  | APType  ()
+    APDesignator          ActualDesignator
+  | APFunction   Name     ActualDesignator
+  | APType       TypeMark ActualDesignator
 
 --------------------------------------------------------------------------------
 -- ** 4.3.3 Alias declarations
-
 {-
     alias_declaration ::=
       ALIAS alias_designator [ : subtype_indication ] IS name [ signature ] ;
@@ -1137,16 +1136,16 @@ data ActualPart =
 -}
 
 data AliasDeclaration = AliasDeclaration {
-    alias_designator         :: ()
-  , alias_subtype_indication :: ()
-  , alias_name               :: ()
-  , alias_signature          :: ()
+    alias_designator         :: AliasDesignator
+  , alias_subtype_indication :: Maybe SubtypeIndication
+  , alias_name               :: Name
+  , alias_signature          :: Maybe Signature
   }
 
 data AliasDesignator =
-    ADId   ()
-  | ADChar ()
-  | ADOp   ()
+    ADIdentifier Identifier
+  | ADCharacter  CharacterLiteral
+  | ADOperator   OperatorSymbol
 
 --------------------------------------------------------------------------------
 -- *** 4.3.3.1 Object aliases
@@ -1156,7 +1155,6 @@ data AliasDesignator =
 
 --------------------------------------------------------------------------------
 -- * 4.4 Attribute declarations
-
 {-
     attribute_declaration ::=
       ATTRIBUTE identifier : type_mark ;
@@ -1164,12 +1162,11 @@ data AliasDesignator =
 
 data AttributeDeclaration = AttributeDeclaration {
     attr_identifier :: Identifier
-  , attr_type_marke :: ()
+  , attr_type_marke :: TypeMark
   }
 
 --------------------------------------------------------------------------------
 -- * 4.5 Component declarations
-
 {-
     component_declaration ::=
       COMPONENT identifier [ IS ]
@@ -1180,15 +1177,14 @@ data AttributeDeclaration = AttributeDeclaration {
 
 data ComponentDeclaration = ComponentDeclaration {
     comp_identifier           :: Identifier
-  , comp_is                   :: ()
-  , comp_local_generic_clause :: Maybe ()
-  , comp_local_port_clause    :: Maybe ()
-  , comp_simple_name          :: Maybe ()
+  , comp_is                   :: Bool
+  , comp_local_generic_clause :: Maybe GenericClause
+  , comp_local_port_clause    :: Maybe PortClause
+  , comp_simple_name          :: Maybe SimpleName
   }
 
 --------------------------------------------------------------------------------
 -- * 4.6 Group template declarations
-
 {-
     group_template_declaration ::=
       GROUP identifier IS ( entity_class_entry_list ) ;
@@ -1200,20 +1196,19 @@ data ComponentDeclaration = ComponentDeclaration {
 -}
 
 data GroupTemplateDeclaration = GroupTemplateDeclaration {
-    groupt_identifier              :: Identifier
-  , groupt_entity_class_entry_list :: ()
+    gtd_identifier              :: Identifier
+  , gtd_entity_class_entry_list :: EntityClassEntryList
   }
 
 type EntityClassEntryList = [EntityClassEntry]
 
 data EntityClassEntry = EntityClassEntry {
-    entc_entity_class :: ()
+    entc_entity_class :: EntityClass
   , entc_multiple     :: Bool
   }
 
 --------------------------------------------------------------------------------
 -- * 4.7 Group declarations
-
 {-
     group_declaration ::=
       GROUP identifier : group_template_name ( group_constituent_list ) ;
