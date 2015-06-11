@@ -1220,16 +1220,15 @@ data EntityClassEntry = EntityClassEntry {
 
 data GroupDeclaration = GroupDeclaration {
     group_identifier       :: Identifier
-  , group_template_name    :: ()
+  , group_template_name    :: Name
   , group_constituent_list :: GroupConstituentList
   }
 
 type GroupConstituentList = [GroupConstituent]
 
 data GroupConstituent =
-    GCName ()
+    GCName Name
   | GCChar CharacterLiteral
-
 
 --------------------------------------------------------------------------------
 --
@@ -1241,7 +1240,6 @@ data GroupConstituent =
 
 --------------------------------------------------------------------------------
 -- * 5.1 Attribute specification
-
 {-
     attribute_specification ::=
       ATTRIBUTE attribute_designator OF entity_specification IS expression ;
@@ -1268,14 +1266,14 @@ data GroupConstituent =
 -}
 
 data AttributeSpecification = AttributeSpecification {
-    attribute_designator :: ()
-  , attribute_entity_specification :: ()
-  , attribute_expression :: ()
+    as_attribute_designator :: AttributeDesignator
+  , as_entity_specification :: EntitySpecification
+  , as_expression           :: Expression
   }
 
 data EntitySpecification = EntitySpecification {
-    entitys_name_list :: ()
-  , entitys_class     :: ()
+    es_entity_name_list     :: EntityNameList
+  , es_entity_class         :: EntityClass
   }
 
 data EntityClass =
@@ -1287,13 +1285,13 @@ data EntityClass =
   | GROUP      | FILE
 
 data EntityNameList =
-    ENLDesignators [()]
+    ENLDesignators [EntityDesignator]
   | ENLOthers
   | ENLAll
 
 data EntityDesignator = EntityDesignator {
-    entityd_tag :: ()
-  , signature   :: Maybe ()
+    ed_entity_tag :: EntityTag
+  , ed_signature  :: Maybe Signature
   }
 
 data EntityTag =
@@ -1303,7 +1301,6 @@ data EntityTag =
 
 --------------------------------------------------------------------------------
 -- * 5.2 Configuration specification
-
 {-
     configuration_specification ::=
       FOR component_specification binding_indication ;
@@ -1319,23 +1316,22 @@ data EntityTag =
 -}
 
 data ConfigurationSpecification = ConfigurationSpecification {
-    configs_component_specification :: ()
-  , configs_binding_indication      :: ()
+    cs_component_specification :: ComponentSpecification
+  , cs_binding_indication      :: BindingIndication
   }
 
 data ComponentSpecification = ComponentSpecification {
-    comps_instantiation_list :: ()
-  , comps_component_name     :: ()
+    cs_instantiation_list      :: InstantiationList
+  , cs_component_name          :: Name
   }
 
 data InstantiationList =
-    ILLabels [()]
+    ILLabels [Label]
   | ILOthers
   | ILAll
 
 --------------------------------------------------------------------------------
 -- ** 5.2.1 Binding indication
-
 {-
     binding_indication ::=
       [ USE entity_aspect ]
@@ -1344,14 +1340,13 @@ data InstantiationList =
 -}
 
 data BindingIndication = BindingIndication {
-    bindi_entity_aspect      :: Maybe ()
-  , bindi_generic_map_aspect :: Maybe ()
-  , bindi_port_map_aspect    :: Maybe ()
+    bi_entity_aspect      :: Maybe EntityAspect
+  , bi_generic_map_aspect :: Maybe GenericMapAspect
+  , bi_port_map_aspect    :: Maybe PortMapAspect
   }
 
 --------------------------------------------------------------------------------
 -- *** 5.2.1.1 Entity aspect
-
 {-
     entity_aspect ::=
         ENTITY entity_name [ ( architecture_identifier) ]
@@ -1360,13 +1355,12 @@ data BindingIndication = BindingIndication {
 -}
 
 data EntityAspect =
-    EAEntity ()
-  | EAConfig ()
+    EAEntity Name (Maybe Identifier)
+  | EAConfig Name
   | EAOpen
 
 --------------------------------------------------------------------------------
 -- *** 5.2.1.2 Generic map and port map aspects
-
 {-
     generic_map_aspect ::=
       GENERIC MAP ( generic_association_list )
@@ -1386,7 +1380,6 @@ data PortMapAspect    = PortMapAspect    AssociationList
 
 --------------------------------------------------------------------------------
 -- * 5.3 Disconnection specification
-
 {-
     disconnection_specification ::=
       DISCONNECT guarded_signal_specification AFTER time_expression ;
@@ -1401,17 +1394,17 @@ data PortMapAspect    = PortMapAspect    AssociationList
 -}
 
 data DisconnectionSpecification = DisconnectionSpecification {
-    discon_guarded_signal_specification :: GuardedSignalSpecification
-  , discon_time_expression :: ()
+    ds_guarded_signal_specification :: GuardedSignalSpecification
+  , ds_time_expression              :: Expression
   }
 
 data GuardedSignalSpecification = GuardedSignalSpecification {
-    guarded_signal_list :: SignalList
-  , guarded_type_mark   :: TypeMark
+    gs_guarded_signal_list          :: SignalList
+  , gs_type_mark                    :: TypeMark
   }
 
 data SignalList =
-    SLName ()
+    SLName   [Name]
   | SLOthers
   | SLAll
 
@@ -1425,7 +1418,6 @@ data SignalList =
 
 --------------------------------------------------------------------------------
 -- * 6.1 Names
-
 {-
     name ::=
 	simple_name
@@ -1441,20 +1433,19 @@ data SignalList =
 -}
 
 data Name =
-    NSimple ()
-  | NOp     ()
-  | NSelect ()
-  | NIndex  ()
-  | NSlice  ()
-  | NAttr   ()
+    NSimple SimpleName
+  | NOp     OperatorSymbol
+  | NSelect SelectedName
+  | NIndex  IndexedName
+  | NSlice  SliceName
+  | NAttr   AttributeName
 
 data Prefix =
     PName Name
-  | PFun  ()
+  | PFun  FunctionCall
 
 --------------------------------------------------------------------------------
 -- * 6.2 Simple names
-
 {-
     simple_name ::= identifier
 -}
@@ -1463,7 +1454,6 @@ type SimpleName = Identifier
 
 --------------------------------------------------------------------------------
 -- * 6.3 Selected names
-
 {-
     selected_name ::= prefix . suffix
 
@@ -1480,38 +1470,35 @@ data SelectedName = SelectedName {
   }
 
 data Suffix =
-    SSimple ()
+    SSimple SimpleName
   | SChar   CharacterLiteral
-  | SOp     ()
+  | SOp     OperatorSymbol
   | SAll
 
 --------------------------------------------------------------------------------
 -- * 6.4 Indexed names
-
 {-
     indexed_name ::= prefix ( expression { , expression } )
 -}
 
 data IndexedName = IndexedName {
     iname_prefix     :: Prefix
-  , iname_expression :: [()]
+  , iname_expression :: [Expression]
   }
 
 --------------------------------------------------------------------------------
 -- * 6.5 Slice names
-
 {-
     slice_name ::= prefix ( discrete_range )
 -}
 
 data SliceName = SliceName {
-    slicen_prefix         :: Prefix
-  , slicen_discrete_range :: DiscreteRange
+    slice_prefix         :: Prefix
+  , slice_discrete_range :: DiscreteRange
   }
 
 --------------------------------------------------------------------------------
 -- * 6.6 Attribute names
-
 {-
     attribute_name ::=
       prefix [ signature ] ' attribute_designator [ ( expression ) ]
@@ -1520,14 +1507,13 @@ data SliceName = SliceName {
 -}
 
 data AttributeName = AttributeName {
-    attrn_prefix    :: Prefix
-  , attrn_signature :: Signature
-  , attrn_attribute_designator :: AttributeDesignator
-  , attrn_expression :: [()]
+    aname_prefix               :: Prefix
+  , aname_signature            :: Signature
+  , aname_attribute_designator :: AttributeDesignator
+  , aname_expression           :: [Expression]
   }
 
 type AttributeDesignator = SimpleName
-
 
 --------------------------------------------------------------------------------
 --
@@ -1539,7 +1525,6 @@ type AttributeDesignator = SimpleName
 
 --------------------------------------------------------------------------------
 -- * 7.1 Rules for expressions
-
 {-
     expression ::=
 	relation { AND relation }
@@ -1589,26 +1574,26 @@ data Expression =
 
 data Relation         = Relation {
     relation_shift_expression :: ShiftExpression
-  , relation_operator         :: ()
+  , relation_operator         :: RelationOperator
   , retalion_operator_shift   :: ShiftExpression
   }
 
 data ShiftExpression  = ShiftExpression {
     shifte_simple_expression  :: SimpleExpression
-  , shifte_shift_operator     :: ()
+  , shifte_shift_operator     :: ShiftOperator
   , shifte_shift_expressino   :: SimpleExpression
   }
 
 data SimpleExpression = SimpleExpression {
     sexp_sign                 :: Maybe ()
   , sexp_term                 :: Term
-  , sexp_adding_operator      :: ()
+  , sexp_adding_operator      :: AddingOperator
   , sexp_adding_term          :: Term
   }
 
 data Term = Term {
     term_factor               :: Factor
-  , term_multiplying_operator :: ()
+  , term_multiplying_operator :: MultiplyingOperator
   , term_multiplying_factor   :: Factor
   }
 
@@ -1619,17 +1604,16 @@ data Factor =
 
 data Primary =
     PrimName  Name
-  | PrimLit   ()
-  | PrimAgg   ()
-  | PrimFun   ()
-  | PrimQual  ()
-  | PrimTCon  ()
-  | PrimAlloc ()
-  | PrimExp   ()
+  | PrimLit   Literal
+  | PrimAgg   Aggregate
+  | PrimFun   FunctionCall
+  | PrimQual  QualifiedExpression
+  | PrimTCon  TypeConversion
+  | PrimAlloc Allocator
+  | PrimExp   Expression
 
 --------------------------------------------------------------------------------
 -- * 7.2 Operators
-
 {-
     logical_operator ::= AND | OR | NAND | NOR | XOR | XNOR
 
@@ -1700,7 +1684,6 @@ data MiscellaneousOperator = Exp | Abs | Not
 
 --------------------------------------------------------------------------------
 -- ** 7.3.1 Literals
-
 {-
     literal ::=
 	numeric_literal
@@ -1715,15 +1698,15 @@ data MiscellaneousOperator = Exp | Abs | Not
 -}
 
 data Literal =
-    LitNum       ()
-  | LitEnum      ()
-  | LitString    ()
-  | LitBitString ()
+    LitNum       NumericLiteral
+  | LitEnum      EnumerationLiteral
+  | LitString    StringLiteral
+  | LitBitString BitStringLiteral
   | LitNull 
 
 data NumericLiteral =
-    NLitAbstract ()
-  | NLitPhysical ()
+    NLitAbstract AbstractLiteral
+  | NLitPhysical PhysicalLiteral
 
 --------------------------------------------------------------------------------
 -- ** 7.3.2 Aggregates
@@ -1773,7 +1756,6 @@ data Choice =
 
 --------------------------------------------------------------------------------
 -- ** 7.3.3 Function calls
-
 {-
     function_call ::=
       function_name [ ( actual_parameter_part ) ]
@@ -1782,15 +1764,14 @@ data Choice =
 -}
 
 data FunctionCall = FunctionCall {
-    function_name         :: ()
-  , actual_parameter_part :: ActualParameterPart
+    fc_function_name         :: Name
+  , fc_actual_parameter_part :: ActualParameterPart
   }
 
 type ActualParameterPart = AssociationList
 
 --------------------------------------------------------------------------------
 -- ** 7.3.4 Qualified expressions
-
 {-
     qualified_expression ::=
 	type_mark ' ( expression )
@@ -1803,7 +1784,6 @@ data QualifiedExpression =
 
 --------------------------------------------------------------------------------
 -- ** 7.3.5 Type conversions
-
 {-
     type_conversion ::= type_mark ( expression )
 -}
@@ -1815,7 +1795,6 @@ data TypeConversion = TypeConversion {
 
 --------------------------------------------------------------------------------
 -- ** 7.3.6 Allocators
-
 {-
     allocator ::=
 	NEW subtype_indication
@@ -2467,5 +2446,8 @@ data CharacterLiteral = CLit Char
 
 data StringLiteral    = SLit String
 
+data BitStringLiteral = BSLit ()
+
+data AbstractLiteral  = ALit ()
 
 --------------------------------------------------------------------------------
