@@ -32,8 +32,8 @@ data EntityDeclaration = EntityDeclaration {
 -- ** 1.1.1 Entity haeder
 {-
     entity_header ::=
-      [ formal _generic_clause ]
-      [ formal _port_clause ]
+      [ formal_generic_clause ]
+      [ formal_port_clause ]
 
     generic_clause ::= GENERIC ( generic_list ) ;
     port_clause    ::= PORT ( port_list ) ;
@@ -87,7 +87,7 @@ type PortList = InterfaceList
       | group_declaration
 -}
 
-data EntityDeclarativePart = EntityDeclarativePart [EntityDeclarativeItem]
+type EntityDeclarativePart = [EntityDeclarativeItem]
 
 data EntityDeclarativeItem =
     EDISubprogDecl  SubprogramDeclaration
@@ -118,7 +118,7 @@ data EntityDeclarativeItem =
       | passive_process_statement
 -}
 
-data EntityStatementPart = EntityStatementPart [EntityStatement]
+type EntityStatementPart = [EntityStatement]
 
 data EntityStatement =
     ESConcAssert   ConcurrentAssertionStatement
@@ -222,13 +222,13 @@ type ArchitectureStatementPart = [ConcurrentStatement]
 data ConfigurationDeclaration = ConfigurationDeclaration {
     config_identifier          :: Identifier
   , config_entity_name         :: Name
-  , config_declarative_part    :: ConfigurationDeclarationPart
+  , config_declarative_part    :: ConfigurationDeclarativePart
   , config_block_configuration :: BlockConfiguration
   }
 
-type ConfigurationDeclarationPart = [ConfigurationDeclarationItem]
+type ConfigurationDeclarativePart = [ConfigurationDeclarativeItem]
 
-data ConfigurationDeclarationItem =
+data ConfigurationDeclarativeItem =
     CDIUse   UseClause
   | CDIAttr  AttributeSpecification
   | CDIGroup GroupDeclaration
@@ -317,7 +317,7 @@ data ComponentConfiguration = ComponentConfiguration {
     operator_symbol ::= string_literal
 -}
 
-type SubprogramDeclaration = SubprogramSpecification
+type SubprogramDeclaration   = SubprogramSpecification
 
 data SubprogramSpecification = SubprogramSpecification {
     subprog_proc_designator            :: Designator
@@ -683,7 +683,7 @@ type FloatingTypeDefinition = RangeConstraint
 
 data CompositeTypeDefinition =
     CTDArray  ArrayTypeDefinition
-  | CTDRecord RecordTypeDefiniton
+  | CTDRecord RecordTypeDefinition
 
 --------------------------------------------------------------------------------
 -- ** 3.2.1 Array types
@@ -755,7 +755,7 @@ data DiscreteRange =
     element_subtype_definition ::= subtype_indication
 -}
 
-data RecordTypeDefiniton = RecordTypeDefiniton {
+data RecordTypeDefinition = RecordTypeDefinition {
     rectd_element_declaration :: [ElementDeclaration]
   , rectd_type_simple_name    :: SimpleName
   }
@@ -1026,22 +1026,19 @@ type FileLogicalName = Expression
 
 data InterfaceDeclaration
   = InterfaceConstantDeclaration {
-        iconst_constant           :: Bool
-      , iconst_identifier_list    :: IdentifierList
+        iconst_identifier_list    :: IdentifierList
       , iconst_subtype_indication :: SubtypeIndication
       , iconst_static_expression  :: Maybe Expression
     }
   | InterfaceSignalDeclaration {
-        isig_signal               :: Bool
-      , isig_identifier_list      :: IdentifierList
+        isig_identifier_list      :: IdentifierList
       , isig_mode                 :: Maybe Mode
       , isig_subtype_indication   :: SubtypeIndication
       , isig_bus                  :: Bool
       , isig_static_expression    :: Maybe Expression
     }
   | InterfaceVariableDeclaration {
-        ivar_variable             :: Bool
-      , ivar_identifier_list      :: IdentifierList
+        ivar_identifier_list      :: IdentifierList
       , ivar_mode                 :: Maybe Mode
       , ivar_subtype_indication   :: SubtypeIndication
       , ivar_static_expression    :: Maybe Expression
@@ -1063,7 +1060,7 @@ data Mode = In | Out | InOut | Buffer | Linkage
 
 data InterfaceList    = InterfaceList [InterfaceElement]
 
-data InterfaceElement = InterfaceElement InterfaceDeclaration
+type InterfaceElement = InterfaceDeclaration
 
 --------------------------------------------------------------------------------
 -- *** 4.3.2.2 Association lists
@@ -1098,7 +1095,7 @@ data InterfaceElement = InterfaceElement InterfaceDeclaration
 -}
 
 data AssociationElement = AssociationElement {
-    assoc_formal_part :: FormalPart
+    assoc_formal_part :: Maybe FormalPart
   , assoc_actual_part :: ActualPart
   }
 
@@ -1177,7 +1174,6 @@ data AttributeDeclaration = AttributeDeclaration {
 
 data ComponentDeclaration = ComponentDeclaration {
     comp_identifier           :: Identifier
-  , comp_is                   :: Bool
   , comp_local_generic_clause :: Maybe GenericClause
   , comp_local_port_clause    :: Maybe PortClause
   , comp_simple_name          :: Maybe SimpleName
@@ -1295,9 +1291,9 @@ data EntityDesignator = EntityDesignator {
   }
 
 data EntityTag =
-    ETName ()
-  | ETChar ()
-  | ETOp   ()
+    ETName SimpleName
+  | ETChar CharacterLiteral
+  | ETOp   OperatorSymbol
 
 --------------------------------------------------------------------------------
 -- * 5.2 Configuration specification
@@ -1508,9 +1504,9 @@ data SliceName = SliceName {
 
 data AttributeName = AttributeName {
     aname_prefix               :: Prefix
-  , aname_signature            :: Signature
+  , aname_signature            :: Maybe Signature
   , aname_attribute_designator :: AttributeDesignator
-  , aname_expression           :: [Expression]
+  , aname_expression           :: Maybe Expression
   }
 
 type AttributeDesignator = SimpleName
@@ -1543,7 +1539,6 @@ type AttributeDesignator = SimpleName
     simple_expression ::=
       [ sign ] term { adding_operator term }
 
-    
     term ::=
       factor { multiplying_operator factor }
 
@@ -1561,44 +1556,39 @@ type AttributeDesignator = SimpleName
       | type_conversion
       | allocator
       | ( expression )
-
 -}
 
 data Expression =
     EAnd  [Relation]
   | EOr   [Relation]
   | EXor  [Relation]
-  | ENAND [Relation]
-  | ENor  [Relation]
+  | ENAnd (Maybe (Relation))
+  | ENor  (Maybe (Relation))
   | EXNor [Relation]
 
 data Relation         = Relation {
     relation_shift_expression :: ShiftExpression
-  , relation_operator         :: RelationOperator
-  , retalion_operator_shift   :: ShiftExpression
+  , relation_operator         :: Maybe (RelationOperator, ShiftExpression)
   }
 
 data ShiftExpression  = ShiftExpression {
     shifte_simple_expression  :: SimpleExpression
-  , shifte_shift_operator     :: ShiftOperator
-  , shifte_shift_expressino   :: SimpleExpression
+  , shifte_shift_operator     :: Maybe (ShiftOperator, SimpleExpression)
   }
 
 data SimpleExpression = SimpleExpression {
-    sexp_sign                 :: Maybe ()
+    sexp_sign                 :: Maybe Sign
   , sexp_term                 :: Term
-  , sexp_adding_operator      :: AddingOperator
-  , sexp_adding_term          :: Term
+  , sexp_adding               :: Maybe (AddingOperator, Term)
   }
 
 data Term = Term {
     term_factor               :: Factor
-  , term_multiplying_operator :: MultiplyingOperator
-  , term_multiplying_factor   :: Factor
+  , term_multiplying          :: Maybe (MultiplyingOperator, Factor)
   }
 
 data Factor =
-    FacPrim Primary
+    FacPrim Primary (Maybe Primary)
   | FacAbs  Primary
   | FacNot  Primary
 
@@ -1831,7 +1821,6 @@ data Allocator =
 --                             Sequential statements
 --
 --------------------------------------------------------------------------------
-
 {-
     sequence_of_statements ::= { sequential_statement }
 
@@ -1854,23 +1843,22 @@ data Allocator =
 type SequenceOfStatements = [SequentialStatement]
 
 data SequentialStatement =
-    SWait      ()
-  | SAssert    ()
-  | SReport    ()
-  | SSignalAss ()
-  | SVarAss    ()
-  | SProc      ()
-  | SIf        ()
-  | SCase      ()
-  | SLoop      ()
-  | SNext      ()
-  | SExit      ()
-  | SReturn    ()
-  | SNull      ()
+    SWait      WaitStatement
+  | SAssert    AssertionStatement
+  | SReport    ReportStatement
+  | SSignalAss SignalAssignmentStatement
+  | SVarAss    VariableAssignmentStatement
+  | SProc      ProcedureCallStatement
+  | SIf        IfStatement
+  | SCase      CaseStatement
+  | SLoop      LoopStatement
+  | SNext      NextStatement
+  | SExit      ExitStatement
+  | SReturn    ReturnStatement
+  | SNull      NullStatement
 
 --------------------------------------------------------------------------------
 -- * 8.1 Wait statement
-
 {-
     wait_statement ::=
       [ label : ] WAIT [ sensitivity_clause ] [ condition_clause ] [ timeout_clause ] ;
@@ -1893,15 +1881,14 @@ data SensitivityClause = SensitivityClause SensitivityList
 
 data SensitivityList = SensitivityList [Name]
 
-data ConditionClause = ConditionClause Expression
+data ConditionClause = ConditionClause Condition
 
-data Condition = Condition Expression
+type Condition = Expression
 
 data TimeoutClause = TimeoutClause Expression
 
 --------------------------------------------------------------------------------
 -- * 8.2 Assertion statement
-
 {-
     assertion_statement ::= [ label : ] assertion ;
 
@@ -1912,14 +1899,13 @@ data TimeoutClause = TimeoutClause Expression
 -}
 
 data AssertionStatement = AssertionStatement
-      (Maybe ()) Assertion
+      (Maybe Label) Assertion
 
 data Assertion = Assertion
       Condition (Maybe Expression) (Maybe Expression)
 
 --------------------------------------------------------------------------------
 -- * 8.3 Report statement
-
 {-
     report_statement ::=
       [ label : ]
@@ -1928,11 +1914,10 @@ data Assertion = Assertion
 -}
 
 data ReportStatement = ReportStatement
-      (Maybe ()) Expression (Maybe Expression)
+      (Maybe Label) Expression (Maybe Expression)
 
 --------------------------------------------------------------------------------
 -- * 8.4 Signal assignment statement
-
 {-
     signal_assignment_statement ::=
       [ label : ] target <= [ delay_mechanism ] waveform ;
@@ -1951,7 +1936,7 @@ data ReportStatement = ReportStatement
 -}
 
 data SignalAssignmentStatement = SignalAssignmentStatement
-      (Maybe ()) Target (Maybe DelayMechanism) Waveform
+      (Maybe Label) Target (Maybe DelayMechanism) Waveform
 
 data DelayMechanism =
     DMechTransport
@@ -1962,12 +1947,11 @@ data Target =
   | TargetAgg  Aggregate
 
 data Waveform =
-    WaveElem [()]
+    WaveElem [WaveformElement]
   | WaveUnaffected
 
 --------------------------------------------------------------------------------
 -- ** 8.4.1 Updating a projected output waveform
-
 {-
     waveform_element ::=
         value_expression [ after time_expression ]
@@ -1980,14 +1964,13 @@ data WaveformElement =
 
 --------------------------------------------------------------------------------
 -- * 8.5 Variable assignment statement
-
 {-
     variable_assignment_statement ::=
       [ label : ] target := expression ;
 -}
 
 data VariableAssignmentStatement = VariableAssignmentStatement
-      (Maybe ()) Target Expression
+      (Maybe Label) Target Expression
 
 --------------------------------------------------------------------------------
 -- ** 8.5.1 Array variable assignments
@@ -1996,7 +1979,6 @@ data VariableAssignmentStatement = VariableAssignmentStatement
 
 --------------------------------------------------------------------------------
 -- * 8.6 Procedure call statement
-
 {-
     procedure_call_statement ::= [ label : ] procedure_call ;
 
@@ -2004,14 +1986,13 @@ data VariableAssignmentStatement = VariableAssignmentStatement
 -}
 
 data ProcedureCallStatement = ProcedureCallStatement
-      (Maybe ()) ProcedureCall
+      (Maybe Label) ProcedureCall
 
 data ProcedureCall = ProcedureCall
       Name (Maybe ActualParameterPart)
 
 --------------------------------------------------------------------------------
 -- * 8.7 If statement
-
 {-
     if_statement ::=
       [ if_label : ]
@@ -2025,20 +2006,18 @@ data ProcedureCall = ProcedureCall
 -}
 
 data IfStatement = IfStatement {
-    if_label     :: ()
+    if_label     :: Maybe Label
   , if_then      :: (Condition, SequenceOfStatements)
   , if_also      :: [(Condition, SequenceOfStatements)]
   , if_else      :: Maybe (Condition, SequenceOfStatements)
-  , if_label_end :: ()
   }
 
 --------------------------------------------------------------------------------
 -- * 8.8 Case statement
-
 {-
     case_statement ::=
       [ case_label : ]
-        CASE expression is
+        CASE expression IS
           case_statement_alternative
           { case_statement_alternative }
         END CASE [ case_label ] ;
@@ -2049,17 +2028,15 @@ data IfStatement = IfStatement {
 -}
 
 data CaseStatement = CaseStatement {
-    case_label        :: ()
+    case_label        :: Maybe Label
   , case_expression   :: Expression
-  , case_alternatives :: CaseStatementAlternative
-  , case_label_end    :: ()
+  , case_alternatives :: [CaseStatementAlternative]
   }
 
-data CaseStatementAlternative = CaseStatementAlternative (Choices, SequenceOfStatements)
+data CaseStatementAlternative = CaseStatementAlternative Choices SequenceOfStatements
 
 --------------------------------------------------------------------------------
 -- * 8.9 Loop statement
-
 {-
     loop_statement ::=
       [ loop_label : ]
@@ -2076,10 +2053,9 @@ data CaseStatementAlternative = CaseStatementAlternative (Choices, SequenceOfSta
 -}
 
 data LoopStatement = LoopStatement {
-    loop_label            :: ()
+    loop_label            :: Maybe Label
   , loop_iteration_scheme :: IterationScheme
   , loop_statements       :: SequenceOfStatements
-  , loop_label_end        :: ()
   }
 
 data IterationScheme =
@@ -2093,55 +2069,51 @@ data ParameterSpecification = ParameterSpecification {
 
 --------------------------------------------------------------------------------
 -- * 8.10 Next statement
-
 {-
     next_statement ::=
       [ label : ] NEXT [ loop_label ] [ WHEN condition ] ;
 -}
 
 data NextStatement = NextStatement {
-    next_label :: ()
-  , next_loop  :: ()
+    next_label :: Maybe Label
+  , next_loop  :: Maybe Label
   , next_when  :: Condition
   }
 
 --------------------------------------------------------------------------------
 -- * 8.11 Exit statement
-
 {-
     exit_statement ::=
       [ label : ] EXIT [ loop_label ] [ WHEN condition ] ;
 -}
 
 data ExitStatement = ExitStatement {
-    exit_label :: ()
-  , exit_loop  :: ()
+    exit_label :: Maybe Label
+  , exit_loop  :: Maybe Label
   , exit_when  :: Condition
   }
 
 --------------------------------------------------------------------------------
 -- * 8.12 Return statement
-
 {-
     return_statement ::=
       [ label : ] RETURN [ expression ] ;
 -}
 
 data ReturnStatement = ReturnStatement {
-    return_label      :: ()
+    return_label      :: Maybe Label
   , return_expression :: Expression
   }
 
 --------------------------------------------------------------------------------
 -- * 8.13 Null statement
-
 {-
     null_statement ::=
-      [ label : ] null ;
+      [ label : ] NULL ;
 -}
 
 data NullStatement = NullStatement {
-    null_label :: ()
+    null_label :: Maybe Label
   }
 
 --------------------------------------------------------------------------------
@@ -2164,17 +2136,16 @@ data NullStatement = NullStatement {
 -}
 
 data ConcurrentStatement =
-    ConBlock     ()
-  | ConProcesse  ()
-  | ConProcCall  ()
-  | ConAssertion ()
-  | ConSignalAss ()
-  | ConComponent ()
-  | ConGenerate  ()
+    ConBlock     BlockStatement
+  | ConProcess   ProcessStatement
+  | ConProcCall  ConcurrentProcedureCallStatement
+  | ConAssertion ConcurrentAssertionStatement
+  | ConSignalAss ConcurrentSignalAssignmentStatement
+  | ConComponent ComponentInstantiationStatement
+  | ConGenerate  GenerateStatement
 
 --------------------------------------------------------------------------------
 -- * 9.1 Block statement
-
 {-
     block_statement ::=
       block_label :
@@ -2199,26 +2170,24 @@ data ConcurrentStatement =
 -}
 
 data BlockStatement = BlockStatement {
-    blocks_label :: ()
+    blocks_label            :: Label
   , blocks_guard_expression :: Maybe Expression
-  , blocks_is               :: ()
   , blocks_header           :: BlockHeader
   , blocks_declarative_part :: BlockDeclarativePart
   , blocks_statment_part    :: BlockStatementPart
   }
 
 data BlockHeader = BlockHeader {
-    blockh_generic_clause :: Maybe (GenericClause, Maybe ())
-  , blockh_port_clause    :: Maybe (PortClause, Maybe ())
+    blockh_generic_clause   :: Maybe (GenericClause, Maybe GenericMapAspect)
+  , blockh_port_clause      :: Maybe (PortClause,    Maybe PortMapAspect)
   }
 
-data BlockDeclarativePart = BlockDeclarativePart [BlockDeclarativeItem]
+type BlockDeclarativePart = [BlockDeclarativeItem]
 
-data BlockStatementPart = BlockStatementPart [ConcurrentStatement]
+type BlockStatementPart   = [ConcurrentStatement]
 
 --------------------------------------------------------------------------------
 -- * 9.2 Process statement
-
 {-
     process_statement ::=
       [ process_label : ]
@@ -2247,19 +2216,18 @@ data BlockStatementPart = BlockStatementPart [ConcurrentStatement]
 -}
 
 data ProcessStatement = ProcessStatement {
-    procs_label            :: ()
+    procs_label            :: Maybe Label
   , procs_postponed        :: Bool
   , procs_sensitivity_list :: Maybe SensitivityList
-  , procs_declarative_part :: ()
-  , procs_statement_part   :: ()
-  , procs_label_end        :: ()
+  , procs_declarative_part :: ProcessDeclarativePart
+  , procs_statement_part   :: ProcessStatement
   }
 
-data ProcessDeclarativePart = ProcessDeclarativePart [ProcessDeclarativeItem]
+type ProcessDeclarativePart = [ProcessDeclarativeItem]
 
 data ProcessDeclarativeItem =
-    ProcDISubprogDecl ()
-  | ProcDISubprogBody ()
+    ProcDISubprogDecl SubprogramDeclaration
+  | ProcDISubprogBody SubprogramBody
   | ProcDIType        TypeDeclaration
   | ProcDISubtype     SubtypeDeclaration
   | ProcDIConstant    ConstantDeclaration
@@ -2268,40 +2236,37 @@ data ProcessDeclarativeItem =
   | ProcDIAlias       AliasDeclaration
   | ProcDIAttrDecl    AttributeDeclaration
   | ProcDIAttrSpec    AttributeSpecification
-  | ProcDIUseClause   ()
-  | ProcDIGroupType   ()
+  | ProcDIUseClause   UseClause
+--  | ProcDIGroupType   ()
 
 --------------------------------------------------------------------------------
 -- * 9.3 Concurrent procedure call statements
-
 {-
     concurrent_procedure_call_statement ::=
       [ label : ] [ POSTPONED ] procedure_call ;
 -}
 
 data ConcurrentProcedureCallStatement = ConcurrentProcedureCallStatement {
-    cpcs_label          :: Maybe ()
+    cpcs_label          :: Maybe Label
   , cpcs_postponed      :: Bool
-  , cpcs_procedure_call :: ()
+  , cpcs_procedure_call :: ProcedureCall
   }
 
 --------------------------------------------------------------------------------
 -- * 9.4 Concurrent assertion statements
-
 {-
     concurrent_assertion_statement ::=
-      [ label : ] [ postponed ] assertion ;
+      [ label : ] [ POSTPONED ] assertion ;
 -}
 
 data ConcurrentAssertionStatement = ConcurrentAssertionStatement {
-    cas_label          :: Maybe ()
+    cas_label          :: Maybe Label
   , cas_postponed      :: Bool
   , cas_assertion      :: Assertion
   }
 
 --------------------------------------------------------------------------------
 -- * 9.5 Concurrent signal assignment statements
-
 {-
     concurrent_signal_assignment_statement ::=
         [ label : ] [ POSTPONED ] conditional_signal_assignment
@@ -2310,26 +2275,25 @@ data ConcurrentAssertionStatement = ConcurrentAssertionStatement {
     options ::= [ GUARDED ] [ delay_mechanism ]
 -}
 
-data ConcurrentSignalAssignmentStatements =
+data ConcurrentSignalAssignmentStatement =
     CSASCond {
-      csas_cond_label               :: Maybe ()
+      csas_cond_label               :: Maybe Label
     , csas_cond_postponed           :: Bool
-    , csas_cond_signal_assignment   :: ()
+    , csas_cond_signal_assignment   :: ConditionalSignalAssignment
     }
   | CSASSelect {
-      csas_select_label             :: Maybe ()
+      csas_select_label             :: Maybe Label
     , csas_select_postponed         :: Bool
-    , csas_select_signal_assignment :: ()
+    , csas_select_signal_assignment :: SelectedSignalAssignment
     }
 
 data Options = Options {
     options_guarded         :: Bool
-  , options_delay_mechanism :: ()
+  , options_delay_mechanism :: Maybe DelayMechanism
   }
 
 --------------------------------------------------------------------------------
 -- ** 9.5.1 Conditional signal assignments
-
 {-
     conditional_signal_assignment ::=
       target <= options conditional_waveforms ;
@@ -2340,16 +2304,18 @@ data Options = Options {
 -}
 
 data ConditionalSignalAssignment = ConditionalSignalAssignment {
-    csa_target               :: Target
-  , csa_options              :: Options
-  , csa_conditional_waveform :: ()
+    csa_target                :: Target
+  , csa_options               :: Options
+  , csa_conditional_waveforms :: ConditionalWaveforms
   }
 
-data ConditionalWaveform = ConditionalWaveform [(Waveform, Condition)]
+data ConditionalWaveforms = ConditionalWaveforms {
+    cw_optional              :: [(Waveform, Condition)]
+  , cw_wave                  :: (Waveform, Maybe Condition)
+  }
 
 --------------------------------------------------------------------------------
 -- ** 9.5.2 Selected signal assignments
-
 {-
     selected_signal_assignment ::=
       WITH expression SELECT
@@ -2360,7 +2326,7 @@ data ConditionalWaveform = ConditionalWaveform [(Waveform, Condition)]
       waveform WHEN choices
 -}
 
-data SelecedSignalAssignment = SelecedSignalAssignment {
+data SelectedSignalAssignment = SelectedSignalAssignment {
     ssa_expression         :: Expression
   , ssa_target             :: Target
   , ssa_options            :: Options
@@ -2371,7 +2337,6 @@ data SelectedWaveforms = SelectedWaveforms [(Waveform, Choices)]
 
 --------------------------------------------------------------------------------
 -- * 9.6 Component instantiation statements
-
 {-
     component_instantiation_statement ::=
       instantiation_label :
@@ -2386,10 +2351,10 @@ data SelectedWaveforms = SelectedWaveforms [(Waveform, Choices)]
 -}
 
 data ComponentInstantiationStatement = ComponentInstantiationStatement {
-    cis_instantiation_label :: ()
+    cis_instantiation_label :: Label
   , cis_instantiated_unit   :: InstantiatedUnit
-  , cis_generic_map_aspect  :: GenericMapAspect
-  , cis_port_map_aspect     :: PortMapAspect
+  , cis_generic_map_aspect  :: Maybe GenericMapAspect
+  , cis_port_map_aspect     :: Maybe PortMapAspect
   }
 
 data InstantiatedUnit =
@@ -2405,7 +2370,6 @@ data InstantiatedUnit =
 
 --------------------------------------------------------------------------------
 -- * 9.7 Generate statements
-
 {-
     generate_statement ::=
       generate_label :
@@ -2416,13 +2380,13 @@ data InstantiatedUnit =
         END GENERATE [ generate_label ] ;
 
     generation_scheme ::=
-        for generate_parameter_specification
-      | if condition
+        FOR generate_parameter_specification
+      | IF condition
 
     label ::= identifier
 -}
 
-data GenerationStatement = GenerationStatement {
+data GenerateStatement = GenerateStatement {
     gens_label                  :: Label
   , gens_generation_scheme      :: GenerationScheme
   , gens_block_declarative_item :: Maybe (BlockDeclarativeItem)
@@ -2446,8 +2410,68 @@ data CharacterLiteral = CLit Char
 
 data StringLiteral    = SLit String
 
-data BitStringLiteral = BSLit ()
-
-data AbstractLiteral  = ALit ()
-
 --------------------------------------------------------------------------------
+--
+--                                  - ToDo -
+--
+--------------------------------------------------------------------------------
+
+data AbstractLiteral  = AbstractLiteral
+
+data Base = Base
+
+data BaseSpecifier = BaseSpecifier
+
+data BaseUnitDeclaration = BaseUnitDeclaration
+
+data BasedInteger = BasedInteger
+
+data BasedLiteral = BasedLiteral
+
+data BasicCharacter = BasicCharacter
+
+data BasicGraphicCharacter = BasicGraphicCharacter
+
+data BasicIdentifier = BasicIdentifier
+
+data BitStringLiteral = BitStringLiteral
+
+data BitValue = BitValue
+
+data ContextClause = ContextClause
+
+data ContextItem = ContextItem
+
+data DecimalLiteral = DecimalLiteral
+
+data DesignFile = DesignFile
+
+data DesignUnit = DesignUnit
+
+data Exponent = Exponent
+
+data ExtendedDigit = ExtendedDigit
+
+data ExtendedIdentifier = ExtendedIdentifier
+
+data GraphicCharacter = GraphicCharacter
+
+data Letter = Letter
+
+data LetterOrDigit = LetterOrDigit
+
+data LibraryClause = LibraryClause
+
+data LibraryUnit = LibraryUnit
+
+data LogicalName = LogicalName
+
+data LogicalNameList = LogicalNameList
+
+data PrimaryUnit = PrimaryUnit
+
+data ProcessStatementPart = ProcessStatementPart
+
+data RelationalOperator = RelationalOperator
+
+data SecondaryUnit = SecondaryUnit
