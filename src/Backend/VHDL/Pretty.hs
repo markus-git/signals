@@ -94,7 +94,7 @@ instance Pretty AssertionStatement where
   pp (AssertionStatement l a) = label l <+> pp a <+> semi
 
 instance Pretty AssociationElement where
-  pp (AssociationElement f a) = conds (text "=>") f <+> pp a
+  pp (AssociationElement f a) = condR (text "=>") f <+> pp a
 
 instance Pretty AssociationList where
   pp (AssociationList as) = commaSep $ map pp as
@@ -131,7 +131,7 @@ instance Pretty BasicIdentifier where pp = undefined -- todo
 
 instance Pretty BindingIndication where
   pp (BindingIndication e g p) =
-    vcat [conds (text "USE") e, cond id g, cond id p]
+    vcat [condR (text "USE") e, cond id g, cond id p]
 
 instance Pretty BitStringLiteral where pp = undefined -- todo
 
@@ -216,7 +216,7 @@ instance Pretty ComponentConfiguration where
   pp (ComponentConfiguration s i c) =
     vcat [ text "FOR" <+> pp s
          , indent $ vcat
-           [ conds semi i
+           [ condR semi i
            , cond  id c
            ]
          , text "END FOR" <+> semi
@@ -272,7 +272,7 @@ instance Pretty ConditionalSignalAssignment where
 
 instance Pretty ConditionalWaveforms where
   pp (ConditionalWaveforms ws (w, c)) =
-      vcat ws' $$ pp w <+> conds (text "WHEN") c
+      vcat ws' $$ pp w <+> condL (text "WHEN") c
     where
       ws' = map (\(w, c) -> pp w <+> text "WHEN" <+> pp c <+> text "ELSE") ws
   
@@ -302,7 +302,7 @@ instance Pretty ConfigurationSpecification where
 
 instance Pretty ConstantDeclaration where
   pp (ConstantDeclaration is s e) =
-    text "CONSTANT" <+> pp is <+> colon <+> pp s <+> conds (text ":=") e
+    text "CONSTANT" <+> pp is <+> colon <+> pp s <+> condL (text ":=") e
 
 instance Pretty ConstrainedArrayDefinition where
   pp (ConstrainedArrayDefinition i s) = text "ARRAY" <+> pp i <+> text "OF" <+> pp s
@@ -333,7 +333,7 @@ instance Pretty Declaration where
 
 instance Pretty DelayMechanism where
   pp (DMechTransport)  = text "TRANSPORT"
-  pp (DMechInertial e) = conds (text "REJECT") e <+> text "INERTIAL"
+  pp (DMechInertial e) = condL (text "REJECT") e <+> text "INERTIAL"
 
 instance Pretty DesignFile where pp = undefined -- todo
 
@@ -356,7 +356,7 @@ instance Pretty DiscreteRange where
   pp (DRRange r) = pp r
 
 instance Pretty ElementAssociation where
-  pp (ElementAssociation c e) = conds (text "=>") c <+> pp e
+  pp (ElementAssociation c e) = condR (text "=>") c <+> pp e
 
 instance Pretty ElementDeclaration where
   pp (ElementDeclaration is s) = pp is <+> colon <+> pp s <+> semi
@@ -441,117 +441,212 @@ instance Pretty EntityStatement where
 
 --instance Pretty EntityStatementPart where pp = undefined
 
-instance Pretty EntityTag where pp = undefined
+instance Pretty EntityTag where
+  pp (ETName n) = pp n
+  pp (ETChar c) = pp c
+  pp (ETOp o)   = pp o
 
-instance Pretty EnumerationLiteral where pp = undefined
+instance Pretty EnumerationLiteral where
+  pp (EId i)   = pp i
+  pp (EChar c) = pp c
 
-instance Pretty EnumerationTypeDefinition where pp = undefined
+instance Pretty EnumerationTypeDefinition where
+  pp (EnumerationTypeDefinition es) = commaSep $ fmap pp es
 
-instance Pretty ExitStatement where pp = undefined
+instance Pretty ExitStatement where
+  pp (ExitStatement l b c) =
+        condR colon l
+    <+> text "NEXT" <+> cond id b
+    <+> cond ((<+>) (text "WHEN")) c <+> semi
 
-instance Pretty Exponent where pp = undefined
+instance Pretty Exponent where pp = undefined -- todo
 
-instance Pretty Expression where pp = undefined
+instance Pretty Expression where
+  pp (EAnd rs)  = pp rs
+  pp (EOr rs)   = pp rs
+  pp (EXor rs)  = pp rs
+  pp (ENAnd rs) = cond id rs
+  pp (ENor rs)  = cond id rs
+  pp (EXNor rs) = pp rs
 
-instance Pretty ExtendedDigit where pp = undefined
+instance Pretty ExtendedDigit where pp = undefined -- todo
 
-instance Pretty ExtendedIdentifier where pp = undefined
+instance Pretty ExtendedIdentifier where pp = undefined -- todo
 
-instance Pretty Factor where pp = undefined
+instance Pretty Factor where
+  pp (FacPrim p mp) = pp p <+> condL (text "**") mp
+  pp (FacAbs p)     = text "ABS" <+> pp p
+  pp (FacNot p)     = text "NOT" <+> pp p
 
-instance Pretty FileDeclaration where pp = undefined
+instance Pretty FileDeclaration where
+  pp (FileDeclaration is s o) = text "FILE" <+> pp is <+> colon <+> pp s <+> cond id o <+> semi
 
 --instance Pretty FileLogicalName where pp = undefined
 
-instance Pretty FileOpenInformation where pp = undefined
+instance Pretty FileOpenInformation where
+  pp (FileOpenInformation e n) = condL (text "OPEN") e <+> text "IS" <+> pp n
 
-instance Pretty FileTypeDefinition where pp = undefined
+instance Pretty FileTypeDefinition where
+  pp (FileTypeDefinition t) = text "FILE OF" <+> pp t
 
 --instance Pretty FloatingTypeDefinition where pp = undefined
 
-instance Pretty FormalDesignator where pp = undefined
+instance Pretty FormalDesignator where
+  pp (FDGeneric n)   = pp n
+  pp (FDPort n)      = pp n
+  pp (FDParameter n) = pp n
 
 --instance Pretty FormalParameterList where pp = undefined
 
-instance Pretty FormalPart where pp = undefined
+instance Pretty FormalPart where
+  pp (FPDesignator d) = pp d
+  pp (FPFunction n d) = pp n <+> parens (pp d)
+  pp (FPType t d)     = pp t <+> parens (pp d)
 
-instance Pretty FullTypeDeclaration where pp = undefined
+instance Pretty FullTypeDeclaration where
+  pp (FullTypeDeclaration i t) = text "TYPE" <+> pp i <+> text "IS" <+> pp t <+> semi
 
-instance Pretty FunctionCall where pp = undefined
+instance Pretty FunctionCall where
+  pp (FunctionCall n p) = pp n <+> cond parens p
 
-instance Pretty GenerateStatement where pp = undefined
+instance Pretty GenerateStatement where
+  pp (GenerateStatement l g d s) =
+    pp l <+> colon `hangs` vcat
+      [ pp g <+> text "GENERATE"
+      , cond indent d
+      , cond (const $ text "BEGIN") d
+      , indent $ vcat $ fmap pp s
+      , text "END GENERATE" <+> pp l <+> semi
+      ]
 
-instance Pretty GenerationScheme where pp = undefined
+instance Pretty GenerationScheme where
+  pp (GSFor p) = pp p
+  pp (GSIf c)  = pp c
 
-instance Pretty GenericClause where pp = undefined
+instance Pretty GenericClause where
+  pp (GenericClause ls) = text "GENERIC" <+> parens (pp ls)
 
 --instance Pretty GenericList where pp = undefined
 
-instance Pretty GenericMapAspect where pp = undefined
+instance Pretty GenericMapAspect where
+  pp (GenericMapAspect as) = text "GENERIC MAP" <+> parens (pp as)
 
-instance Pretty GraphicCharacter where pp = undefined
+instance Pretty GraphicCharacter where pp = undefined -- todo
 
-instance Pretty GroupConstituent where pp = undefined
+instance Pretty GroupConstituent where
+  pp (GCName n) = pp n
+  pp (GCChar c) = pp c
 
 --instance Pretty GroupConstituentList where pp = undefined
 
-instance Pretty GroupTemplateDeclaration where pp = undefined
+instance Pretty GroupTemplateDeclaration where
+  pp (GroupTemplateDeclaration i cs) = text "GROUP" <+> pp i <+> text "IS" <+> parens (pp cs) <+> semi
 
-instance Pretty GroupDeclaration where pp = undefined
+instance Pretty GroupDeclaration where
+  pp (GroupDeclaration i n cs) = text "GROUP" <+> pp i <+> colon <+> pp n <+> parens (pp cs) <+> semi
 
-instance Pretty GuardedSignalSpecification where pp = undefined
+instance Pretty GuardedSignalSpecification where
+  pp (GuardedSignalSpecification ss t) = pp ss <+> colon <+> pp t
 
-instance Pretty Identifier where pp = undefined
+instance Pretty Identifier where
+  pp (Ident i) = text i
 
 --instance Pretty IdentifierList where pp = undefined
 
-instance Pretty IfStatement where pp = undefined
+instance Pretty IfStatement where
+  pp (IfStatement l (tc, ts) a e) =
+    condR colon l `hangs` vcat
+      [ text "IF" <+> pp tc <+> text "THEN"
+      , vcat $ fmap (\(c, s) -> text "ELSEIF" <+> pp c <+> text "THEN" `hangs` pp s) a
+      , cond (hangs (text "ELSE")) e
+      , text "END IF" <+> cond id l <+> semi
+      ]
 
-instance Pretty IncompleteTypeDeclaration where pp = undefined
+instance Pretty IncompleteTypeDeclaration where
+  pp (IncompleteTypeDeclaration i) = text "TYPE" <+> pp i <+> semi
 
-instance Pretty IndexConstraint where pp = undefined
+instance Pretty IndexConstraint where
+  pp (IndexConstraint rs) = parens (commaSep $ map pp rs)
 
-instance Pretty IndexSpecification where pp = undefined
+instance Pretty IndexSpecification where
+  pp (ISRange r) = pp r
+  pp (ISExp e)   = pp e
 
-instance Pretty IndexSubtypeDefinition where pp = undefined
+instance Pretty IndexSubtypeDefinition where
+  pp (IndexSubtypeDefinition t) = pp t <+> text "RANGE" <+> semi
 
-instance Pretty IndexedName where pp = undefined
+instance Pretty IndexedName where
+  pp (IndexedName p es) = pp p <+> parens (commaSep $ map pp es)
 
-instance Pretty InstantiatedUnit where pp = undefined
+instance Pretty InstantiatedUnit where
+  pp (IUComponent n) = text "COMPONENT" <+> pp n
+  pp (IUEntity n i)  = text "ENTITY" <+> pp n <+> cond parens i
+  pp (IUConfig n)    = text "CONFIGURATION" <+> pp n
 
-instance Pretty InstantiationList where pp = undefined
+instance Pretty InstantiationList where
+  pp (ILLabels ls) = commaSep $ map pp ls
+  pp (ILOthers)    = text "OTHERS"
+  pp (ILAll)       = text "ALL"
 
-instance Pretty Integer where pp = undefined
+instance Pretty Integer where pp = integer
 
 --instance Pretty IntegerTypeDefinition where pp = undefined
 
-instance Pretty InterfaceDeclaration where pp = undefined
+instance Pretty InterfaceDeclaration where
+  pp (InterfaceConstantDeclaration is s e) =
+    text "CONSTANT" <+> pp is <+> colon <+> text "IN" <+> pp s <+> condL (text ":=") e
+  pp (InterfaceSignalDeclaration is m s b e) =
+    text "SIGNAL" <+> pp is <+> colon <+> cond id m <+> pp s <+> when b (text "BUS") <+> condL (text ":=") e
+  pp (InterfaceVariableDeclaration is m s e) =
+    text "VARIABLE" <+> pp is <+> colon <+> cond id m <+> pp s <+> condL (text ":=") e
+  pp (InterfaceFileDeclaration is s) =
+    text "FILE" <+> pp is <+> colon <+> pp s
 
 --instance Pretty InterfaceElement where pp = undefined
 
-instance Pretty InterfaceList where pp = undefined
+instance Pretty InterfaceList where
+  pp (InterfaceList es) = semiSep $ map pp es
 
-instance Pretty IterationScheme where pp = undefined
+instance Pretty IterationScheme where
+  pp (IterWhile c) = text "WHILE" <+> pp c
+  pp (IterFor p)   = text "FOR" <+> pp p
 
 --instance Pretty Label where pp = undefined
 
-instance Pretty Letter where pp = undefined
+instance Pretty Letter where pp = undefined -- todo
 
-instance Pretty LetterOrDigit where pp = undefined
+instance Pretty LetterOrDigit where pp = undefined -- todo
 
-instance Pretty LibraryClause where pp = undefined
+instance Pretty LibraryClause where pp = undefined -- todo
 
-instance Pretty LibraryUnit where pp = undefined
+instance Pretty LibraryUnit where pp = undefined -- todo
 
-instance Pretty Literal where pp = undefined
+instance Pretty Literal where
+  pp (LitNum n)       = pp n
+  pp (LitEnum e)      = pp e
+  pp (LitString s)    = pp s
+  pp (LitBitString b) = pp b
+  pp (LitNull)        = text "NULL"
 
-instance Pretty LogicalName where pp = undefined
+instance Pretty LogicalName where pp = undefined -- todo
 
-instance Pretty LogicalNameList where pp = undefined
+instance Pretty LogicalNameList where pp = undefined -- todo
 
-instance Pretty LogicalOperator where pp = undefined
+instance Pretty LogicalOperator where
+  pp (And)  = text "AND"
+  pp (Or)   = text "OR"
+  pp (Nand) = text "NAND"
+  pp (Nor)  = text "NOR"
+  pp (Xor)  = text "XOR"
+  pp (Xnor) = text "XNOR"
 
-instance Pretty LoopStatement where pp = undefined
+instance Pretty LoopStatement where
+  pp (LoopStatement l i ss) =
+    condR colon l `hangs` vcat
+      [ cond id i <+> text "LOOP"
+      , indent $ pp ss
+      , text "END LOOP" <+> cond id l <+> semi
+      ]
 
 instance Pretty MiscellaneousOperator where pp = undefined
 
@@ -1661,6 +1756,9 @@ commaSep = hsep . punctuate comma
 pipeSep  :: [Doc] -> Doc
 pipeSep  = hsep . punctuate (char '|')
 
+semiSep  :: [Doc] -> Doc
+semiSep  = hsep . punctuate semi
+
 --------------------------------------------------------------------------------
 
 when :: Bool -> Doc -> Doc
@@ -1669,8 +1767,11 @@ when b a = if b then a else empty
 cond :: Pretty a => (Doc -> Doc) -> Maybe a -> Doc
 cond f = maybe empty (f . pp)
 
-conds :: Pretty a => Doc -> Maybe a -> Doc
-conds s m = cond (flip (<+>) s) m
+condR :: Pretty a => Doc -> Maybe a -> Doc
+condR s m = cond (flip (<+>) s) m
+
+condL :: Pretty a => Doc -> Maybe a -> Doc
+condL s m = cond ((<+>) s) m
 
 label :: Pretty a => Maybe a -> Doc
 label = cond (flip (<+>) colon)

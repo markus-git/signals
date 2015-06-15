@@ -990,7 +990,7 @@ data VariableDeclaration = VariableDeclaration {
 data FileDeclaration = FileDeclaration {
     fd_identifier_list      :: IdentifierList
   , fd_subtype_indication   :: SubtypeIndication
-  , fd_open_information     :: FileOpenInformation
+  , fd_open_information     :: Maybe FileOpenInformation
   }
 
 data FileOpenInformation = FileOpenInformation {
@@ -1755,7 +1755,7 @@ data Choice =
 
 data FunctionCall = FunctionCall {
     fc_function_name         :: Name
-  , fc_actual_parameter_part :: ActualParameterPart
+  , fc_actual_parameter_part :: Maybe ActualParameterPart
   }
 
 type ActualParameterPart = AssociationList
@@ -2009,7 +2009,7 @@ data IfStatement = IfStatement {
     if_label     :: Maybe Label
   , if_then      :: (Condition, SequenceOfStatements)
   , if_also      :: [(Condition, SequenceOfStatements)]
-  , if_else      :: Maybe (Condition, SequenceOfStatements)
+  , if_else      :: Maybe SequenceOfStatements
   }
 
 --------------------------------------------------------------------------------
@@ -2054,7 +2054,7 @@ data CaseStatementAlternative = CaseStatementAlternative Choices SequenceOfState
 
 data LoopStatement = LoopStatement {
     loop_label            :: Maybe Label
-  , loop_iteration_scheme :: IterationScheme
+  , loop_iteration_scheme :: Maybe IterationScheme
   , loop_statements       :: SequenceOfStatements
   }
 
@@ -2090,7 +2090,7 @@ data NextStatement = NextStatement {
 data ExitStatement = ExitStatement {
     exit_label :: Maybe Label
   , exit_loop  :: Maybe Label
-  , exit_when  :: Condition
+  , exit_when  :: Maybe Condition
   }
 
 --------------------------------------------------------------------------------
