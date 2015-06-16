@@ -1592,7 +1592,7 @@ data SimpleExpression = SimpleExpression {
 
 data Term = Term {
     term_factor               :: Factor
-  , term_multiplying          :: Maybe (MultiplyingOperator, Factor)
+  , term_multiplying          :: [(MultiplyingOperator, Factor)]
   }
 
 data Factor =
@@ -1883,7 +1883,7 @@ data SequentialStatement =
 -}
 
 data WaitStatement = WaitStatement
-    (Maybe ()) (Maybe SensitivityClause) (Maybe ConditionClause) (Maybe TimeoutClause)
+    (Maybe Label) (Maybe SensitivityClause) (Maybe ConditionClause) (Maybe TimeoutClause)
 
 data SensitivityClause = SensitivityClause SensitivityList
 
@@ -1962,8 +1962,8 @@ data Waveform =
 -- ** 8.4.1 Updating a projected output waveform
 {-
     waveform_element ::=
-        value_expression [ after time_expression ]
-      | null [ after time_expression ]
+        value_expression [ AFTER time_expression ]
+      | null [ AFTER time_expression ]
 -}
 
 data WaveformElement =

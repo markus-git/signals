@@ -951,7 +951,7 @@ instance Pretty Signature where
 instance Pretty SimpleExpression where
   pp (SimpleExpression s t as) = cond id s <+> pp t <+> adds
     where
-      adds = foldr (flip (<+>)) empty $ map (\(a, t) -> pp a <+> pp t) as
+      adds = hsep $ map (\(a, t) -> pp a <+> pp t) as
 
 --instance Pretty SimpleName where pp = undefined
 
@@ -1008,39 +1008,71 @@ instance Pretty SubprogramSpecification where
 
 --instance Pretty SubprogramStatementPart where pp = undefined
 
-instance Pretty SubtypeDeclaration where pp = undefined
+instance Pretty SubtypeDeclaration where
+  pp (SubtypeDeclaration i s) = text "SUBTYPE" <+> pp i <+> text "IS" <+> pp s <+> semi
 
-instance Pretty SubtypeIndication where pp = undefined
+instance Pretty SubtypeIndication where
+  pp (SubtypeIndication n t c) = pp' n <+> pp t <+> pp' c
 
-instance Pretty Suffix where pp = undefined
+instance Pretty Suffix where
+  pp (SSimple n) = pp n
+  pp (SChar c)   = pp c
+  pp (SOp o)     = pp o
+  pp (SAll)      = text "ALL"
 
-instance Pretty Target where pp = undefined
+instance Pretty Target where
+  pp (TargetName n) = pp n
+  pp (TargetAgg a)  = pp a
 
-instance Pretty Term where pp = undefined
+instance Pretty Term where
+  pp (Term f ms) = undefined
+    where
+      muls = hsep $ map (\(m, t) -> pp m <+> pp t) ms
 
-instance Pretty TimeoutClause where pp = undefined
+instance Pretty TimeoutClause where
+  pp (TimeoutClause e) = text "FOR" <+> pp e
 
-instance Pretty TypeConversion where pp = undefined
+instance Pretty TypeConversion where
+  pp (TypeConversion t e) = pp t <+> parens (pp e)
 
-instance Pretty TypeDeclaration where pp = undefined
+instance Pretty TypeDeclaration where
+  pp (TDFull ft)    = pp ft
+  pp (TDPartial pt) = pp pt
 
-instance Pretty TypeDefinition where pp = undefined
+instance Pretty TypeDefinition where
+  pp (TDScalar s)    = pp s
+  pp (TDComposite c) = pp c
+  pp (TDAccess a)    = pp a
+  pp (TDFile f)      = pp f
 
-instance Pretty TypeMark where pp = undefined
+instance Pretty TypeMark where
+  pp (TMType n)    = pp n
+  pp (TMSubtype n) = pp n
 
-instance Pretty UnconstrainedArrayDefinition where pp = undefined
+instance Pretty UnconstrainedArrayDefinition where
+  pp (UnconstrainedArrayDefinition is s) =
+    text "ARRAY" <+> parens (commaSep $ map pp is) <+> text "OF" <+> pp s
 
-instance Pretty UseClause where pp = undefined
+instance Pretty UseClause where
+  pp (UseClause ns) = text "USE" <+> commaSep (map pp ns) <+> semi
 
-instance Pretty VariableAssignmentStatement where pp = undefined
+instance Pretty VariableAssignmentStatement where
+  pp (VariableAssignmentStatement l t e) = condR colon l <+> pp t <+> text ":=" <+> pp e <+> semi
 
-instance Pretty VariableDeclaration where pp = undefined
+instance Pretty VariableDeclaration where
+  pp (VariableDeclaration s is sub e) =
+    when s (text "SHARED") <+> text "VARIABLE" <+> pp is <+> colon <+> pp sub <+> condL (text ":=") e <+> semi
 
-instance Pretty WaitStatement where pp = undefined
+instance Pretty WaitStatement where
+  pp (WaitStatement l sc cc tc) =
+    condR colon l <+> text "WAIT" <+> pp' sc <+> pp' cc <+> pp' tc <+> semi
 
-instance Pretty Waveform where pp = undefined
+instance Pretty Waveform where
+  pp (WaveElem es)    = commaSep $ map pp es
+  pp (WaveUnaffected) = text "UNAFFECTED"
 
-instance Pretty WaveformElement where pp = undefined
+instance Pretty WaveformElement where
+  pp (WaveEExp e te) = pp e <+> condL (text "AFTER") te
 
 --------------------------------------------------------------------------------
 --
