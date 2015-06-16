@@ -503,7 +503,7 @@ data PackageDeclarativeItem =
 -- * 2.6 Package bodies
 {-
     package_body ::=
-      PACKAGE body package_simple_name IS
+      PACKAGE  package_simple_name IS
         package_body_declarative_part
       END [ PACKAGE BODY ] [ package_simple_name ] ;
 
@@ -644,6 +644,7 @@ data PhysicalTypeDefinition = PhysicalTypeDefinition {
     physd_range_constraint           :: RangeConstraint
   , physd_primary_unit_declaration   :: PrimaryUnitDeclaration
   , physd_secondary_unit_declaration :: [SecondaryUnitDeclaration]
+  , physd_simple_name                :: Maybe SimpleName
   }
 
 data PrimaryUnitDeclaration   = PrimaryUnitDeclaration Identifier
@@ -1615,9 +1616,9 @@ data Primary =
 
     sign ::= + | –
 
-    multiplying_operator ::= * | / | mod | rem
+    multiplying_operator ::= * | / | MOD | REM
 
-    miscellaneous_operator ::= ** | abs | not
+    miscellaneous_operator ::= ** | ABS | NOT
 -}
 
 data LogicalOperator  = And | Or | Nand | Nor | Xor | Xnor
@@ -2077,7 +2078,7 @@ data ParameterSpecification = ParameterSpecification {
 data NextStatement = NextStatement {
     next_label :: Maybe Label
   , next_loop  :: Maybe Label
-  , next_when  :: Condition
+  , next_when  :: Maybe Condition
   }
 
 --------------------------------------------------------------------------------

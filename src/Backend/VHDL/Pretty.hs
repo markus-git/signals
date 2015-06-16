@@ -648,43 +648,118 @@ instance Pretty LoopStatement where
       , text "END LOOP" <+> cond id l <+> semi
       ]
 
-instance Pretty MiscellaneousOperator where pp = undefined
+instance Pretty MiscellaneousOperator where
+  pp (Exp) = text "**"
+  pp (Abs) = text "ABS"
+  pp (Not) = text "NOT"
 
-instance Pretty Mode where pp = undefined
+instance Pretty Mode where
+  pp (In)      = text "IN"
+  pp (Out)     = text "OUT"
+  pp (InOut)   = text "INOUT"
+  pp (Buffer)  = text "BUFFER"
+  pp (Linkage) = text "LINKAGE"
 
-instance Pretty MultiplyingOperator where pp = undefined
+instance Pretty MultiplyingOperator where
+  pp (Times) = char '*'
+  pp (Div)   = char '/'
+  pp (Mod)   = text "MOD"
+  pp (Rem)   = text "REM"
 
-instance Pretty Name where pp = undefined
+instance Pretty Name where
+  pp (NSimple n) = pp n
+  pp (NOp o)     = pp o
+  pp (NSelect s) = pp s
+  pp (NIndex i)  = pp i
+  pp (NSlice s)  = pp s
+  pp (NAttr a)   = pp a
 
-instance Pretty NextStatement where pp = undefined
+instance Pretty NextStatement where
+  pp (NextStatement l b c) = condR colon l <+> text "NEXT" <+> cond id b <+> condL (text "WHEN") c <+> semi
 
-instance Pretty NullStatement where pp = undefined
+instance Pretty NullStatement where
+  pp (NullStatement l) = condR colon l <+> text "NULL"
 
-instance Pretty NumericLiteral where pp = undefined
+instance Pretty NumericLiteral where
+  pp (NLitAbstract a) = pp a
+  pp (NLitPhysical p) = pp p
 
-instance Pretty ObjectDeclaration where pp = undefined
+instance Pretty ObjectDeclaration where
+  pp (ObjConst c) = pp c
+  pp (ObjSig s)   = pp s
+  pp (ObjVar v)   = pp v
+  pp (ObjFile f)  = pp f
 
 --instance Pretty OperatorSymbol where pp = undefined
 
-instance Pretty Options where pp = undefined
+instance Pretty Options where
+  pp (Options g d) = when g (text "GUARDED") <+> cond id d
 
-instance Pretty PackageBody where pp = undefined
+instance Pretty PackageBody where
+  pp (PackageBody n d) =
+    vcat [ text "PACKAGE BODY" <+> pp n <+> text "IS"
+         , indent $ pp d
+         , text "END PACKAGE BODY" <+> pp n <+> semi
+         ]
 
-instance Pretty PackageBodyDeclarativeItem where pp = undefined
+instance Pretty PackageBodyDeclarativeItem where
+  pp (PBDISubprogDecl s)  = pp s
+  pp (PBDISubprogBody b)  = pp b
+  pp (PBDITypeDecl t)     = pp t
+  pp (PBDISubtypeDecl s)  = pp s
+  pp (PBDIConstantDecl c) = pp c
+  pp (PBDISharedDecl s)   = pp s
+  pp (PBDIFileDecl f)     = pp f
+  pp (PBDIAliasDecl a)    = pp a
+  pp (PBDIUseClause u)    = pp u
+  pp (PBDIGroupTemp g)    = pp g
+  pp (PBDIGroupDecl g)    = pp g
 
---instance Pretty PackageBodyDeclarativePart where pp = undefined
+--Instance Pretty PackageBodyDeclarativePart where pp = undefined
 
-instance Pretty PackageDeclaration where pp = undefined
+instance Pretty PackageDeclaration where
+  pp (PackageDeclaration i d) =
+    vcat [ text "PACKAGE" <+> pp i <+> text "IS"
+         , indent $ pp d
+         , text "END PACKAGE" <+> pp i <+> semi
+         ]
 
-instance Pretty PackageDeclarativeItem where pp = undefined
-
+instance Pretty PackageDeclarativeItem where
+  pp (PDISubprogDecl s)  = pp s
+  pp (PDISubprogBody b)  = pp b
+  pp (PDITypeDecl t)     = pp t
+  pp (PDISubtypeDecl s)  = pp s
+  pp (PDIConstantDecl c) = pp c
+  pp (PDISignalDecl s)   = pp s
+  pp (PDISharedDecl v)   = pp v
+  pp (PDIFileDecl f)     = pp f
+  pp (PDIAliasDecl a)    = pp a
+  pp (PDICompDecl c)     = pp c
+  pp (PDIAttrDecl a)     = pp a
+  pp (PDIAttrSpec a)     = pp a
+  pp (PDIDiscSpec d)     = pp d
+  pp (PDIUseClause u)    = pp u
+  pp (PDIGroupTemp g)    = pp g
+  pp (PDIGroupDecl g)    = pp g
+  
 --instance Pretty PackageDeclarativePart where pp = undefined
 
-instance Pretty ParameterSpecification where pp = undefined
+instance Pretty ParameterSpecification where
+  pp (ParameterSpecification i r) = pp i <+> text "IN" <+> pp r
 
-instance Pretty PhysicalLiteral where pp = undefined
+instance Pretty PhysicalLiteral where
+  pp (PhysicalLiteral a n) = cond id a <+> pp n
 
-instance Pretty PhysicalTypeDefinition where pp = undefined
+instance Pretty PhysicalTypeDefinition where
+  pp (PhysicalTypeDefinition c p s n) =
+    pp c `hangs` vcat
+      [ text "UNITS"
+      , indent $ vcat
+        [ pp p
+        , vcat $ map pp s
+        ]
+      , text "END UNITS" <+> cond id n
+      ]
 
 instance Pretty PortClause where pp = undefined
 
