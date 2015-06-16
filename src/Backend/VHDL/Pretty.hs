@@ -761,83 +761,197 @@ instance Pretty PhysicalTypeDefinition where
       , text "END UNITS" <+> cond id n
       ]
 
-instance Pretty PortClause where pp = undefined
+instance Pretty PortClause where
+  pp (PortClause ls) = text "PORT" <+> parens (pp ls)
 
 --instance Pretty PortList where pp = undefined
 
-instance Pretty PortMapAspect where pp = undefined
+instance Pretty PortMapAspect where
+  pp (PortMapAspect as) = text "PORT MAP" <+> parens (pp as)
 
-instance Pretty Prefix where pp = undefined
+instance Pretty Prefix where
+  pp (PName n) = pp n
+  pp (PFun f)  = pp f
 
-instance Pretty Primary where pp = undefined
+instance Pretty Primary where
+  pp (PrimName n)  = pp n
+  pp (PrimLit l)   = pp l
+  pp (PrimAgg a)   = pp a
+  pp (PrimFun f)   = pp f
+  pp (PrimQual q)  = pp q
+  pp (PrimTCon t)  = pp t
+  pp (PrimAlloc a) = pp a
+  pp (PrimExp e)   = parens (pp e)
 
-instance Pretty PrimaryUnit where pp = undefined
+instance Pretty PrimaryUnit where pp = undefined -- todo
 
-instance Pretty ProcedureCall where pp = undefined
+instance Pretty ProcedureCall where
+  pp (ProcedureCall n ap) = pp n <+> cond parens ap
 
-instance Pretty ProcedureCallStatement where pp = undefined
+instance Pretty ProcedureCallStatement where
+  pp (ProcedureCallStatement l p) = condR colon l <+> pp p <+> semi
 
-instance Pretty ProcessDeclarativeItem where pp = undefined
+instance Pretty ProcessDeclarativeItem where
+  pp (ProcDISubprogDecl s) = pp s
+  pp (ProcDISubprogBody b) = pp b
+  pp (ProcDIType t)        = pp t
+  pp (ProcDISubtype s)     = pp s
+  pp (ProcDIConstant c)    = pp c
+  pp (ProcDIVariable v)    = pp v
+  pp (ProcDIFile f)        = pp f
+  pp (ProcDIAlias a)       = pp a
+  pp (ProcDIAttrDecl a)    = pp a
+  pp (ProcDIAttrSpec a)    = pp a
+  pp (ProcDIUseClause u)   = pp u
 
 --instance Pretty ProcessDeclarativePart where pp = undefined
 
-instance Pretty ProcessStatement where pp = undefined
+instance Pretty ProcessStatement where
+  pp (ProcessStatement l p ss d s) =
+    condR colon l `hangs` vcat
+      [ post <+> cond parens ss <+> text "IS"
+        `hangs` pp d
+      , text "BEGIN"
+        `hangs` pp s
+      , text "END" <+> post <+> cond id l <+> semi
+      ]
+    where
+      post = when p (text "POSTPONED") <+> text "PROCESS"
 
 --instance Pretty ProcessStatementPart where pp = undefined
 
-instance Pretty QualifiedExpression where pp = undefined
+instance Pretty QualifiedExpression where
+  pp (QualExp t e) = pp t <+> char '\'' <+> parens (pp e)
+  pp (QualAgg t a) = pp t <+> char '\'' <+> pp a
 
-instance Pretty Range where pp = undefined
+instance Pretty Range where
+  pp (RAttr a)       = pp a
+  pp (RSimple l d u) = pp l <+> pp d <+> pp u
 
-instance Pretty RangeConstraint where pp = undefined
+instance Pretty RangeConstraint where
+  pp (RangeConstraint r) = text "RANGE" <+> pp r
 
-instance Pretty RecordTypeDefinition where pp = undefined
+instance Pretty RecordTypeDefinition where
+  pp (RecordTypeDefinition es n) =
+    vcat [ text "RECORD"
+         , vcat $ map pp es
+         , text "END RECORD" <+> cond id n
+         ]
 
-instance Pretty Relation where pp = undefined
+instance Pretty Relation where
+  pp (Relation e (Nothing))     = pp e
+  pp (Relation e (Just (r, s))) = pp e <+> pp r <+> pp s
 
-instance Pretty RelationalOperator where pp = undefined
+instance Pretty RelationalOperator where
+  pp (Eq)  = equals
+  pp (Neq) = text "/="
+  pp (Lt)  = char '<'
+  pp (Lte) = text "<="
+  pp (Gt)  = char '>'
+  pp (Gte) = text ">="
 
-instance Pretty ReportStatement where pp = undefined
+instance Pretty ReportStatement where
+  pp (ReportStatement l e s) =
+    condR colon l `hangs` (text "REPORT" <+> pp e `hangs` condL (text "SEVERITY") s)
 
-instance Pretty ReturnStatement where pp = undefined
+instance Pretty ReturnStatement where
+  pp (ReturnStatement l e) = condR colon l <+> text "RETURN" <+> condR semi e
 
-instance Pretty ScalarTypeDefinition where pp = undefined
+instance Pretty ScalarTypeDefinition where
+  pp (ScalarEnum e)  = pp e
+  pp (ScalarInt i)   = pp i
+  pp (ScalarFloat f) = pp f
+  pp (ScalarPhys p)  = pp p
 
-instance Pretty SecondaryUnit where pp = undefined
+instance Pretty SecondaryUnit where pp = undefined -- todo
 
-instance Pretty SecondaryUnitDeclaration where pp = undefined
+instance Pretty SecondaryUnitDeclaration where
+  pp (SecondaryUnitDeclaration i p) = pp i <+> equals <+> pp p
 
-instance Pretty SelectedName where pp = undefined
+instance Pretty SelectedName where
+  pp (SelectedName p s) = pp p <+> char '.' <+> pp s
 
-instance Pretty SelectedSignalAssignment where pp = undefined
+instance Pretty SelectedSignalAssignment where
+  pp (SelectedSignalAssignment e t o w) =
+    text "WITH" <+> pp e <+> text "SELECT"
+      `hangs`
+    pp t <+> text "<=" <+> pp o <+> pp w <+> semi
 
-instance Pretty SelectedWaveforms where pp = undefined
+instance Pretty SelectedWaveforms where
+  pp (SelectedWaveforms ws (w, c)) = vcat $ optional ++ [last]
+    where
+      optional = maybe [] (map f) ws
+      last     = pp w <+> text "WHEN" <+> pp c
+      f (w, c) = pp w <+> text "WHEN" <+> pp c <+> comma
 
-instance Pretty SensitivityClause where pp = undefined
+instance Pretty SensitivityClause where
+  pp (SensitivityClause ss) = text "ON" <+> pp ss
 
-instance Pretty SensitivityList where pp = undefined
+instance Pretty SensitivityList where
+  pp (SensitivityList ns) = commaSep $ map pp ns
 
 --instance Pretty SequenceOfStatements where pp = undefined
 
-instance Pretty SequentialStatement where pp = undefined
+instance Pretty SequentialStatement where
+  pp (SWait w)      = pp w
+  pp (SAssert a)    = pp a
+  pp (SReport r)    = pp r
+  pp (SSignalAss s) = pp s
+  pp (SVarAss v)    = pp v
+  pp (SProc p)      = pp p
+  pp (SIf i)        = pp i
+  pp (SCase c)      = pp c
+  pp (SLoop l)      = pp l
+  pp (SNext n)      = pp n
+  pp (SExit e)      = pp e
+  pp (SReturn r)    = pp r
+  pp (SNull n)      = pp n
 
-instance Pretty ShiftExpression where pp = undefined
+instance Pretty ShiftExpression where
+  pp (ShiftExpression e (Nothing))     = pp e
+  pp (ShiftExpression e (Just (r, s))) = pp e <+> pp r <+> pp s
 
-instance Pretty ShiftOperator where pp = undefined
+instance Pretty ShiftOperator where
+  pp Sll = text "SLL"
+  pp Srl = text "SRL"
+  pp Sla = text "SLA"
+  pp Sra = text "SRA"
+  pp Rol = text "ROL"
+  pp Ror = text "ROR"
 
-instance Pretty Sign where pp = undefined
+instance Pretty Sign where
+  pp Identity = char '+'
+  pp Negation = char '-'
 
-instance Pretty SignalAssignmentStatement where pp = undefined
+instance Pretty SignalAssignmentStatement where
+  pp (SignalAssignmentStatement l t d w) =
+        condR colon l <+> pp t <+> text "<="
+    <+> cond  id    d <+> pp w <+> semi
 
-instance Pretty SignalDeclaration where pp = undefined
+instance Pretty SignalDeclaration where
+  pp (SignalDeclaration is s k e) =
+        text "SIGNAL" <+> pp is <+> colon <+> pp s
+    <+> cond id k <+> condL (text ":=") e <+> semi
 
-instance Pretty SignalKind where pp = undefined
+instance Pretty SignalKind where
+  pp Register = text "REGISTER"
+  pp Bus      = text "BUS"
 
-instance Pretty SignalList where pp = undefined
+instance Pretty SignalList where
+  pp (SLName ns) = commaSep $ map pp ns
+  pp (SLOthers)  = text "OTHERS"
+  pp (SLAll)     = text "ALL"
 
-instance Pretty Signature where pp = undefined
+instance Pretty Signature where
+  pp (Signature (Nothing))      = empty
+  pp (Signature (Just (ts, t))) = init <+> condL (text "RETURN") t
+    where
+      init = commaSep $ maybe [] (map pp) ts
 
-instance Pretty SimpleExpression where pp = undefined
+instance Pretty SimpleExpression where
+  pp (SimpleExpression s t as) = cond id s <+> pp t <+> adds
+    where
+      adds = foldr (flip (<+>)) empty $ map (\(a, t) -> pp a <+> pp t) as
 
 --instance Pretty SimpleName where pp = undefined
 
@@ -1859,5 +1973,8 @@ hangs  = flip hang 4
 
 --------------------------------------------------------------------------------
 
+pp' :: Pretty a => Maybe a -> Doc
+pp' = cond id
+
 postponed :: Pretty a =>  Maybe Label -> Bool -> a -> Doc
-postponed l b a = cond (flip (<+>) colon) l <+> when b (text "POSTPONED") <+> pp a
+postponed l b a = condR colon l <+> when b (text "POSTPONED") <+> pp a

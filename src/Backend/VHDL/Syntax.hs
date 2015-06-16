@@ -435,10 +435,10 @@ data SubprogramKind            = Procedure | Function
 --------------------------------------------------------------------------------
 -- ** 2.3.2 Signatures
 {-
-    signature ::= [ [ type_mark { , type_mark } ] [ return type_mark ] ]
+    signature ::= [ [ type_mark { , type_mark } ] [ RETURN type_mark ] ]
 -}
 
-data Signature = Signature (Maybe ([TypeMark], Maybe TypeMark))
+data Signature = Signature (Maybe (Maybe [TypeMark], Maybe TypeMark))
 
 --------------------------------------------------------------------------------
 -- * 2.4 Resolution functions
@@ -576,7 +576,11 @@ data PackageBodyDeclarativeItem =
     direction ::= TO | DOWNTO
 -}
 
-data ScalarTypeDefinition = ScalarTypeDefinition ()
+data ScalarTypeDefinition =
+    ScalarEnum  EnumerationTypeDefinition
+  | ScalarInt   IntegerTypeDefinition
+  | ScalarFloat FloatingTypeDefinition
+  | ScalarPhys  PhysicalTypeDefinition
 
 data RangeConstraint = RangeConstraint Range
 
@@ -647,9 +651,9 @@ data PhysicalTypeDefinition = PhysicalTypeDefinition {
   , physd_simple_name                :: Maybe SimpleName
   }
 
-data PrimaryUnitDeclaration   = PrimaryUnitDeclaration Identifier
+type PrimaryUnitDeclaration   = Identifier
 
-data SecondaryUnitDeclaration = SecondaryUnitDeclaration (Identifier, PhysicalLiteral)
+data SecondaryUnitDeclaration = SecondaryUnitDeclaration Identifier PhysicalLiteral
 
 data PhysicalLiteral = PhysicalLiteral {
     physl_abstract_literal :: Maybe Literal
@@ -758,7 +762,7 @@ data DiscreteRange =
 
 data RecordTypeDefinition = RecordTypeDefinition {
     rectd_element_declaration :: [ElementDeclaration]
-  , rectd_type_simple_name    :: SimpleName
+  , rectd_type_simple_name    :: Maybe SimpleName
   }
 
 data ElementDeclaration = ElementDeclaration {
@@ -956,7 +960,7 @@ data ConstantDeclaration = ConstantDeclaration {
 data SignalDeclaration = SignalDeclaration {
     signal_identifier_list    :: IdentifierList
   , signal_subtype_indication :: SubtypeIndication
-  , signal_kind               :: SignalKind
+  , signal_kind               :: Maybe SignalKind
   , signal_expression         :: Maybe Expression
   }
 
@@ -1569,7 +1573,7 @@ data Expression =
 
 data Relation         = Relation {
     relation_shift_expression :: ShiftExpression
-  , relation_operator         :: Maybe (RelationOperator, ShiftExpression)
+  , relation_operator         :: Maybe (RelationalOperator, ShiftExpression)
   }
 
 data ShiftExpression  = ShiftExpression {
@@ -1580,7 +1584,7 @@ data ShiftExpression  = ShiftExpression {
 data SimpleExpression = SimpleExpression {
     sexp_sign                 :: Maybe Sign
   , sexp_term                 :: Term
-  , sexp_adding               :: Maybe (AddingOperator, Term)
+  , sexp_adding               :: [(AddingOperator, Term)]
   }
 
 data Term = Term {
@@ -1623,7 +1627,7 @@ data Primary =
 
 data LogicalOperator  = And | Or | Nand | Nor | Xor | Xnor
 
-data RelationOperator = Eq | Neq | Lt | Lte | Gt | Gte
+data RelationalOperator = Eq | Neq | Lt | Lte | Gt | Gte
 
 data ShiftOperator    = Sll | Srl | Sla | Sra | Rol | Ror
 
@@ -2103,7 +2107,7 @@ data ExitStatement = ExitStatement {
 
 data ReturnStatement = ReturnStatement {
     return_label      :: Maybe Label
-  , return_expression :: Expression
+  , return_expression :: Maybe Expression
   }
 
 --------------------------------------------------------------------------------
@@ -2334,7 +2338,10 @@ data SelectedSignalAssignment = SelectedSignalAssignment {
   , ssa_selected_waveforms :: SelectedWaveforms
   }
 
-data SelectedWaveforms = SelectedWaveforms [(Waveform, Choices)]
+data SelectedWaveforms = SelectedWaveforms {
+    sw_optional :: Maybe [(Waveform, Choices)]
+  , sw_last     :: (Waveform, Choices)
+  }
 
 --------------------------------------------------------------------------------
 -- * 9.6 Component instantiation statements
@@ -2472,7 +2479,5 @@ data LogicalNameList = LogicalNameList
 data PrimaryUnit = PrimaryUnit
 
 data ProcessStatementPart = ProcessStatementPart
-
-data RelationalOperator = RelationalOperator
 
 data SecondaryUnit = SecondaryUnit
