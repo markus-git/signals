@@ -319,14 +319,17 @@ data ComponentConfiguration = ComponentConfiguration {
 
 type SubprogramDeclaration   = SubprogramSpecification
 
-data SubprogramSpecification = SubprogramSpecification {
-    subprog_proc_designator            :: Designator
-  , subprog_proc_formal_parameter_list :: Maybe FormalParameterList
-  , subprog_purity                     :: Bool
-  , subprog_func_designator            :: Designator
-  , subprog_func_formal_parameter_list :: Maybe FormalParameterList
-  , subprog_type_mark                  :: TypeMark
-  }
+data SubprogramSpecification =
+    SubprogramProcedure {
+      subproc_designator            :: Designator
+    , subproc_formal_parameter_list :: Maybe FormalParameterList
+    }
+  | SubprogramFunction {
+      subfun_purity                 :: Maybe Bool
+    , subfun_designator             :: Designator
+    , subfun_formal_parameter_list  :: Maybe FormalParameterList
+    , subfun_type_mark              :: TypeMark
+    }
 
 data Designator =
     DId Identifier
