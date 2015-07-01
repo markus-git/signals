@@ -76,7 +76,6 @@ data Ordering (i :: (* -> *) -> * -> *) a = Ordering Order
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Map (Node i) -> Map (Ordering i)
 sorter (Key n) nodes = reduce $ snd $ flip execState (0, init nodes) $ sort' n
---  fmap (fmap snd) $ M.toList $ snd $ flip execState (0, M.empty) $ sort' sym
   where
     init :: Map (Node i) -> Map (Tagged i)
     init = M.hmap $ \node -> Tagged Unvisited 0 node
