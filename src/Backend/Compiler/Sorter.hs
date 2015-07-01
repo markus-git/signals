@@ -5,7 +5,7 @@
 
 module Backend.Compiler.Sorter (
     Order
-  , Ordering
+  , Ordering(..)
   , sorter
   )
 where
@@ -75,7 +75,7 @@ data Ordering (i :: (* -> *) -> * -> *) a = Ordering Order
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Map (Node i) -> Map (Ordering i)
-sorter (Key n) nodes = reduce $ snd $ flip execState (0, init nodes) $ sort' n
+sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
   where
     init :: Map (Node i) -> Map (Tagged i)
     init = M.hmap $ \node -> Tagged Unvisited 0 node
