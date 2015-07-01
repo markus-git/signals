@@ -6,6 +6,15 @@ module Simple where
 import Core
 import Frontend.Signal hiding (S)
 import Frontend.Signal.Observ
+import Backend.Compiler.Cycles
+
+import Data.Ref
+import Data.Ref.Map (Map, Name)
+import qualified Data.Ref.Map as M
+
+import Prelude hiding (Left, Right)
+
+import System.Mem.StableName -- *** temp
 
 --------------------------------------------------------------------------------
 -- * Exp
@@ -40,14 +49,25 @@ add = lift2 Add
 --------------------------------------------------------------------------------
 
 test_sig :: S Int
-test_sig =
-  let x = int 1
-      y = int 2
-   in add (neg x) (neg (add y y))
+test_sig = neg $ int 1
 
 test =
-  let (Sig (Signal sym)) = test_sig
-      (k, nodes)         = bepa sym
-   in nodes `seq` putStrLn "Hi!"
+  do (k, m) <- reify test_sig
+     let out = go k m
+     putStrLn $ "\n -- Printing signal tree --\n -"
+     putStrLn $ " - cycles? " ++ show (cycles k m)
+     putStrLn $ ""
+     putStrLn $ out ++ "\n"
+  where
+    go :: Key i a -> Map (Node i) -> String
+    go (Key k) m
+      | Just (Node sig) <- M.lookup k (M.hmap id m) = case sig of
+          (Repeat str) -> "Repeat"
+          (Map f s)    -> "Map (" ++ go s m ++ ")"
+          (Join l r)   -> "Zip (" ++ go l m ++ ", " ++ go r m ++ ")"
+          (Left p)     -> "Left (" ++ go p m ++ ")"
+          (Right p)    -> "Right (" ++ go p m ++ ")"
+          (Delay v s)  -> "Delay (" ++ go s m ++ ")"
+      | otherwise = "Doh!"
 
 --------------------------------------------------------------------------------
