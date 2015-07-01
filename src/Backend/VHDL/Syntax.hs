@@ -1570,9 +1570,9 @@ data Expression =
     EAnd  [Relation]
   | EOr   [Relation]
   | EXor  [Relation]
-  | ENAnd (Maybe (Relation))
-  | ENor  (Maybe (Relation))
-  | EXNor [Relation]
+  | ENand (Relation) (Maybe Relation)
+  | ENor  (Relation) (Maybe Relation)
+  | EXnor [Relation]
 
 data Relation         = Relation {
     relation_shift_expression :: ShiftExpression

@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneDeriving, FlexibleInstances #-}
 
 module Backend.VHDL.Pretty where
 
@@ -24,7 +24,7 @@ instance Pretty a => Pretty [a]
 -- * Pretty printing instances
 --------------------------------------------------------------------------------
 
-instance Pretty AbstractLiteral where pp = undefined
+instance Pretty AbstractLiteral where pp = error "missing: AbstractLiteral"
 
 instance Pretty AccessTypeDefinition where
   pp (AccessTypeDefinition s) = text "ACCESS" <+> pp s
@@ -113,29 +113,29 @@ instance Pretty AttributeSpecification where
     <+> text "OF" <+> pp s
     <+> text "IS" <+> pp e <+> semi
 
-instance Pretty Base where pp = undefined -- todo
+instance Pretty Base where pp = error "missing: Base" -- todo
 
-instance Pretty BaseSpecifier where pp = undefined -- todo
+instance Pretty BaseSpecifier where pp = error "missing: BaseSpecifier" -- todo
 
-instance Pretty BaseUnitDeclaration where pp = undefined -- todo
+instance Pretty BaseUnitDeclaration where pp = error "missing: BaseUnitDeclaration" -- todo
 
-instance Pretty BasedInteger where pp = undefined -- todo
+instance Pretty BasedInteger where pp = error "missing: BasedInteger" -- todo
 
-instance Pretty BasedLiteral where pp = undefined -- todo
+instance Pretty BasedLiteral where pp = error "missing: BasedLiteral" -- todo
 
-instance Pretty BasicCharacter where pp = undefined -- todo
+instance Pretty BasicCharacter where pp = error "missing: BasicCharacter" -- todo
 
-instance Pretty BasicGraphicCharacter where pp = undefined -- todo
+instance Pretty BasicGraphicCharacter where pp = error "missing: BasicGraphicCharacter" -- todo
 
-instance Pretty BasicIdentifier where pp = undefined -- todo
+instance Pretty BasicIdentifier where pp = error "missing: BasicIdentifier" -- todo
 
 instance Pretty BindingIndication where
   pp (BindingIndication e g p) =
     vcat [condR (text "USE") e, cond id g, cond id p]
 
-instance Pretty BitStringLiteral where pp = undefined -- todo
+instance Pretty BitStringLiteral where pp = error "missing: BitStringLiteral" -- todo
 
-instance Pretty BitValue where pp = undefined -- todo
+instance Pretty BitValue where pp = error "missing: BitValue" -- todo
 
 instance Pretty BlockConfiguration where
   pp (BlockConfiguration s u c) =
@@ -311,11 +311,11 @@ instance Pretty Constraint where
   pp (CRange r) = pp r
   pp (CIndex i) = pp i
 
-instance Pretty ContextClause where pp = undefined -- todo
+instance Pretty ContextClause where pp = error "missing: ContextClause" -- todo
 
-instance Pretty ContextItem where pp = undefined -- todo
+instance Pretty ContextItem where pp = error "missing: ContextItem" -- todo
 
-instance Pretty DecimalLiteral where pp = undefined -- todo
+instance Pretty DecimalLiteral where pp = error "missing: DecimalLiteral" -- todo
 
 instance Pretty Declaration where
   pp (DType t)          = pp t
@@ -335,9 +335,9 @@ instance Pretty DelayMechanism where
   pp (DMechTransport)  = text "TRANSPORT"
   pp (DMechInertial e) = condL (text "REJECT") e <+> text "INERTIAL"
 
-instance Pretty DesignFile where pp = undefined -- todo
+instance Pretty DesignFile where pp = error "missing: DesignFile" -- todo
 
-instance Pretty DesignUnit where pp = undefined -- todo
+instance Pretty DesignUnit where pp = error "missing: DesignUnit" -- todo
 
 instance Pretty Designator where
   pp (DId i) = pp i
@@ -459,19 +459,19 @@ instance Pretty ExitStatement where
     <+> text "NEXT" <+> cond id b
     <+> cond ((<+>) (text "WHEN")) c <+> semi
 
-instance Pretty Exponent where pp = undefined -- todo
+instance Pretty Exponent where pp = error "missing: Exponent" -- todo
 
 instance Pretty Expression where
-  pp (EAnd rs)  = pp rs
-  pp (EOr rs)   = pp rs
-  pp (EXor rs)  = pp rs
-  pp (ENAnd rs) = cond id rs
-  pp (ENor rs)  = cond id rs
-  pp (EXNor rs) = pp rs
+  pp (EAnd rs)    = textSep "AND"  $ map pp rs
+  pp (EOr rs)     = textSep "OR"   $ map pp rs
+  pp (EXor rs)    = textSep "XOR"  $ map pp rs
+  pp (ENand r rs) = pp r <+> condL (text "NAND") rs
+  pp (ENor r rs)  = pp r <+> condL (text "NOR")  rs
+  pp (EXnor rs)   = textSep "XNOR" $ map pp rs
 
-instance Pretty ExtendedDigit where pp = undefined -- todo
+instance Pretty ExtendedDigit where pp = error "missing: ExtendedDigit" -- todo
 
-instance Pretty ExtendedIdentifier where pp = undefined -- todo
+instance Pretty ExtendedIdentifier where pp = error "missing: ExtendedIdentifier" -- todo
 
 instance Pretty Factor where
   pp (FacPrim p mp) = pp p <+> condL (text "**") mp
@@ -531,7 +531,7 @@ instance Pretty GenericClause where
 instance Pretty GenericMapAspect where
   pp (GenericMapAspect as) = text "GENERIC MAP" <+> parens (pp as)
 
-instance Pretty GraphicCharacter where pp = undefined -- todo
+instance Pretty GraphicCharacter where pp = error "missing: GraphicCharacter" -- todo
 
 instance Pretty GroupConstituent where
   pp (GCName n) = pp n
@@ -613,13 +613,13 @@ instance Pretty IterationScheme where
 
 --instance Pretty Label where pp = undefined
 
-instance Pretty Letter where pp = undefined -- todo
+instance Pretty Letter where pp = error "missing: Letter" -- todo
 
-instance Pretty LetterOrDigit where pp = undefined -- todo
+instance Pretty LetterOrDigit where pp = error "missing: LetterOrDigit" -- todo
 
-instance Pretty LibraryClause where pp = undefined -- todo
+instance Pretty LibraryClause where pp = error "missing: LibraryClause" -- todo
 
-instance Pretty LibraryUnit where pp = undefined -- todo
+instance Pretty LibraryUnit where pp = error "missing: LibraryUnit" -- todo
 
 instance Pretty Literal where
   pp (LitNum n)       = pp n
@@ -628,9 +628,9 @@ instance Pretty Literal where
   pp (LitBitString b) = pp b
   pp (LitNull)        = text "NULL"
 
-instance Pretty LogicalName where pp = undefined -- todo
+instance Pretty LogicalName where pp = error "missing: LogicalName" -- todo
 
-instance Pretty LogicalNameList where pp = undefined -- todo
+instance Pretty LogicalNameList where pp = error "missing: LogicalNameList" -- todo
 
 instance Pretty LogicalOperator where
   pp (And)  = text "AND"
@@ -783,7 +783,7 @@ instance Pretty Primary where
   pp (PrimAlloc a) = pp a
   pp (PrimExp e)   = parens (pp e)
 
-instance Pretty PrimaryUnit where pp = undefined -- todo
+instance Pretty PrimaryUnit where pp = error "missing: PrimaryUnit" -- todo
 
 instance Pretty ProcedureCall where
   pp (ProcedureCall n ap) = pp n <+> cond parens ap
@@ -863,7 +863,7 @@ instance Pretty ScalarTypeDefinition where
   pp (ScalarFloat f) = pp f
   pp (ScalarPhys p)  = pp p
 
-instance Pretty SecondaryUnit where pp = undefined -- todo
+instance Pretty SecondaryUnit where pp = error "missing: SecondaryUnit" -- todo
 
 instance Pretty SecondaryUnitDeclaration where
   pp (SecondaryUnitDeclaration i p) = pp i <+> equals <+> pp p
@@ -1025,7 +1025,7 @@ instance Pretty Target where
   pp (TargetAgg a)  = pp a
 
 instance Pretty Term where
-  pp (Term f ms) = undefined
+  pp (Term f ms) = pp f <+> muls
     where
       muls = hsep $ map (\(m, t) -> pp m <+> pp t) ms
 
@@ -1078,14 +1078,17 @@ instance Pretty WaveformElement where
 --
 --------------------------------------------------------------------------------
 
-commaSep :: [Doc] -> Doc
-commaSep = hsep . punctuate comma
+commaSep  :: [Doc] -> Doc
+commaSep  = hsep . punctuate comma
 
-pipeSep  :: [Doc] -> Doc
-pipeSep  = hsep . punctuate (char '|')
+semiSep   :: [Doc] -> Doc
+semiSep   = hsep . punctuate semi
 
-semiSep  :: [Doc] -> Doc
-semiSep  = hsep . punctuate semi
+pipeSep   :: [Doc] -> Doc
+pipeSep   = hsep . punctuate (char '|')
+
+textSep   :: String -> [Doc] -> Doc
+textSep s = hsep . punctuate (space <> text s)
 
 --------------------------------------------------------------------------------
 
@@ -1122,3 +1125,5 @@ parens' = cond parens
 
 postponed :: Pretty a =>  Maybe Label -> Bool -> a -> Doc
 postponed l b a = condR colon l <+> when b (text "POSTPONED") <+> pp a
+
+--------------------------------------------------------------------------------
