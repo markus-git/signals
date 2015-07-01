@@ -22,85 +22,65 @@ import qualified Data.Ref.Map as M
 
 import Prelude hiding (Left, Right)
 
+
+import System.Mem.StableName -- *** temp
+
 --------------------------------------------------------------------------------
 -- * Graph representation of Signals
 --------------------------------------------------------------------------------
 
+-- | ...
 data Key (i :: (* -> *) -> * -> *) (a :: *)
   where
     Key :: Name (S Symbol i a) -> Key i a
+  deriving Eq
 
-data Node i a
+-- | nodes in our graph should now be parameterized on references instead of
+-- recursive calls to another symbol
+data Node (i :: (* -> *) -> * -> *) (a :: *)
   where
     Node :: S Key i a -> Node i (S Symbol i a)
 
-apa :: forall i a. Symbol i a -> Map Name -> Map (Node i) -> (Key i a, Map Name, Map (Node i))
-apa (Symbol ref@(Ref name s)) names nodes
-  | Just k <- M.lookup name names = (Key k, names, nodes)
-  | otherwise = case s of
-      (S.Repeat (s :: Stream i (IExp i b)))
-        -> let smap    = S.Repeat s :: S Key i (Identity b)
-               node    = Node smap  :: Node  i (S Symbol i a)
-               nodes'  = M.insert ref node nodes
-               names'  = M.insert ref name names
-            in ( Key name
-               , names'
-               , nodes')
-           
-      (S.Map (f :: Stream i (U i b) -> Stream i (U i a))
-             (a :: Symbol i b))
-        -> let (a', names', nodes') = apa a names nodes
-               smap    = S.Map f a' :: S Key i a
-               node    = Node smap  :: Node  i (S Symbol i a)
-               nodes'' = M.insert ref node nodes'
-               names'' = M.insert ref name names'
-            in ( Key name
-               , names''
-               , nodes'')
-
-      (S.Join (l :: Symbol i b)
-              (r :: Symbol i c))
-        -> let (l', names',  nodes' ) = apa l names  nodes
-               (r', names'', nodes'') = apa r names' nodes'
-               sjoin    = S.Join l' r' :: S Key i a
-               node     = Node sjoin   :: Node i (S Symbol i a)
-               nodes''' = M.insert ref node nodes''
-               names''' = M.insert ref name names''
-            in ( Key name
-               , names'''
-               , nodes''')
-
-      (S.Left (p :: Symbol i (a, b)))
-        -> let (p', names', nodes') = apa p names nodes
-               sleft   = S.Left p'  :: S Key i a
-               node    = Node sleft :: Node i (S Symbol i a)
-               nodes'' = M.insert ref node nodes'
-               names'' = M.insert ref name names'
-            in ( Key name
-               , names''
-               , nodes'')
-
-      (S.Right (p :: Symbol i (b, a)))
-        -> let (p', names', nodes') = apa p names nodes
-               sright  = S.Right p'  :: S Key i a
-               node    = Node sright :: Node i (S Symbol i a)
-               nodes'' = M.insert ref node nodes'
-               names'' = M.insert ref name names'
-            in ( Key name
-               , names''
-               , nodes'')
-
-      (S.Delay (e :: IExp i b) (a :: Symbol i (Identity b)))
-        -> let (a', names', nodes') = apa a names nodes
-               sdelay  = S.Delay e a' :: S Key i (Identity b)
-               node    = Node sdelay  :: Node i (S Symbol i a)
-               nodes'' = M.insert ref node nodes'
-               names'' = M.insert ref name names'
-            in ( Key name
-               , names''
-               , nodes'')
-
-bepa :: forall i a. Symbol i a -> (Key i a, Map (Node i))
-bepa sym = let (x, y, z) = apa sym M.empty M.empty in (x, z)
-
 --------------------------------------------------------------------------------
+-- ** ...
+
+reify :: Sig i a -> IO (Key i (Identity a), Map (Node i))
+reify (Sig (Signal sym)) = do
+  putStrLn ("\n* reify: start")
+  (Key k, ns) <- reify_node sym M.empty
+  putStrLn ("* reify: root is " ++ show (hashStableName k)) >> M.debug ns reify_go
+  return (Key k, ns)
+
+reify_node :: forall i a. Symbol i a -> Map (Node i) -> IO (Key i a, Map (Node i))
+reify_node (Symbol ref@(Ref name s)) nodes
+  | Just _ <- M.lookup name nodes =
+      do let n = hashStableName name
+         putStrLn $ "** reify_node: " ++ show n ++ " has already been added"
+         return (Key name, nodes)
+  | otherwise =
+      do let n = hashStableName name
+         putStrLn $ "** reify_node: " ++ show n ++ " is new"
+         case s of
+           (S.Repeat (s :: Stream i (IExp i b))) ->
+             do let node    = Node (S.Repeat s) :: Node i (S Symbol i a) 
+                    nodes'  = M.insert ref node nodes
+                return (Key name, nodes')
+           (S.Map (f :: Stream i (U i b) -> Stream i (U i a)) (s :: Symbol i b)) ->
+             do (k, nodes') <- reify_node s nodes
+                let n       = let (Key x) = k in hashStableName x
+                    node    = Node (S.Map f k) :: Node i (S Symbol i a)
+                    nodes'' = M.insert ref node nodes'
+                return (Key name, nodes'')
+
+-- *** ToDo : Your really need to add names! 
+--------------------------------------------------------------------------------
+
+reify_go :: forall i a. Node i a -> String
+reify_go (Node s) = case s of
+  (S.Repeat str) -> "Repeat"
+  (S.Map f s)    -> "Map"
+  (S.Join l r)   -> "Zip"
+  (S.Left p)     -> "Left"
+  (S.Right p)    -> "Right"
+  (S.Delay v s)  -> "Delay"
+

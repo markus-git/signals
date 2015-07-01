@@ -84,7 +84,17 @@ delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 
 instance Eq (Signal i a) where
   Signal (Symbol s1) == Signal (Symbol s2) = s1 == s2
-
+{-
+instance Num (IExp i a) => Num (Signal i a)
+  where
+    (+)         = undefined
+    (-)         = undefined
+    (*)         = undefined
+    negate      = undefined
+    abs         = undefined
+    signum      = undefined
+    fromInteger = undefined
+-}
 --------------------------------------------------------------------------------
 -- * Nested Signals
 --------------------------------------------------------------------------------
