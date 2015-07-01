@@ -62,17 +62,38 @@ reify_node (Symbol ref@(Ref name s)) nodes
          putStrLn $ "** reify_node: " ++ show n ++ " is new"
          case s of
            (S.Repeat (s :: Stream i (IExp i b))) ->
-             do let node    = Node (S.Repeat s) :: Node i (S Symbol i a) 
-                    nodes'  = M.insert ref node nodes
+             do let node     = Node (S.Repeat s) :: Node i (S Symbol i a) 
+                    nodes'   = M.insert ref node nodes
                 return (Key name, nodes')
            (S.Map (f :: Stream i (U i b) -> Stream i (U i a)) (s :: Symbol i b)) ->
              do (k, nodes') <- reify_node s nodes
-                let n       = let (Key x) = k in hashStableName x
-                    node    = Node (S.Map f k) :: Node i (S Symbol i a)
-                    nodes'' = M.insert ref node nodes'
+                let node     = Node (S.Map f k) :: Node i (S Symbol i a)
+                    nodes''  = M.insert ref node nodes'
                 return (Key name, nodes'')
+           (S.Join (l :: Symbol i b) (r :: Symbol i c)) ->
+             do (kl, nodes')  <- reify_node l nodes
+                (kr, nodes'') <- reify_node r nodes
+                let node     = Node (S.Join kl kr) :: Node i (S Symbol i a)
+                    nodes''' = M.insert ref node nodes''
+                return (Key name, nodes''')
+           (S.Left (l :: Symbol i (a, b))) ->
+             do (k, nodes) <- reify_node l nodes
+                let node     = Node (S.Left k) :: Node i (S Symbol i a)
+                    nodes'   = M.insert ref node nodes
+                return (Key name, nodes')
+           (S.Right (r :: Symbol i (b, a))) ->
+             do (k, nodes) <- reify_node r nodes
+                let node     = Node (S.Right k) :: Node i (S Symbol i a)
+                    nodes'   = M.insert ref node nodes
+                return (Key name, nodes')
+           (S.Delay (e :: IExp i b) (s :: Symbol i (Identity b))) ->
+             do (k, nodes) <- reify_node s nodes
+                let node     = Node (S.Delay e k) :: Node i (S Symbol i a)
+                    nodes'   = M.insert ref node nodes
+                return (Key name, nodes')
 
--- *** ToDo : Your really need to add names! 
+-- *** ToDo : Your really need to add names!
+--          : I think I see a pattern here...
 --------------------------------------------------------------------------------
 
 reify_go :: forall i a. Node i a -> String
