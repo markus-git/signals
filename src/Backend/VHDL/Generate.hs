@@ -64,6 +64,10 @@ structural  = emptyState "structural"
 --------------------------------------------------------------------------------
 -- **
 
+data Kind = Constant | Signal | Variable | File
+
+type Type = SubtypeIndication
+
 addDeclaration :: InterfaceDeclaration -> InterfaceList -> InterfaceList
 addDeclaration new (InterfaceList is) = InterfaceList $ go new is
   where
@@ -74,11 +78,10 @@ addDeclaration new (InterfaceList is) = InterfaceList $ go new is
       | otherwise = i         : go d is
                     
     add :: InterfaceElement -> InterfaceElement -> InterfaceElement
-    add old new = old { idecl_identifier_list = (head $ idecl_identifier_list new) : idecl_identifier_list old }
+    add old new = old { idecl_identifier_list = idecl_identifier_list old ++ [head $ idecl_identifier_list new] }
 
     eqd :: InterfaceDeclaration -> InterfaceDeclaration -> Bool
     eqd l r = l { idecl_identifier_list = [] } == r { idecl_identifier_list = [] }
-
 
 newDeclaration :: Identifier -> Kind -> Maybe Mode -> Type -> Maybe Expression -> InterfaceDeclaration
 newDeclaration ident kind mode typ exp = case kind of
@@ -87,79 +90,55 @@ newDeclaration ident kind mode typ exp = case kind of
   Variable -> InterfaceVariableDeclaration [ident] mode typ       exp
   File     -> InterfaceFileDeclaration     [ident]      typ
 
-addPort :: Identifier -> Kind -> Maybe Mode -> Type -> Maybe Expression -> LLVM ()
+addPort :: Identifier -> Kind -> Maybe Mode -> Type -> Maybe Expression -> LLVM Identifier
 addPort ident kind mode typ exp =
   do state <- get
      let port  = newDeclaration ident kind mode typ exp
          ports = Just $ case entity_ports (architecture_header state) of
            Nothing              -> PortClause (InterfaceList [port])
            Just (PortClause is) -> PortClause (addDeclaration port is)
-{-
-addPort ident kind mode typ exp ed@(EntityDeclaration _ eh@(EntityHeader _ ports) _ _) = undefined
-  let port = newDeclaration ident kind mode typ exp
-      new  = case ports of
-        Nothing              -> Just (PortClause (InterfaceList [port]))
-        Just (PortClause is) -> Just (PortClause (addDeclaration port is))
-   in ed { entity_header = eh { formal_port_clause = new } }
--}
-addGeneric :: Identifier -> Kind -> Maybe Mode -> Type -> Maybe Expression -> LLVM ()
-addGeneric ident kind mode typ exp {-ed@(EntityDeclaration _ eh@(EntityHeader gens _) _ _)-} = undefined
-{-
-  let gen = newDeclaration ident kind mode typ exp
-      new = case gens of
-        Nothing                 -> Just (GenericClause (InterfaceList [gen]))
-        Just (GenericClause is) -> Just (GenericClause (addDeclaration gen is))
-   in ed { entity_header = eh { formal_generic_clause = new } }
--}
+     modify (\s -> s { architecture_header = (architecture_header s) { entity_ports = ports } })
+     return ident
+
+addGeneric :: Identifier -> Kind -> Maybe Mode -> Type -> Maybe Expression -> LLVM Identifier
+addGeneric ident kind mode typ exp =
+  do state <- get
+     let port  = newDeclaration ident kind mode typ exp
+         ports = Just $ case entity_generics (architecture_header state) of
+           Nothing                 -> GenericClause (InterfaceList [port])
+           Just (GenericClause is) -> GenericClause (addDeclaration port is)
+     modify (\s -> s { architecture_header = (architecture_header s) { entity_generics = ports } })
+     return ident
+
 --------------------------------------------------------------------------------
 -- ***
-{-
-constant, constantG :: String -> Type -> Maybe Expression -> EntityDeclaration -> EntityDeclaration
+
+constant, constantG :: String -> Type -> Maybe Expression -> LLVM Identifier
 constant  str typ exp = addPort    (Ident str) Constant Nothing typ exp
 constantG str typ exp = addGeneric (Ident str) Constant Nothing typ exp
 
-signal, signalG :: String -> Mode -> Type -> Maybe Expression -> EntityDeclaration -> EntityDeclaration
+signal, signalG :: String -> Mode -> Type -> Maybe Expression -> LLVM Identifier
 signal  str mod typ exp = addPort    (Ident str) Signal (Just mod) typ exp
 signalG str mod typ exp = addGeneric (Ident str) Signal (Just mod) typ exp
 
-variable, variableG :: String -> Mode -> Type -> Maybe Expression -> EntityDeclaration -> EntityDeclaration
+variable, variableG :: String -> Mode -> Type -> Maybe Expression -> LLVM Identifier
 variable  str mod typ exp = addPort    (Ident str) Variable (Just mod) typ exp
 variableG str mod typ exp = addGeneric (Ident str) Variable (Just mod) typ exp
 
-file, fileG :: String -> Type -> EntityDeclaration -> EntityDeclaration
-file  str typ = addPort    (Ident str) File Nothing typ Nothing
-fileG str typ = addGeneric (Ident str) File Nothing typ Nothing
--}
+file, fileG :: String -> Type -> LLVM Identifier
+file  str typ = addPort    (Ident str) File Nothing typ Nothing >> return (Ident str)
+fileG str typ = addGeneric (Ident str) File Nothing typ Nothing >> return (Ident str)
+
 --------------------------------------------------------------------------------
 -- * Declaring Entities
 --------------------------------------------------------------------------------
 
-data Kind = Constant | Signal | Variable | File
-
-type Type = SubtypeIndication
-
---------------------------------------------------------------------------------
+addConcurrentStatement :: ConcurrentStatement -> LLVM ()
+addConcurrentStatement cstmt = modify $ \s -> s {architecture_statements = architecture_statements s ++ [cstmt]}
 
 --------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
-
-addConcurrentStatement :: ConcurrentStatement -> ArchitectureBody -> ArchitectureBody
-addConcurrentStatement cs (ArchitectureBody i n dp sp) = (ArchitectureBody i n dp (sp ++ [cs]))
-
---------------------------------------------------------------------------------
-
-conditionalAssignment :: Maybe Label -> Bool -> ConditionalSignalAssignment -> ArchitectureBody -> ArchitectureBody 
-conditionalAssignment label post csas = undefined
-
-selectedAssignment :: Maybe Label -> Bool -> SelectedSignalAssignment -> ArchitectureBody -> ArchitectureBody
-selectedAssignment label post ssas = undefined
-
---------------------------------------------------------------------------------
-
-(<==) :: Identifier -> Expression -> ArchitectureBody -> ArchitectureBody
+(<==) :: Identifier -> Expression -> LLVM ()
 (<==) ident exp = addConcurrentStatement $
   ConSignalAss
     (CSASCond
@@ -170,17 +149,8 @@ selectedAssignment label post ssas = undefined
         (Options (False) (Nothing))
         (ConditionalWaveforms
           ([])
-          ( (WaveElem
-              [WaveEExp
-                (exp)
-                (Nothing)
-              ]
-            )
-          , (Nothing)
-          )
-        )
-      )
-    )
+          ( (WaveElem [WaveEExp exp Nothing])
+          , (Nothing)))))
 
 --------------------------------------------------------------------------------
 -- * Expressions - simplified for now
@@ -255,21 +225,29 @@ instance Eq Name -- todo
 --------------------------------------------------------------------------------
 -- * Test
 --------------------------------------------------------------------------------
-{-
-testD = (newInputs ["a", "b", "c"] >> newOutput "o")                $ emptyEntity "even"
-testB = (Ident "o") <== not (xor [Ident "a", Ident "b", Ident "c"]) $ behavioural "even"
--}
+
+test :: IO ()
+test =
+  do let (head, body) = runLLVM (behavioural "even") $
+           do a <- input "a"
+              b <- input "b"
+              c <- input "c"
+              o <- output "o"
+              o <== not (xor [a, b, c])
+     putStrLn $ show $ pp head
+     putStrLn $ show $ pp body
+
 --------------------------------------------------------------------------------
 -- **
-{-
-newInput, newOutput :: String -> EntityDeclaration -> EntityDeclaration
-newInput  str = signal str In  std_logic Nothing
-newOutput str = signal str Out std_logic Nothing
 
-newInputs, newOutputs :: [String] -> EntityDeclaration -> EntityDeclaration
-newInputs  = flip $ foldr newInput
-newOutputs = flip $ foldr newOutput
--}
+input, output:: String -> LLVM Identifier
+input  str = signal str In  std_logic Nothing
+output str = signal str Out std_logic Nothing
+
+inputs, outputs :: [String] -> LLVM [Identifier]
+inputs  = mapM input
+outputs = mapM output
+
 std_logic :: Type
 std_logic = SubtypeIndication Nothing (TMType (NSimple (Ident "STD_LOGIC"))) Nothing
 
