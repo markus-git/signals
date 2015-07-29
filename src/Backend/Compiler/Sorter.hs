@@ -15,7 +15,6 @@ import Frontend.Signal.Observ
   
 import Control.Arrow
 import Control.Monad.State
-import Data.List (sort)
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 
