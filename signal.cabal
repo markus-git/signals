@@ -23,8 +23,8 @@ library
                        Backend.VHDL.Syntax,
                        Backend.VHDL.Pretty
                        Backend.Compiler.Cycles,
-                       Backend.Compiler.Sorter
---                       Backend.Compiler.Linker,
+                       Backend.Compiler.Sorter,
+                       Backend.Compiler.Linker
 --                       Backend.Compiler.Compiler
   -- other-modules:       
   other-extensions:    ConstraintKinds,
