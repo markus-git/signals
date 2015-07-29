@@ -1034,25 +1034,25 @@ type FileLogicalName = Expression
 
 data InterfaceDeclaration
   = InterfaceConstantDeclaration {
-        iconst_identifier_list    :: IdentifierList
+        idecl_identifier_list     :: IdentifierList
       , iconst_subtype_indication :: SubtypeIndication
       , iconst_static_expression  :: Maybe Expression
     }
   | InterfaceSignalDeclaration {
-        isig_identifier_list      :: IdentifierList
+        idecl_identifier_list     :: IdentifierList
       , isig_mode                 :: Maybe Mode
       , isig_subtype_indication   :: SubtypeIndication
       , isig_bus                  :: Bool
       , isig_static_expression    :: Maybe Expression
     }
   | InterfaceVariableDeclaration {
-        ivar_identifier_list      :: IdentifierList
+        idecl_identifier_list     :: IdentifierList
       , ivar_mode                 :: Maybe Mode
       , ivar_subtype_indication   :: SubtypeIndication
       , ivar_static_expression    :: Maybe Expression
     }
   | InterfaceFileDeclaration {
-        ifile_identifier_list     :: IdentifierList
+        idecl_identifier_list     :: IdentifierList
       , ifile_subtype_indication  :: SubtypeIndication
     }
 
