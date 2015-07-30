@@ -23,6 +23,7 @@ library
                        Backend.VHDL.Syntax,
                        Backend.VHDL.Pretty,
                        Backend.VHDL.Generate,
+                       Backend.VHDL.Expr,
                        Backend.Compiler.Cycles,
                        Backend.Compiler.Sorter
 --                       Backend.Compiler.Linker
