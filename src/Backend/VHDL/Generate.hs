@@ -62,7 +62,8 @@ structural  :: String -> ArchitectureState
 structural  = emptyState "structural"
 
 --------------------------------------------------------------------------------
--- **
+-- *
+--------------------------------------------------------------------------------
 
 data Kind = Constant | Signal | Variable | File
 
@@ -130,13 +131,57 @@ file  str typ = addPort    (Ident str) File Nothing typ Nothing >> return (Ident
 fileG str typ = addGeneric (Ident str) File Nothing typ Nothing >> return (Ident str)
 
 --------------------------------------------------------------------------------
--- * Declaring Entities
+-- * 
 --------------------------------------------------------------------------------
 
 addConcurrentStatement :: ConcurrentStatement -> LLVM ()
 addConcurrentStatement cstmt = modify $ \s -> s {architecture_statements = architecture_statements s ++ [cstmt]}
 
+addLocalDeclaration :: BlockDeclarativeItem -> LLVM ()
+addLocalDeclaration bitem = modify $ \s -> s {architecture_declarative = architecture_declarative s ++ [bitem]}
+
 --------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+-- * Expressions
+--------------------------------------------------------------------------------
+
+class Dummy a where
+  relate :: a -> Relation
+
+instance Dummy Relation where
+  relate = id
+
+instance Dummy ShiftExpression where
+  relate = flip Relation Nothing
+
+instance Dummy SimpleExpression where
+  relate = relate . flip ShiftExpression Nothing
+
+instance Dummy Term where
+  relate = relate . flip (SimpleExpression Nothing) []
+
+instance Dummy Factor where
+  relate = relate . flip Term []
+
+instance Dummy Primary where
+  relate = relate . flip FacPrim Nothing
+
+--------------------------------------------------------------------------------
+
+instance Dummy Identifier
+  where
+    relate = relate . PrimName . NSimple
+
+instance Dummy Expression
+  where
+    relate = relate . PrimExp
+
+--------------------------------------------------------------------------------
+
+dummy :: Dummy a => a -> Expression
+dummy = flip ENand Nothing . relate
 
 (<==) :: Identifier -> Expression -> LLVM ()
 (<==) ident exp = addConcurrentStatement $
@@ -153,32 +198,19 @@ addConcurrentStatement cstmt = modify $ \s -> s {architecture_statements = archi
           , (Nothing)))))
 
 --------------------------------------------------------------------------------
--- * Expressions - simplified for now
---------------------------------------------------------------------------------
+-- **
 
-relate :: [Identifier] -> [Relation]
-relate = map
-      ( (\x -> Relation x Nothing)
-      . (\x -> ShiftExpression x Nothing)
-      . (\x -> SimpleExpression Nothing x [])
-      . (\x -> Term x [])
-      . (\x -> FacPrim x Nothing)
-      . PrimName
-      . NSimple)
+and, or, xor, xnor :: Dummy a => [a] -> Expression
+and  = EAnd  . map relate
+or   = EOr   . map relate
+xor  = EXor  . map relate
+xnor = EXnor . map relate
 
---------------------------------------------------------------------------------
+nand, nor :: Dummy a => [a] -> Expression
+nand [x,y] = ENand (relate x) (Just $ relate y)
+nor  [x,y] = ENor  (relate x) (Just $ relate y)
 
-and, or, xor, xnor :: [Identifier] -> Expression
-and  = EAnd  . relate
-or   = EOr   . relate
-xor  = EXor  . relate
-xnor = EXnor . relate
-
-nand, nor :: [Identifier] -> Expression
-nand [x,y] = let [a,b] = relate [x,y] in ENand a (Just b)
-nor  [x,y] = let [a,b] = relate [x,y] in ENor  a (Just b)
-
-not :: Expression -> Expression
+not :: Dummy a => a -> Expression
 not exp =
   (ENand
    (Relation
@@ -188,12 +220,19 @@ not exp =
       (Term
        (FacNot
         (PrimExp
-         (exp)))
+         (dummy exp)))
        ([]))
       ([]))
      (Nothing))
     (Nothing))
    (Nothing))
+
+--------------------------------------------------------------------------------
+-- * Types
+--------------------------------------------------------------------------------
+
+std_logic :: Type
+std_logic = SubtypeIndication Nothing (TMType (NSimple (Ident "STD_LOGIC"))) Nothing
 
 --------------------------------------------------------------------------------
 -- * Helpful instances and functions
@@ -222,33 +261,4 @@ instance Eq Name -- todo
     NSimple n1 == NSimple n2 = n1 == n2
     _          == _          = False 
   
---------------------------------------------------------------------------------
--- * Test
---------------------------------------------------------------------------------
-
-test :: IO ()
-test =
-  do let (head, body) = runLLVM (behavioural "even") $
-           do a <- input "a"
-              b <- input "b"
-              c <- input "c"
-              o <- output "o"
-              o <== not (xor [a, b, c])
-     putStrLn $ show $ pp head
-     putStrLn $ show $ pp body
-
---------------------------------------------------------------------------------
--- **
-
-input, output:: String -> LLVM Identifier
-input  str = signal str In  std_logic Nothing
-output str = signal str Out std_logic Nothing
-
-inputs, outputs :: [String] -> LLVM [Identifier]
-inputs  = mapM input
-outputs = mapM output
-
-std_logic :: Type
-std_logic = SubtypeIndication Nothing (TMType (NSimple (Ident "STD_LOGIC"))) Nothing
-
 --------------------------------------------------------------------------------
