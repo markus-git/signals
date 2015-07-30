@@ -7,7 +7,7 @@
 
 module Frontend.Signal where
 
-import Core hiding (Ref)
+import Core hiding (Ref, join)
 import Frontend.Stream (Stream(..))
 import Backend.Nested
 
