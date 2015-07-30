@@ -12,6 +12,9 @@ import Backend.VHDL.Syntax          (Identifier)
 import qualified Backend.VHDL.Generate as G
 import qualified Backend.VHDL.Syntax   as S
 
+import           Prelude hiding (not)
+import qualified Prelude as P
+
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
@@ -37,19 +40,47 @@ data Expr a
     -- ...
 
 ---------------------------------------------------------------------------------
+-- **
+
+not :: Expr Bool -> Expr Bool
+not = Not
+
+and, or, xor, xnor, nand, nor :: Expr Bool -> Expr Bool -> Expr Bool
+and  = And
+or   = Or
+xor  = Xor
+xnor = Xnor
+nand = Nand
+nor  = Nor
+
+--------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
+class CompileExpr expr
+  where
+    varExpr  :: Typeable a => Identifier -> expr a
+    compExpr :: expr a -> LLVM S.Expression
+
+instance CompileExpr Expr
+  where
+    varExpr  = Var
+    compExpr = compile
+
+--------------------------------------------------------------------------------
 
 evaluate :: (Identifier -> Dynamic) -> Expr a -> a
 evaluate env exp = case exp of
   Var  v | Just a <- fromDynamic (env v) -> a
-  Not  x   -> not $ evaluate env x
+  Not  x   -> P.not $ evaluate env x
   And  x y -> evaluate env x  &&   evaluate env y
   Or   x y -> evaluate env x  ||   evaluate env y
   Xor  x y -> evaluate env x `xor` evaluate env y
-  Xnor x y -> not $ evaluate env x `xor` evaluate env y
-  Nand x y -> not $ evaluate env x  &&   evaluate env y
-  Nor  x y -> not $ evaluate env x  ||   evaluate env y
+  Xnor x y -> P.not $ evaluate env x `xor` evaluate env y
+  Nand x y -> P.not $ evaluate env x  &&   evaluate env y
+  Nor  x y -> P.not $ evaluate env x  ||   evaluate env y
   where
-    xor a b = (a || b) && not (a && b)
+    xor a b = (a || b) && P.not (a && b)
 
 --------------------------------------------------------------------------------
 
@@ -74,39 +105,4 @@ compile exp = case exp of
       b <- compile y
       return $ f [a, b]
 
---------------------------------------------------------------------------------
---
---------------------------------------------------------------------------------
-
-class CompileExpr expr
-  where
-    varExpr  :: Typeable a => Identifier -> expr a
-    compExpr :: expr a -> LLVM S.Expression
-
-instance CompileExpr Expr
-  where
-    varExpr  = Var
-    compExpr = compile
-
---------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
-
-{-
-test :: IO ()
-test =
-  do let (head, body) = runLLVM (behavioural "even") $
-           do a <- input "a"
-              b <- input "b"
-              c <- input "c"
-              output "o"
-     putStrLn $ show $ pp head
-     putStrLn $ show $ pp body
-
-input  :: String -> LLVM (Expr Bool)
-input  str = Var <$> signal str S.In  std_logic Nothing
-
-output :: String -> LLVM (Identifier)
-output str = signal str S.Out std_logic Nothing
--}
 --------------------------------------------------------------------------------
