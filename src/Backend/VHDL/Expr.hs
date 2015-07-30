@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Backend.VHDL.Expr where
 
@@ -19,7 +20,7 @@ import qualified Backend.VHDL.Syntax   as S
 -- ! Expressions poorly translate to a single data type
 data Expr a
   where
-    Var  :: Identifier -> Expr Bool
+    Var  :: Typeable a => Identifier -> Expr a
 
     -- logical operators
     Not  :: Expr Bool -> Expr Bool
@@ -37,23 +38,23 @@ data Expr a
 
 ---------------------------------------------------------------------------------
 
-evalExpr :: (Identifier -> Dynamic) -> Expr a -> a
-evalExpr env exp = case exp of
+evaluate :: (Identifier -> Dynamic) -> Expr a -> a
+evaluate env exp = case exp of
   Var  v | Just a <- fromDynamic (env v) -> a
-  Not  x   -> not $ evalExpr env x
-  And  x y -> evalExpr env x && evalExpr env y
-  Or   x y -> evalExpr env x || evalExpr env y
-  Xor  x y -> evalExpr env x `xor` evalExpr env y
-  Xnor x y -> not $ evalExpr env x `xor` evalExpr env y
-  Nand x y -> not $ evalExpr env x && evalExpr env y
-  Nor  x y -> not $ evalExpr env x || evalExpr env y
+  Not  x   -> not $ evaluate env x
+  And  x y -> evaluate env x  &&   evaluate env y
+  Or   x y -> evaluate env x  ||   evaluate env y
+  Xor  x y -> evaluate env x `xor` evaluate env y
+  Xnor x y -> not $ evaluate env x `xor` evaluate env y
+  Nand x y -> not $ evaluate env x  &&   evaluate env y
+  Nor  x y -> not $ evaluate env x  ||   evaluate env y
   where
     xor a b = (a || b) && not (a && b)
 
 --------------------------------------------------------------------------------
 
-compExpr :: Expr a -> LLVM S.Expression
-compExpr exp = case exp of
+compile :: Expr a -> LLVM S.Expression
+compile exp = case exp of
   Var  v   -> return $ dummy v
   Not  x   -> un  G.not  x
   And  x y -> bin G.and  x y
@@ -63,20 +64,34 @@ compExpr exp = case exp of
   Nand x y -> bin G.nand x y
   Nor  x y -> bin G.nor  x y
   where
-    un  f x = do
-      a <- compExpr' x
+    un :: (S.Expression -> S.Expression) -> Expr a -> LLVM S.Expression
+    un f x = do
+      a <- compile x
       return $ f a
+    bin :: ([S.Expression] -> S.Expression) -> Expr a -> Expr b -> LLVM S.Expression
     bin f x y = do
-      a <- compExpr' x
-      b <- compExpr' y
+      a <- compile x
+      b <- compile y
       return $ f [a, b]
-
-compExpr' :: Expr a -> LLVM S.Expression
-compExpr' x = dummy <$> compExpr x
 
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
+
+class CompileExpr expr
+  where
+    varExpr  :: Typeable a => Identifier -> expr a
+    compExpr :: expr a -> LLVM S.Expression
+
+instance CompileExpr Expr
+  where
+    varExpr  = Var
+    compExpr = compile
+
+--------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
 {-
 test :: IO ()
 test =
