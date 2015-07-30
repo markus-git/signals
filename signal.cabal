@@ -24,6 +24,7 @@ library
                        Backend.VHDL.Pretty,
                        Backend.VHDL.Generate,
                        Backend.VHDL.Expr,
+                       Backend.VHDL.CMD,
                        Backend.Compiler.Cycles,
                        Backend.Compiler.Sorter
 --                       Backend.Compiler.Linker
