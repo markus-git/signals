@@ -47,7 +47,7 @@ library
                        mtl >=2.2 && <2.3,
                        containers >=0.5 && <0.6,
                        pretty,
-                       imperative-edsl,
+                       imperative-edsl >= 0.3,
                        observable-sharing >= 0.2.1.2,
                        -- greater versions break 
                        monad-control < 1.0, 
