@@ -142,6 +142,29 @@ addLocalDeclaration bitem = modify $ \s -> s {architecture_declarative = archite
 
 --------------------------------------------------------------------------------
 
+(<==) :: Identifier -> Expression -> LLVM ()
+(<==) ident exp = addConcurrentStatement $
+  ConSignalAss
+    (CSASCond
+      (Nothing)
+      (False)
+      (ConditionalSignalAssignment
+        (TargetName (NSimple ident))
+        (Options (False) (Nothing))
+        (ConditionalWaveforms
+          ([])
+          ( (WaveElem [WaveEExp exp Nothing])
+          , (Nothing)))))
+
+localSignal :: Identifier -> Type -> LLVM ()
+localSignal ident typ = addLocalDeclaration $
+  BDISignalDecl
+    (SignalDeclaration
+      ([ident])
+      (typ)
+      (Nothing)
+      (Nothing)
+    )
 
 --------------------------------------------------------------------------------
 -- * Expressions
@@ -168,8 +191,6 @@ instance Dummy Factor where
 instance Dummy Primary where
   relate = relate . flip FacPrim Nothing
 
---------------------------------------------------------------------------------
-
 instance Dummy Identifier
   where
     relate = relate . PrimName . NSimple
@@ -178,24 +199,8 @@ instance Dummy Expression
   where
     relate = relate . PrimExp
 
---------------------------------------------------------------------------------
-
 dummy :: Dummy a => a -> Expression
 dummy = flip ENand Nothing . relate
-
-(<==) :: Identifier -> Expression -> LLVM ()
-(<==) ident exp = addConcurrentStatement $
-  ConSignalAss
-    (CSASCond
-      (Nothing)
-      (False)
-      (ConditionalSignalAssignment
-        (TargetName (NSimple ident))
-        (Options (False) (Nothing))
-        (ConditionalWaveforms
-          ([])
-          ( (WaveElem [WaveEExp exp Nothing])
-          , (Nothing)))))
 
 --------------------------------------------------------------------------------
 -- **

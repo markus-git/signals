@@ -23,10 +23,12 @@ import Backend.VHDL.Pretty
 data ConcurrentCMD exp (prog :: * -> *) a
   where
     Assign :: Identifier -> exp a -> ConcurrentCMD exp prog ()
+    Local  :: Identifier -> Type  -> ConcurrentCMD exp prog ()
 
 instance MapInstr (ConcurrentCMD exp)
   where
     imap _ (Assign r a) = Assign r a
+    imap _ (Local  i t) = Local  i t
 
 type instance IExp (ConcurrentCMD e)       = e
 type instance IExp (ConcurrentCMD e :+: i) = e
@@ -37,6 +39,9 @@ type instance IExp (ConcurrentCMD e :+: i) = e
 (<=:) :: (ConcurrentCMD (IExp instr) :<: instr) => Identifier -> IExp instr Bool -> ProgramT instr m ()
 (<=:) i = singleE . Assign i
 
+local :: (ConcurrentCMD (IExp instr) :<: instr) => Identifier -> Type -> ProgramT instr m ()
+local i = singleE . Local i
+
 --------------------------------------------------------------------------------
 -- **
 
@@ -44,6 +49,8 @@ compConcurrentCMD :: forall exp prog a. CompileExpr exp => ConcurrentCMD exp pro
 compConcurrentCMD (Assign i exp) =
   do v <-  compExpr exp
      i <== v
+compConcurrentCMD (Local i typ) =
+  do localSignal i typ
 
 --------------------------------------------------------------------------------
 -- *
