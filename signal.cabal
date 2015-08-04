@@ -18,17 +18,15 @@ library
                        Frontend.Signal,
                        Frontend.Signal.Observ,
                        Backend.Knot,
-                       Backend.Ex,
-                       Backend.Nested,
                        Backend.VHDL.Syntax,
                        Backend.VHDL.Pretty,
                        Backend.VHDL.Generate,
                        Backend.VHDL.Expr,
                        Backend.VHDL.CMD,
+                       Backend.Compiler,
                        Backend.Compiler.Cycles,
-                       Backend.Compiler.Sorter
---                       Backend.Compiler.Linker
---                       Backend.Compiler.Compiler
+                       Backend.Compiler.Sorter,
+                       Backend.Compiler.Linker
   -- other-modules:       
   other-extensions:    ConstraintKinds,
                        TypeFamilies,
