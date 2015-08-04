@@ -104,6 +104,7 @@ cycles (Key key) nodes = flip evalState (init nodes) $ go key
 
 --------------------------------------------------------------------------------
 
+-- ! Remove unsafe, It's not really needed.
 cycle' :: Name (S Symbol i a) -> M i Bool
 cycle' r =
   do r `is` Visiting

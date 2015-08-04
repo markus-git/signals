@@ -26,17 +26,17 @@ import Unsafe.Coerce -- !
 import Prelude hiding (Left, Right)
 
 --------------------------------------------------------------------------------
--- * Sorter
+-- * 
 --------------------------------------------------------------------------------
 
 -- | During the sorting process a node can either be sorted or unvisited 
-data Status     = Visited | Unvisited deriving Eq
+data Status = Visited | Unvisited deriving Eq
+
+-- | The ordering assigned to a node after being sorted
+type Order = Int
 
 -- | ...
 data Tagged i a = Tagged Status Order (Name a) (Node i a)
-
--- | The ordering assigned to a node after being sorted
-type Order      = Int
 
 -- | ...
 type M i = State (Order, Map (Tagged i))
@@ -51,31 +51,29 @@ new = do
   put (i + 1, m)
   return i
 
--- | Updates the order of a node
-tag :: Name a -> Order -> M i ()
-tag r o = modify $ second $ flip M.adjust r $ \(Tagged s _ k n) -> Tagged s o k n
+-- | Updates the order and name-tag of a node
+tag :: Name (S Symbol i a) -> Order -> M i ()
+tag r o = modify $ second $ flip M.adjust r $ \(Tagged s _ _ n) -> Tagged s o r n
 
 -- | Marks a node as visited
-visited :: Name a -> M i ()
+visited :: Name (S Symbol i a) -> M i ()
 visited r = modify $ second $ flip M.adjust r $ \(Tagged _ o k n) -> Tagged Visited o k n
 
 -- | Gets the status of a node
-status :: Name a -> M i Status
+status :: Name (S Symbol i a) -> M i Status
 status r = gets $ (\(Tagged s _ _ _) -> s) . (M.! r) . snd
 
 -- | ...
 node :: Name (S Symbol i a) -> M i (S Key i a)
-node r =
-  do modify $ second $ flip M.adjust r $ \(Tagged s o _ n) -> Tagged s o r n
-     gets   $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
+node r = gets $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
 
 --------------------------------------------------------------------------------
--- *
+-- * Sorter
 --------------------------------------------------------------------------------
 
 data Ordered i
   where
-    Ordered :: Name (S Symbol i a) -> Ordered i
+    Ordered :: Witness a => Name (S Symbol i a) -> Ordered i
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Map (Node i) -> [Ordered i]
@@ -92,9 +90,9 @@ sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
            . concat
            . M.dump
       where
-        -- ! I'm pretty sure this is ok, look at 'node' function
+        -- Haskell is strange sometimes...
         apa :: forall i. M.HideType (Tagged i) -> (Order, Ordered i)
-        apa (M.Hide (Tagged _ o k _)) = (o, Ordered $ unsafeCoerce k)
+        apa (M.Hide (Tagged _ o k (Node _))) = (o, Ordered k)
 
 --------------------------------------------------------------------------------
 

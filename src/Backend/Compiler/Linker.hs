@@ -29,22 +29,20 @@ import qualified Data.Ref.Map as M
 import Prelude hiding (Left, Right, Ordering)
 
 --------------------------------------------------------------------------------
--- * Linking
+-- * 
 --------------------------------------------------------------------------------
 
--- ! Naming things has always been tricky..
-
-type family Names a
-type instance Names (S sym i (Identity a)) = Named (S sym i (Identity a))
-type instance Names (S sym i (a, b))       = (Names (S sym i a), Names (S sym i b))
-
+-- Naming things has always been tricky..
 data Named a
   where
     Named  :: Name  (S sym i a)      -> Named (S sym i a)
     Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
     Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
 
--- | ...
+type family Names a
+type instance Names (S sym i (Identity a)) = Named (S sym i (Identity a))
+type instance Names (S sym i (a, b))       = (Names (S sym i a), Names (S sym i b))
+
 name :: forall sym i a. Witness a => Name (S sym i a) -> Names (S sym i a)
 name n = go (wit :: Wit a) (Named n)
   where
@@ -53,10 +51,6 @@ name n = go (wit :: Wit a) (Named n)
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
 --------------------------------------------------------------------------------
-
--- ! What should 'f' be?..
---     insert :: Name a -> f a -> Map f -> Map f
---     lookup :: Name a -> Map f -> Maybe (f a)
 
 -- These contain names for input
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
@@ -82,22 +76,21 @@ old  :: Key i a -> M i (Link i a)
 old (Key k) = gets $ Link . (\(Linked _ n) -> n) . (M.! k)
 
 --------------------------------------------------------------------------------
--- *
+-- * Linker
 --------------------------------------------------------------------------------
 
+-- | ...
 linker :: [Ordered i] -> Map (Node i) -> Map (Linked i)
-linker order nodes = undefined
-                   . flip execState M.empty
+linker order nodes = flip execState M.empty
                    . flip runReaderT nodes
                    $ forM_ order link'
 
 --------------------------------------------------------------------------------
+-- **
 
+-- | ...
 link' :: Ordered i -> M i ()
-link' = undefined
-{-
-link' :: forall i a. Witness a => Name (S Symbol i a) -> M i ()
-link' sym =
+link' (Ordered sym) =
   do let out = name sym
      n <- node sym
      case n of
@@ -119,5 +112,5 @@ link' sym =
        (Delay v s) -> do
          ms <- old s
          new sym $ Linked (Delay v ms) out
--}
+
 --------------------------------------------------------------------------------
