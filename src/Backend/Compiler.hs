@@ -5,45 +5,41 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Backend.Compiler.Compiler (
+module Backend.Compiler {-(
     compiler
-  )
-where
+  )-}
+  where
 
 import Core
+import qualified Core as C
 
-import Frontend.Stream (Stream(..), Str)
-import Frontend.Signal (Signal(..), Sig)
+import Frontend.Stream 
+import Frontend.Signal
 import Frontend.Signal.Observ
-
-import Backend.Ex
-import Backend.Nested
+import qualified Frontend.Stream as Str
+import qualified Frontend.Signal as S
 import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
 
-import qualified Core            as C
-import qualified Frontend.Stream as Str
-import qualified Frontend.Signal as S
-
 import Control.Monad.Reader
-import Control.Monad.State hiding (State)
-import Data.Reify
+import Control.Monad.State
 import Data.Maybe       (fromJust)
 import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
 import Data.Function    (on)
-import Data.Map         (Map, (!))
 import Data.Constraint
 
-import qualified Data.Map        as M
+import Data.Ref
+import Data.Ref.Map (Map, Name)
+import qualified Data.Ref.Map as M
 
-import Prelude hiding (reads)
+import Prelude hiding (reads, Left, Right)
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
-
+{-
 compiler :: ( RefCMD  (IExp instr) :<: instr
             , VarPred (IExp instr) a
             , MapInstr instr
@@ -61,11 +57,14 @@ compiler f =
      return $ case cycle of
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
-
+-}
 --------------------------------------------------------------------------------
 -- * Channels
 --------------------------------------------------------------------------------
 
+--type Channels = Map Channel
+
+{-
 type Prog instr = Program instr
 
 -- | Untyped binary trees over references
@@ -76,10 +75,10 @@ data Channel symbol instr = C {
     _ch_in  :: Map symbol (REx instr)
   , _ch_out :: Map symbol (REx instr)
   }
-
+-}
 --------------------------------------------------------------------------------
 -- hacky solution for now
-
+{-
 -- |
 initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IExp instr) :<: instr)
              => Resolution s instr
@@ -116,11 +115,11 @@ copyChannel m (Ex s) = Ex $ copys s
     copys (Seaf   i)   = case m ! read i of
       (Ex (Reaf r)) -> case gcast r of
         (Just x) -> Reaf x
-
+-}
 --------------------------------------------------------------------------------
 -- * Compiler
 --------------------------------------------------------------------------------
-
+{-
 -- | ...
 data Enviroment symbol instr = Env
   { _links    :: Resolution symbol instr
@@ -131,9 +130,9 @@ data Enviroment symbol instr = Env
 
 -- | 
 type Type instr = ReaderT (Enviroment Unique instr) (Prog instr)
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 reads :: (RefCMD (IExp instr) :<: instr)
       => Ruple instr a
       -> Prog  instr (Tuple instr a)
@@ -149,9 +148,9 @@ writes :: (RefCMD (IExp instr) :<: instr)
        -> Prog  instr ()
 writes (Leaf   s)   (Reaf   r)   = C.setRef r s
 writes (Branch l r) (Rranch u v) = writes l u >> writes r v
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- | Read
 read_in :: (RefCMD (IExp instr) :<: instr, Typeable a)
         => Unique
@@ -184,9 +183,9 @@ write_out u s =
      case gcast ch of
        Just r  -> lift $ writes s r
        Nothing -> error "depa: type error"
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- | ...
 compile :: (RefCMD (IExp instr) :<: instr, MapInstr instr, Typeable instr)
         => (Unique, Node instr)
@@ -230,9 +229,9 @@ compile (i, TMap ti to f _) =
      write_out i value
 
 compile _ = return ()
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- | ...
 compiler' :: forall instr a b.
              ( Typeable instr, Typeable a, Typeable b
@@ -294,5 +293,5 @@ compiler' nodes links order input = Stream $
             nop (TLeft   {}) = True
             nop (TRight  {}) = True
             nop _            = False
-
+-}
 --------------------------------------------------------------------------------

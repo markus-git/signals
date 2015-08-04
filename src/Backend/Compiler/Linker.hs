@@ -5,12 +5,14 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Linker {-(
-    Resolution(..)
-  , TEx
+module Backend.Compiler.Linker (
+    Named(..)
+  , Names
+  , Link(..)
+  , Linked(..)
   , linker
-  )-}
-where
+  )
+  where
 
 import Core
 import Frontend.Stream 
