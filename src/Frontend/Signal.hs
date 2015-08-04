@@ -33,13 +33,17 @@ newtype Symbol i a = Symbol (Ref (S Symbol i a))
 data S sig i a
   where
     Repeat :: Stream i (IExp i a) -> S sig i (Identity a)
-    Map    :: (Stream i (U i a) -> Stream i (U i b))
+    Map    :: (Witness a, Witness b) =>
+              (Stream i (U i a) -> Stream i (U i b))
            ->   sig i a
            -> S sig i b
 
-    Join   :: sig i a      -> sig i b -> S sig i (a, b)
-    Left   :: sig i (a, b)            -> S sig i a
-    Right  :: sig i (a, b)            -> S sig i b
+    Join   :: (Witness a, Witness b) =>
+              sig i a -> sig i b -> S sig i (a, b)
+    Left   :: (Witness a, Witness b) =>
+              sig i (a, b) -> S sig i a
+    Right  :: (Witness a, Witness b) =>
+              sig i (a, b) -> S sig i b
 
     Delay  :: IExp i a -> sig i (Identity a) -> S sig i (Identity a)
 
@@ -66,16 +70,26 @@ unsymbol (Symbol s) = deref s
 repeat :: Stream i (U i (Identity a)) -> Signal i (Identity a)
 repeat s = signal $ Repeat s
 
-map :: (Stream i (U i a) -> Stream i (U i b)) -> Signal i a -> Signal i b
+map :: (Witness a, Witness b) =>
+          (Stream i (U i a) -> Stream i (U i b))
+       -> Signal i a
+       -> Signal i b
 map f (Signal s) = signal $ Map f s
 
-join :: Signal i a -> Signal i b -> Signal i (a, b)
+join :: (Witness a, Witness b) =>
+           Signal i a
+        -> Signal i b
+        -> Signal i (a, b)
 join (Signal a) (Signal b) = signal $ Join a b
 
-left :: Signal i (a, b) -> Signal i a
+left :: (Witness a, Witness b) =>
+           Signal i (a, b)
+        -> Signal i a
 left (Signal s) = signal $ Left s
 
-right :: Signal i (a, b) -> Signal i b
+right :: (Witness a, Witness b) =>
+            Signal i (a, b)
+         -> Signal i b
 right (Signal s) = signal $ Right s
 
 --------------------------------------------------------------------------------

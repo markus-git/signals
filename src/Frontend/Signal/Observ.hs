@@ -36,7 +36,7 @@ data Key (i :: (* -> *) -> * -> *) (a :: *)
 -- | ...
 data Node (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Node :: S Key i a -> Node i (S Symbol i a)
+    Node :: Witness a => S Key i a -> Node i (S Symbol i a)
 
 --------------------------------------------------------------------------------
 
