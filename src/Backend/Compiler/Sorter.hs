@@ -5,7 +5,7 @@
 
 module Backend.Compiler.Sorter (
     Order
-  , Ordering(..)
+  , Ordered(..)
   , sorter
   )
 where
@@ -15,12 +15,15 @@ import Frontend.Signal.Observ
   
 import Control.Arrow
 import Control.Monad.State
+import Data.List (sortBy)
+import Data.Function (on)
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-
 import qualified Data.Ref.Map as M
 
-import Prelude hiding (Left, Right, Ordering)
+import Unsafe.Coerce -- !
+
+import Prelude hiding (Left, Right)
 
 --------------------------------------------------------------------------------
 -- * Sorter
@@ -29,7 +32,8 @@ import Prelude hiding (Left, Right, Ordering)
 -- | During the sorting process a node can either be sorted or unvisited 
 data Status     = Visited | Unvisited deriving Eq
 
-data Tagged i a = Tagged Status Order (Node i a)
+-- | ...
+data Tagged i a = Tagged Status Order (Name a) (Node i a)
 
 -- | The ordering assigned to a node after being sorted
 type Order      = Int
@@ -47,41 +51,51 @@ new = do
   put (i + 1, m)
   return i
 
---------------------------------------------------------------------------------
--- **
-
 -- | Updates the order of a node
 tag :: Name a -> Order -> M i ()
-tag r o = modify $ second $ flip M.adjust r $ \(Tagged s _ n) -> Tagged s o n
+tag r o = modify $ second $ flip M.adjust r $ \(Tagged s _ k n) -> Tagged s o k n
 
 -- | Marks a node as visited
 visited :: Name a -> M i ()
-visited r = modify $ second $ flip M.adjust r $ \(Tagged _ o n) -> Tagged Visited o n
+visited r = modify $ second $ flip M.adjust r $ \(Tagged _ o k n) -> Tagged Visited o k n
 
 -- | Gets the status of a node
 status :: Name a -> M i Status
-status r = gets $ (\(Tagged s _ _) -> s) . (M.! r) . snd
+status r = gets $ (\(Tagged s _ _ _) -> s) . (M.! r) . snd
 
 -- | ...
 node :: Name (S Symbol i a) -> M i (S Key i a)
-node r = gets $ (\(Tagged _ _ (Node n)) -> n) . (M.! r) . snd
+node r =
+  do modify $ second $ flip M.adjust r $ \(Tagged s o _ n) -> Tagged s o r n
+     gets   $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
-data Ordering (i :: (* -> *) -> * -> *) a = Ordering Order
+data Ordered i
+  where
+    Ordered :: Name (S Symbol i a) -> Ordered i
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
-sorter :: Key i a -> Map (Node i) -> Map (Ordering i)
+sorter :: Key i a -> Map (Node i) -> [Ordered i]
 sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
   where
     init :: Map (Node i) -> Map (Tagged i)
-    init = M.hmap $ \node -> Tagged Unvisited 0 node
+    init = M.hmap $ \node -> Tagged Unvisited 0 undefined node
 
-    reduce :: Map (Tagged i) -> Map (Ordering i)
-    reduce = M.hmap $ \(Tagged _ o _) -> Ordering o
-    
+    reduce :: Map (Tagged i) -> [Ordered i]
+    reduce = fmap snd
+           . sortBy (compare `on` fst)
+           . fmap apa
+           . fmap snd
+           . concat
+           . M.dump
+      where
+        -- ! I'm pretty sure this is ok, look at 'node' function
+        apa :: forall i. M.HideType (Tagged i) -> (Order, Ordered i)
+        apa (M.Hide (Tagged _ o k _)) = (o, Ordered $ unsafeCoerce k)
+
 --------------------------------------------------------------------------------
 
 sort' :: Name (S Symbol i a) -> M i ()
