@@ -43,6 +43,11 @@ data S sig i a
 
     Delay  :: IExp i a -> sig i (Identity a) -> S sig i (Identity a)
 
+-- | Type for nested tuples, stripping away all Identity    
+type family U (i :: (* -> *) -> * -> *) a :: *
+type instance U i (Identity a) = IExp i a
+type instance U i (a, b)       = (U i a, U i b)
+
 --------------------------------------------------------------------------------
 -- ** Some `smart` constructions
 
@@ -124,13 +129,6 @@ instance forall a b.
     => Witness (a, b)
   where
     wit = WP (wit :: Wit a) (wit :: Wit b)
-
---------------------------------------------------------------------------------
--- ** Type for nested tuples, stripping away all Identity
-    
-type family U (i :: (* -> *) -> * -> *) a :: *
-type instance U i (Identity a) = IExp i a
-type instance U i (a, b)       = (U i a, U i b)
 
 --------------------------------------------------------------------------------
 -- ** Type for nested tuples of signals
