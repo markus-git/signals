@@ -13,210 +13,111 @@ module Backend.Compiler.Linker {-(
 where
 
 import Core
-
 import Frontend.Stream 
-import Frontend.Signal hiding (pack, unpack, lift)
+import Frontend.Signal
 import Frontend.Signal.Observ
-
-import Backend.Knot
+import Backend.Compiler.Sorter (Order, Ordered(..))
 
 import Control.Monad.Reader
-import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Identity
+
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-
 import qualified Data.Ref.Map as M
 
-import Prelude hiding (Left, Right)
-
--- Temp !
-import System.Mem.StableName (eqStableName)
-import Unsafe.Coerce
--- !
+import Prelude hiding (Left, Right, Ordering)
 
 --------------------------------------------------------------------------------
 -- * Linking
 --------------------------------------------------------------------------------
 
-type family Refer (i :: (* -> *) -> * -> *) (a :: *) :: *
-type instance Refer i (S Symbol i (Identity a)) = Name (S Symbol i (Identity a))
-type instance Refer i (S Symbol i (a, b))       = (Refer i a, Refer i b)
+-- ! Naming things has always been tricky..
 
-data Tuple i a where
-  Leaf :: Name    (S Symbol i (Identity a))
-       -> Tuple i (S Symbol i (Identity a))
-          
-  Pair :: Tuple i a
-       -> Tuple i b
-       -> Tuple i (a, b)
+type family Names a
+type instance Names (S sym i (Identity a)) = Named (S sym i (Identity a))
+type instance Names (S sym i (a, b))       = (Names (S sym i a), Names (S sym i b))
 
---------------------------------------------------------------------------------
-
-pack :: forall i a. Witness a => Refer i (S Symbol i a) -> Tuple i (S Symbol i a)
-pack = undefined
+data Named a
   where
-    go :: Wit a -> Refer i (S Symbol i a) -> Tuple i (S Symbol i a)
-    go (WE)     s      = Leaf s
-    go (WP _ _) (l, r) = Pair (pack l) (pack r)
-
---------------------------------------------------------------------------------
-{-
--- | ... I assume each index yeilds a tree with the expected type
-data Resolution i = Resolution {
-    _input  :: ()
-  , _output :: Map (Entry i)
-  }
-
--- | Constraints over symbol to input/output tree
-data Constraint i
-  = In  ()
-  | Out (forall a. (Name a, Entry i a))
+    Named  :: Name  (S sym i a)      -> Named (S sym i a)
+    Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
+    Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
 
 -- | ...
-type M (i :: (* -> *) -> * -> *) = Knot (Resolution i) (Constraint i) (State (Map (Node i)))
--}
---------------------------------------------------------------------------------
-{-
--- | Attempts to fetch resolved value of index
-resolve :: Name a -> M i (Entry i a)
-resolve name = asks $ (M.! name) . _output
-
--- | Adds an output constraint
-constrain :: Name a -> Entry i a -> M i ()
-constrain name entry = tell [Out $ unsafeCoerce (name, entry)]
-
--- | Adds an input constraint
-introduce :: Name a -> Entry i a -> M i ()
-introduce name entry = tell []
--}
---------------------------------------------------------------------------------
-{-
-link' :: Witness a => Name (S Symbol i a) -> M i ()
-link' name =
-  do (Node n) <- gets $ (M.! name)
-     () <- case n of
-       (Repeat c) ->
-         do constrain name (pack name)
-       (Map f (Key s)) ->
-         do t <- resolve s
-            constrain name (pack name)
-       (Join (Key l) (Key r)) ->
-         do t_l <- resolve l
-            t_r <- resolve r
-            constrain name (Entry (t_l, t_r))
-            undefined
-     undefined
+name :: forall sym i a. Witness a => Name (S sym i a) -> Names (S sym i a)
+name n = go (wit :: Wit a) (Named n)
   where
-    pack :: forall i a. Witness a => Name (S Symbol i a) -> Entry i (S Symbol i a)
-    pack n = Entry $ go (wit :: Wit a) n
-      where
-        go :: Wit a -> Name (S Symbol i a) -> Refer i (S Symbol i a)
-        go (WE)     s = s
-        go (WP _ _) s = error "link: I have no idea what to put here"
+    go :: Wit x -> Named (S sym i x) -> Names (S sym i x)
+    go (WE)     n = n
+    go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
--}{-
--- | Given a signal node, link creates constraints modeling its relation to others
-link :: forall m i instr. (Monad m, Ord i, Show i, Typeable instr)
-     => (i, TSignal instr i)
-     -> Knot (Resolution i instr)
-             (Constraint i instr) m
-             ()
+--------------------------------------------------------------------------------
 
-link (i, TLambda l r) =
-  do return ()
+-- ! What should 'f' be?..
+--     insert :: Name a -> f a -> Map f -> Map f
+--     lookup :: Name a -> Map f -> Maybe (f a)
 
-link (i, TVar t) =
-  do constrain i $ mark (show i) t
-
-link (i, TConst (c :: Stream instr (IExp instr a))) =
-  do constrain i (Seaf (show i) :: Suple instr (Empty instr a)) 
-
-link (i, TLift (f :: Stream instr (IExp instr a) -> Stream instr (IExp instr b)) s) =
-  do let t = undefined :: Suple instr (Empty instr a)
-     t' <- resolve s t
-     introduce i t'
-     constrain i (Seaf (show i) :: Suple instr (Empty instr a))
-
-link (i, TDelay (e :: IExp instr a) s) =
-  do let t = undefined :: Suple instr (Empty instr a)
-     t' <- resolve s t
-     introduce i t'
-     constrain i (Seaf (show i) :: Suple instr (Empty instr a))
-
-link (i, TMap ti to f s) =
-  do t' <- resolve s ti
-     introduce i t'
-     constrain i $ mark (show i) to
-
-link (i, TJoin tl tr l r) =
-  do tl' <- resolve l tl
-     tr' <- resolve r tr
-     constrain i $ Sranch tl' tr'
-
-link (i, TLeft t l) =
-  do t' <- resolve l t
-     constrain i $ lefty t'
+-- These contain names for input
+data Link   (i :: (* -> *) -> * -> *) (a :: *)
   where
-    lefty :: Suple instr (a, b) -> Suple instr a
-    lefty t = case t of (Sranch l r) -> l
+    Link :: Names (S Symbol i a) -> Link i a
 
-link (i, TRight t r) =
-  do t' <- resolve r t
-     constrain i $ righty t
+-- These contain names for output
+data Linked (i :: (* -> *) -> * -> *) (a :: *)
   where
-    righty :: Suple instr (a, b) -> Suple instr b
-    righty t = case t of (Sranch l r) -> r
--}
+    Linked :: S Link i a -> Names (S Symbol i a) -> Linked i (S Symbol i a)
 
 --------------------------------------------------------------------------------
 
+type M i = ReaderT (Map (Node i)) (State (Map (Linked i)))
+
+node :: Name (S Symbol i a) -> M i (S Key i a)
+node r = asks $ (\(Node n) -> n) . (M.! r)
+
+new  :: Name a -> Linked i a -> M i ()
+new r l = modify $ M.insert (Ref r undefined) l
+
+old  :: Key i a -> M i (Link i a)
+old (Key k) = gets $ Link . (\(Linked _ n) -> n) . (M.! k)
 
 --------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
+linker :: [Ordered i] -> Map (Node i) -> Map (Linked i)
+linker order nodes = undefined
+                   . flip execState M.empty
+                   . flip runReaderT nodes
+                   $ forM_ order link'
+
+--------------------------------------------------------------------------------
+
+link' :: Ordered i -> M i ()
+link' = undefined
 {-
--- | ...
-linker :: Typeable instr => [(Unique, Node instr)] -> Resolution Unique instr
-linker = snd . runIdentity . tie solve . sequence . fmap link
-
--- | ...
-solve :: Solver (Resolution Unique instr) (Constraint Unique instr)
-solve constraints =
-  let inputs  = [ i | In  i <- constraints]
-      outputs = [ o | Out o <- constraints]
-  in  Resolution
-       { _output = M.fromList outputs
-       , _input  = M.fromList inputs
-       }
+link' :: forall i a. Witness a => Name (S Symbol i a) -> M i ()
+link' sym =
+  do let out = name sym
+     n <- node sym
+     case n of
+       (Repeat c) -> do
+         new sym $ Linked (Repeat c) out
+       (Map  f s) -> do
+         ms <- old s
+         new sym $ Linked (Map f ms) out
+       (Join l r) -> do
+         ml@(Link p) <- old l
+         mr@(Link q) <- old r
+         new sym $ Linked (Join ml mr) (p, q)
+       (Left   l) -> do
+         ml@(Link (p, _)) <- old l
+         new sym $ Linked (Left ml) p
+       (Right  r) -> do
+         mr@(Link (_, q)) <- old r
+         new sym $ Linked (Right mr) q
+       (Delay v s) -> do
+         ms <- old s
+         new sym $ Linked (Delay v ms) out
 -}
-
-
-
-
-
-
-
 --------------------------------------------------------------------------------
---------------------------------------------------------------------------------
-
-
-{-
-resolve :: (MonadReader (Resolution i instr) m, Ord i, Typeable a) => i -> Suple instr a -> m (Suple instr a)
-resolve i _ =
-  do ex <- asks ((! i) . _output)
-     return $ case ex of
-       Ex t -> case gcast t of
-         Nothing -> error "resolve: type error"
-         Just o  -> o
-
--- | Mark tree with index
-mark :: String -> Suple instr a -> Suple instr a
-mark s (Seaf   _)   = Seaf s
-mark s (Sranch l r) = Sranch (mark (s ++ "_l") l) (mark (s ++ "_r") r)
-
-constrain :: (MonadWriter [Constraint i instr] m, Typeable a) => i -> Suple instr a -> m ()
-constrain i t = tell [Out (i, Ex t)]
-
-introduce :: (MonadWriter [Constraint i instr] m, Typeable a) => i -> Suple instr a -> m ()
-introduce i t = tell [In  (i, Ex t)]
--}
