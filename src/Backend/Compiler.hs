@@ -30,7 +30,6 @@ import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
 import Data.Function    (on)
 import Data.Constraint
-import Data.Hashable
 
 import Data.IntMap (IntMap)
 import qualified Data.IntMap  as IM
@@ -46,6 +45,7 @@ import Prelude hiding (lookup, Left, Right)
 --------------------------------------------------------------------------------
 -- * Channels
 --------------------------------------------------------------------------------
+
 
 
 

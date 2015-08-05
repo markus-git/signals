@@ -24,10 +24,10 @@ import Backend.Compiler.Sorter (Order, Ordered(..))
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Identity
-
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
+
 
 import Prelude hiding (Left, Right, Ordering)
 
