@@ -1,9 +1,9 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Backend.Compiler {-(
     compiler
@@ -24,17 +24,75 @@ import Backend.Compiler.Sorter
 
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Identity
 import Data.Maybe       (fromJust)
 import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
 import Data.Function    (on)
 import Data.Constraint
+import Data.Hashable
+
+import Data.IntMap (IntMap)
+import qualified Data.IntMap  as IM
 
 import Data.Ref
-import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
 
-import Prelude hiding (reads, Left, Right)
+-- eehh...
+import Unsafe.Coerce
+import System.Mem.StableName (eqStableName, hashStableName)
+import Prelude hiding (lookup, Left, Right)
+
+--------------------------------------------------------------------------------
+-- * Channels
+--------------------------------------------------------------------------------
+
+-- this is dumb..
+instance Eq (Rim.HideType Named) where
+  (Rim.Hide x) == (Rim.Hide y) = x `eqNamed` y
+
+instance Ord (Rim.HideType Named) where
+  compare (Rim.Hide x) (Rim.Hide y) = x `cpNamed` y
+
+eqNamed :: Named a -> Named b -> Bool
+eqNamed (Named  x) (Named  y) = x `eqStableName` y
+eqNamed (Lefty  x) (Lefty  y) = x `eqNamed` y
+eqNamed (Righty x) (Righty y) = x `eqNamed` y
+eqNamed _ _ = False
+
+cpNamed :: Named a -> Named b -> Ordering
+cpNamed (Named  x) (Named  y) = hashStableName x `compare` hashStableName y
+cpNamed (Named  _) _          = LT
+cpNamed (Lefty  x) (Lefty  y) = x `cpNamed` y
+cpNamed (Lefty  _) (Named  _) = GT
+cpNamed (Lefty  _) _          = LT
+cpNamed (Righty x) (Righty y) = x `cpNamed` y
+cpNamed (Righty _) _          = GT
+
+--------------------------------------------------------------------------------
+
+data Channel a where
+  Channel :: proxy i a -> Channel a
+
+type Map = Map.Map (Rim.HideType Named) (Rim.HideType Channel)
+
+(!) :: Map -> Named a -> Channel a
+(!) m n = maybe (error "Backend.Compiler.(!)") id (lookup n m)
+
+empty :: Map
+empty = Map.empty
+
+lookup :: Named a -> Map -> Maybe (Channel a)
+lookup n m = maybe Nothing (\(Rim.Hide x) -> Just $ unsafeCoerce x)
+           $ Map.lookup (Rim.Hide n) m
+
+insert :: Named a -> Channel a -> Map -> Map
+insert n c = Map.insert (Rim.Hide n) (Rim.Hide c)
+
+--------------------------------------------------------------------------------
+-- **
+
+
 
 --------------------------------------------------------------------------------
 -- *
@@ -58,11 +116,8 @@ compiler f =
        True  -> error "found cycle in graph"
        False -> compiler' nodes links order
 -}
---------------------------------------------------------------------------------
--- * Channels
---------------------------------------------------------------------------------
 
---type Channels = Map Channel
+--------------------------------------------------------------------------------
 
 {-
 type Prog instr = Program instr

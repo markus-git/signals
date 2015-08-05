@@ -6,7 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Backend.Compiler.Linker (
-    Named(..)
+    Dist
+  , Named(..)
   , Names
   , Link(..)
   , Linked(..)
@@ -34,6 +35,12 @@ import Prelude hiding (Left, Right, Ordering)
 -- * 
 --------------------------------------------------------------------------------
 
+-- ! This doesn't belong here, new module?
+type family Dist (p :: * -> *) a
+type instance Dist p (S sym i (Identity a)) = p (S sym i (Identity a))
+type instance Dist p (S sym i (a, b))       = ( Dist p (S sym i a)
+                                              , Dist p (S sym i b))
+
 -- Naming things has always been tricky..
 data Named a
   where
@@ -41,10 +48,9 @@ data Named a
     Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
     Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
 
-type family Names a
-type instance Names (S sym i (Identity a)) = Named (S sym i (Identity a))
-type instance Names (S sym i (a, b))       = (Names (S sym i a), Names (S sym i b))
+type Names a = Dist Named a
 
+-- | Takes a composite name and creates unique names for each part
 name :: forall sym i a. Witness a => Name (S sym i a) -> Names (S sym i a)
 name n = go (wit :: Wit a) (Named n)
   where
@@ -52,6 +58,8 @@ name n = go (wit :: Wit a) (Named n)
     go (WE)     n = n
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
+--------------------------------------------------------------------------------
+-- *
 --------------------------------------------------------------------------------
 
 -- These contain names for input
