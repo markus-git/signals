@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators  #-}
 {-# LANGUAGE Rank2Types     #-}
 
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Backend.VHDL.CMD where

@@ -33,21 +33,19 @@ newtype Symbol i a = Symbol (Ref (S Symbol i a))
 data S sig i a
   where
     Repeat :: Stream i (IExp i a) -> S sig i (Identity a)
+    
     Map    :: (Witness a, Witness b) =>
               (Stream i (U i a) -> Stream i (U i b))
            ->   sig i a
            -> S sig i b
 
-    Join   :: (Witness a, Witness b) =>
-              sig i a -> sig i b -> S sig i (a, b)
-    Left   :: (Witness a, Witness b) =>
-              sig i (a, b) -> S sig i a
-    Right  :: (Witness a, Witness b) =>
-              sig i (a, b) -> S sig i b
+    Join   :: (Witness a, Witness b) => sig i a -> sig i b -> S sig i (a, b)
+    Left   :: (Witness a, Witness b) => sig i (a, b) -> S sig i a
+    Right  :: (Witness a, Witness b) => sig i (a, b) -> S sig i b
 
     Delay  :: IExp i a -> sig i (Identity a) -> S sig i (Identity a)
 
--- | Type for nested tuples, stripping away all Identity    
+-- | Type for nested tuples, stripping away all Identity
 type family U (i :: (* -> *) -> * -> *) a :: *
 type instance U i (Identity a) = IExp i a
 type instance U i (a, b)       = (U i a, U i b)

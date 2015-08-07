@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -21,6 +22,7 @@ import qualified Frontend.Signal as S
 import Backend.Compiler.Cycles
 import Backend.Compiler.Linker
 import Backend.Compiler.Sorter
+import Backend.VHDL.CMD
 
 import Control.Monad.Reader
 import Control.Monad.State
@@ -30,12 +32,9 @@ import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
 import Data.Function    (on)
 import Data.Constraint
-
-import Data.IntMap (IntMap)
-import qualified Data.IntMap  as IM
-
 import Data.Ref
-import qualified Data.Ref.Map as M
+import qualified Data.Map     as Map
+import qualified Data.Ref.Map as Rim
 
 -- eehh...
 import Unsafe.Coerce
@@ -46,8 +45,109 @@ import Prelude hiding (lookup, Left, Right)
 -- * Channels
 --------------------------------------------------------------------------------
 
+-- this is dumb..
+instance Eq (Rim.HideType Named) where
+  (Rim.Hide x) == (Rim.Hide y) = x `eqNamed` y
 
+instance Ord (Rim.HideType Named) where
+  compare (Rim.Hide x) (Rim.Hide y) = x `cpNamed` y
 
+eqNamed :: Named a -> Named b -> Bool
+eqNamed (Named  x) (Named  y) = x `eqStableName` y
+eqNamed (Lefty  x) (Lefty  y) = x `eqNamed` y
+eqNamed (Righty x) (Righty y) = x `eqNamed` y
+eqNamed _ _ = False
+
+cpNamed :: Named a -> Named b -> Ordering
+cpNamed (Named  x) (Named  y) = hashStableName x `compare` hashStableName y
+cpNamed (Named  _) _          = LT
+cpNamed (Lefty  x) (Lefty  y) = x `cpNamed` y
+cpNamed (Lefty  _) (Named  _) = GT
+cpNamed (Lefty  _) _          = LT
+cpNamed (Righty x) (Righty y) = x `cpNamed` y
+cpNamed (Righty _) _          = GT
+
+--------------------------------------------------------------------------------
+
+type Hidden f = Rim.HideType f
+
+hide :: f a -> Hidden f
+hide = Rim.Hide
+
+--------------------------------------------------------------------------------
+
+-- this is really dumb...
+data Channel a where
+  Channel :: proxy i a -> Channel a
+
+type Map = Map.Map (Hidden Named) (Hidden Channel)
+
+(!) :: Map -> Named a -> Channel a
+(!) m n = maybe (error "Backend.Compiler.(!)") id (lookup n m)
+
+empty :: Map
+empty = Map.empty
+
+lookup :: Named a -> Map -> Maybe (Channel a)
+lookup n m = maybe Nothing (\(Rim.Hide x) -> Just $ unsafeCoerce x)
+           $ Map.lookup (Rim.Hide n) m
+
+insert :: Named a -> Channel a -> Map -> Map
+insert n c = Map.insert (Rim.Hide n) (Rim.Hide c)
+
+--------------------------------------------------------------------------------
+-- **
+
+initChannels 
+  :: (ConcurrentCMD (IExp i) :<: i)
+  => Rim.Map (Linked i)
+  -> Program i (Map)
+initChannels = undefined . fmap snd . concat . Rim.dump
+  where
+    apa :: Hidden (Linked i) -> [(Hidden Named, Hidden Channel)]
+    apa (Rim.Hide (Linked _ names)) = undefined
+
+    bepa :: Witness a => Names a -> Named a
+    bepa = undefined
+
+{-
+-- |
+initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IExp instr) :<: instr)
+             => Resolution s instr
+             -> Prog instr (Channel s instr)
+initChannels res = do
+  outs <- M.traverseWithKey (const makeChannel) $ _output res
+  return $ C {
+    _ch_in  = M.map (copyChannel outs) $ _input res
+  , _ch_out = outs
+  }
+
+-- |
+makeChannel :: forall instr. (RefCMD (IExp instr) :<: instr) 
+            => TEx instr
+            -> Prog instr (REx instr)
+makeChannel (Ex s) = makes s >>= return . Ex
+  where
+    makes :: Suple instr a -> Prog instr (Ruple instr a)
+    makes (Seaf   _)   = C.newRef >>= return . Reaf
+    makes (Sranch r l) = do
+      r' <- makes r
+      l' <- makes l
+      return $ Rranch r' l'
+
+-- |
+copyChannel :: forall instr s. (Ord s, Read s, Typeable instr)
+            => Map s (REx instr)
+            -> TEx instr
+            -> REx instr
+copyChannel m (Ex s) = Ex $ copys s
+  where
+    copys :: Suple instr a -> Ruple instr a
+    copys (Sranch l r) = Rranch (copys l) (copys r)
+    copys (Seaf   i)   = case m ! read i of
+      (Ex (Reaf r)) -> case gcast r of
+        (Just x) -> Reaf x
+-}
 
 --------------------------------------------------------------------------------
 -- *
@@ -88,44 +188,6 @@ data Channel symbol instr = C {
 -}
 --------------------------------------------------------------------------------
 -- hacky solution for now
-{-
--- |
-initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IExp instr) :<: instr)
-             => Resolution s instr
-             -> Prog instr (Channel s instr)
-initChannels res = do
-  outs <- M.traverseWithKey (const makeChannel) $ _output res
-  return $ C {
-    _ch_in  = M.map (copyChannel outs) $ _input res
-  , _ch_out = outs
-  }
-
--- |
-makeChannel :: forall instr. (RefCMD (IExp instr) :<: instr) 
-            => TEx instr
-            -> Prog instr (REx instr)
-makeChannel (Ex s) = makes s >>= return . Ex
-  where
-    makes :: Suple instr a -> Prog instr (Ruple instr a)
-    makes (Seaf   _)   = C.newRef >>= return . Reaf
-    makes (Sranch r l) = do
-      r' <- makes r
-      l' <- makes l
-      return $ Rranch r' l'
-
--- |
-copyChannel :: forall instr s. (Ord s, Read s, Typeable instr)
-            => Map s (REx instr)
-            -> TEx instr
-            -> REx instr
-copyChannel m (Ex s) = Ex $ copys s
-  where
-    copys :: Suple instr a -> Ruple instr a
-    copys (Sranch l r) = Rranch (copys l) (copys r)
-    copys (Seaf   i)   = case m ! read i of
-      (Ex (Reaf r)) -> case gcast r of
-        (Just x) -> Reaf x
--}
 --------------------------------------------------------------------------------
 -- * Compiler
 --------------------------------------------------------------------------------
