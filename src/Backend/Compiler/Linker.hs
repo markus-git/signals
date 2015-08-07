@@ -5,28 +5,31 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Linker (
+module Backend.Compiler.Linker {-(
     Dist
   , Named(..)
   , Names
   , Link(..)
   , Linked(..)
   , linker
-  )
+  )-}
   where
 
 import Core
 import Frontend.Stream 
 import Frontend.Signal
 import Frontend.Signal.Observ
-import Backend.Compiler.Sorter (Order, Ordered(..))
+import Backend.Knot
 
 import Control.Monad.Reader
+import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Identity
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
+
+import Unsafe.Coerce
 
 import Prelude hiding (Left, Right, Ordering)
 
@@ -37,8 +40,7 @@ import Prelude hiding (Left, Right, Ordering)
 -- ! This doesn't belong here, new module?
 type family Dist (p :: * -> *) a
 type instance Dist p (S sym i (Identity a)) = p (S sym i (Identity a))
-type instance Dist p (S sym i (a, b))       = ( Dist p (S sym i a)
-                                              , Dist p (S sym i b))
+type instance Dist p (S sym i (a, b))       = (Dist p (S sym i a), Dist p (S sym i b))
 
 -- Naming things has always been tricky..
 data Named a
@@ -58,21 +60,60 @@ name n = go (wit :: Wit a) (Named n)
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
 --------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
+-- **
 
--- These contain names for input
+-- | ...
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
   where
     Link :: Names (S Symbol i a) -> Link i a
 
--- These contain names for output
+-- | ...
 data Linked (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Linked :: S Link i a -> Names (S Symbol i a) -> Linked i (S Symbol i a)
+    Linked :: S Link i a -> Link i a -> Linked i (S Symbol i a)
+
+--------------------------------------------------------------------------------
+-- **
+
+data Hide f where
+  Hide :: f a -> Hide f
+
+data Pair f g a where
+  Pair :: f a -> g a -> Pair f g a
+
+unsafeReveal :: Hide f -> f a
+unsafeReveal (Hide f) = unsafeCoerce f
+
+--------------------------------------------------------------------------------
+-- **
+
+type Resolution i = Map (Linked i)
+
+type Constraint i = Hide (Pair Name (Linked i))
+
+type Mapping    i = Map (Node i)
+
+type M i = Knot (Resolution i) (Constraint i) (State (Mapping i))
 
 --------------------------------------------------------------------------------
 
+
+
+--------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+-- * Linker
+--------------------------------------------------------------------------------
+{-
 type M i = ReaderT (Map (Node i)) (State (Map (Linked i)))
 
 node :: Name (S Symbol i a) -> M i (S Key i a)
@@ -83,20 +124,10 @@ new r l = modify $ M.insert (Ref r undefined) l
 
 old  :: Key i a -> M i (Link i a)
 old (Key k) = gets $ Link . (\(Linked _ n) -> n) . (M.! k)
-
---------------------------------------------------------------------------------
--- * Linker
---------------------------------------------------------------------------------
-
--- | ...
-linker :: [Ordered i] -> Map (Node i) -> Map (Linked i)
-linker order nodes = flip execState M.empty
-                   . flip runReaderT nodes
-                   $ forM_ order link'
-
+-}
 --------------------------------------------------------------------------------
 -- **
-
+{-
 -- | ...
 link' :: Ordered i -> M i ()
 link' (Ordered sym) =
@@ -122,4 +153,14 @@ link' (Ordered sym) =
          ms <- old s
          new sym $ Linked (Delay v ms) out
 
+-}
+--------------------------------------------------------------------------------
+-- **
+{-
+-- | ...
+linker :: [Ordered i] -> Map (Node i) -> Map (Linked i)
+linker order nodes = flip execState M.empty
+                   . flip runReaderT nodes
+                   $ forM_ order link'
+-}
 --------------------------------------------------------------------------------
