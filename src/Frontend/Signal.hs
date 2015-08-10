@@ -152,16 +152,16 @@ type instance Packed i (a, b)       = (Packed i a, Packed i b)
 pack :: forall i a. Witness a => Signal i a -> Packed i a
 pack s = go (wit :: Wit a) s
   where
-    go :: Wit a -> Signal i a -> Packed i a
+    go :: Wit x -> Signal i x -> Packed i x
     go (WE)     s = Sig s
-    go (WP _ _) s = (,) (pack $ left s) (pack $ right s)
+    go (WP u v) s = (,) (go u $ left s) (go v $ right s)
 
 unpack :: forall i a. Witness a => Packed i a -> Signal i a
 unpack s = go (wit :: Wit a) s
   where
-    go :: Wit a -> Packed i a -> Signal i a
+    go :: Wit x -> Packed i x -> Signal i x
     go (WE)     (Sig s) = s
-    go (WP _ _) (l, r)  = join (unpack l) (unpack r)
+    go (WP u v) (l, r)  = join (go u l) (go v r)
 
 --------------------------------------------------------------------------------
 -- ** General lifting operator
