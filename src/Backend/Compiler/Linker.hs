@@ -140,39 +140,20 @@ link' (Ordered sym) =
        (Join l r) ->
          do inp_l <- resolve l
             inp_r <- resolve r
-            constrain (Join inp_l inp_r) ((,) (reify inp_l) (reify inp_r))
-{-
-       (Left (Key l)) ->
-         do inp_l <- resolve l
-            output $ Hide $ Pair sym (Linked (Left inp_l)  (Link (fst (reify inp_l))))
--}{-
-       (Right (Key r)) ->
-         do inp_r <- resolve r
-            output $ Hide $ Pair sym (Linked (Right inp_r) (Link (snd (reify inp_r))))
--}{-
-       (Delay d (Key s)) ->
-         do inp <- resolve s
-            output $ Hide $ Pair sym (Linked (Delay d inp) (Link out))
--}
+            constrain (Join inp_l inp_r) (reify inp_l, reify inp_r)
   where
-    reify :: Link i a -> Names (S Symbol i a)
-    reify (Link n) = n
-
-    constrain n l  = output $ Hide $ Pair sym $ Linked n $ Link l
+    reify ~(Link n) = n
+    constrain n l   = output $ Hide $ Pair sym $ Linked n $ Link l
 
 --------------------------------------------------------------------------------
 
 linker :: [Ordered i] -> Map (Node i) -> Resolution i
-linker order nodes =
-    snd . flip evalState nodes . tie solve $ forM_ order link'
+linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
   where
     solve :: Solver (Resolution i) (Constraint i)
-    solve = fromList 
-
-    fromList :: [Item i] -> Map (Linked i)
-    fromList xs = foldr ins M.empty xs
-      where
-        ins (Hide (Pair n l)) = M.insert (ref n) l
-        ref = flip Data.Ref.Ref undefined
+    solve = foldr ins M.empty -- ~= fromList
+      
+    ins (Hide (Pair n l)) = M.insert (ref n) l        -- <--- This doesn't work
+    ref = flip Data.Ref.Ref undefined
 
 --------------------------------------------------------------------------------
