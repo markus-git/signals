@@ -101,9 +101,7 @@ type Resolution i = Map (Linked i)
 
 type Constraint i = Item i
 
-type Mapping i    = Map (Node i)
-
-type M i          = Knot (Resolution i) (Constraint i) (State (Mapping i))
+type M i          = Knot (Resolution i) (Constraint i) (State (Map (Node i)))
 
 --------------------------------------------------------------------------------
 
