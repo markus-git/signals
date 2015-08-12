@@ -59,14 +59,14 @@ test_sig = let x = int 1 in add x (neg x)
 test =
   do (k, m) <- reify test_sig
 
-     let c   = cycles k m
-         s   = sorter k m
-         (Resolution li lo) = linker s m
+     let c = cycles k m
+         s = sorter k m
+         l = linker s m
          
      putStrLn $ "\n -- Printing signal tree --\n -"
      putStrLn $ " - cycles?   " ++ show c
      putStrLn $ " - ordering? " ++ show s
-     putStrLn $ " - links?    " ++ pp_linked lo
+     putStrLn $ " - links?    " ++ pp_linked l
      putStrLn $ ""
      putStrLn $ pp_nodes k m ++ "\n"
   where

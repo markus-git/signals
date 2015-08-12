@@ -70,21 +70,20 @@ name n = go (wit :: Wit a) (Named n)
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
 --------------------------------------------------------------------------------
--- **
+-- ** Once we have names for every wire, we can substitute the old group names
 
--- | ...
+-- | Nodes where recursive calls to other nodes have been replaced with names
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
   where
     Link :: Names (S Symbol i a) -> Link i a
 
--- | ...
+-- | Container for linked nodes and the names of their own output
 data Linked (i :: (* -> *) -> * -> *) (a :: *)
   where
     Linked :: S Link i a -> Link i a -> Linked i (S Symbol i a)
 
 --------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
+-- ** We will however need to hide their types as they vary between nodes
 
 data Hide f where
   Hide :: f a -> Hide f
@@ -92,25 +91,21 @@ data Hide f where
 data Pair f g a where
   Pair :: f a -> g a -> Pair f g a
 
-unsafeReveal :: Hide f -> f a
-unsafeReveal (Hide f) = unsafeCoerce f
+type Item i = Hide (Pair Name (Linked i))
 
 --------------------------------------------------------------------------------
+-- * Linking monad
+--------------------------------------------------------------------------------
 
-data Resolution i = Resolution {
-    res_input  :: Map (Linked i)
-  , res_output :: Map (Linked i)
-  }
+type Resolution i = Map (Linked i)
 
-data Constraint i = In  (Item i) | Out (Item i)
-
-type Item i       = Hide (Pair Name (Linked i))
+type Constraint i = Item i
 
 type Mapping i    = Map (Node i)
 
---------------------------------------------------------------------------------
+type M i          = Knot (Resolution i) (Constraint i) (State (Mapping i))
 
-type M i = Knot (Resolution i) (Constraint i) (State (Mapping i))
+--------------------------------------------------------------------------------
 
 node :: Name (S Symbol i a) -> M i (Node i (S Symbol i a))
 node name =
@@ -121,19 +116,16 @@ node name =
 
 resolve :: Key i a -> M i (Link i a)
 resolve (Key name) =
-  do out <- asks res_output
+  do out <- ask
      case M.lookup name out of
        Nothing           -> error "Linker.resolve:lookup failed"
        Just (Linked _ l) -> return l
 
-input  :: Item i -> M i ()
-input  i = tell [In i]
-
 output :: Item i -> M i ()
-output i = tell [Out i]
+output i = tell [i]
 
 --------------------------------------------------------------------------------
--- *
+-- * Linker
 --------------------------------------------------------------------------------
 
 link' :: Ordered i -> M i ()
@@ -141,14 +133,14 @@ link' (Ordered sym) =
   do (Node n) <- node sym
      case n of
        (Repeat c) ->
-         do output $ Hide $ Pair sym $ Linked (Repeat c) $ Link $ name sym
+         do constrain (Repeat c) (name sym)
        (Map f s) ->
          do inp <- resolve s
-            output $ Hide $ Pair sym $ Linked (Map f inp) $ Link $ name sym
+            constrain (Map f inp) (name sym)
        (Join l r) ->
          do inp_l <- resolve l
             inp_r <- resolve r
-            output $ Hide $ Pair sym $ Linked (Join inp_l inp_r) $ Link $ (,) (reify inp_l) (reify inp_r)
+            constrain (Join inp_l inp_r) ((,) (reify inp_l) (reify inp_r))
 {-
        (Left (Key l)) ->
          do inp_l <- resolve l
@@ -166,6 +158,8 @@ link' (Ordered sym) =
     reify :: Link i a -> Names (S Symbol i a)
     reify (Link n) = n
 
+    constrain n l  = output $ Hide $ Pair sym $ Linked n $ Link l
+
 --------------------------------------------------------------------------------
 
 linker :: [Ordered i] -> Map (Node i) -> Resolution i
@@ -173,13 +167,7 @@ linker order nodes =
     snd . flip evalState nodes . tie solve $ forM_ order link'
   where
     solve :: Solver (Resolution i) (Constraint i)
-    solve constraints =
-      let inputs  = [ i | In  i <- constraints]
-          outputs = [ o | Out o <- constraints]
-      in  Resolution {
-              res_output = fromList outputs
-            , res_input  = fromList  inputs
-          }
+    solve = fromList 
 
     fromList :: [Item i] -> Map (Linked i)
     fromList xs = foldr ins M.empty xs
