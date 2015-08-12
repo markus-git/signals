@@ -115,9 +115,9 @@ node name =
 resolve :: Key i a -> M i (Link i a)
 resolve (Key name) =
   do out <- ask
-     case M.lookup name out of
+     return $ case M.lookup name out of
        Nothing           -> error "Linker.resolve:lookup failed"
-       Just (Linked _ l) -> return l
+       Just (Linked _ l) -> l
 
 output :: Item i -> M i ()
 output i = tell [i]
