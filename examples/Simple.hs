@@ -1,5 +1,7 @@
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 
 module Simple where
 
@@ -8,7 +10,9 @@ import Frontend.Signal hiding (S)
 import Frontend.Signal.Observ
 import Backend.Compiler.Cycles
 import Backend.Compiler.Sorter
+import Backend.Compiler.Linker
 
+import Data.Functor.Identity
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
@@ -54,25 +58,49 @@ test_sig = let x = int 1 in add x (neg x)
 
 test =
   do (k, m) <- reify test_sig
-     let srt = sorter k m
-         out = go k m srt
+
+     let c   = cycles k m
+         s   = sorter k m
+         (Resolution li lo) = linker s m
          
      putStrLn $ "\n -- Printing signal tree --\n -"
-     putStrLn $ " - cycles? " ++ show (cycles k m)
+     putStrLn $ " - cycles?   " ++ show c
+     putStrLn $ " - ordering? " ++ show s
+     putStrLn $ " - links?    " ++ pp_linked lo
      putStrLn $ ""
-     putStrLn $ out ++ "\n"
+     putStrLn $ pp_nodes k m ++ "\n"
   where
-    go :: Key i a -> Map (Node i) -> Map (Ordering i) -> String
-    go (Key k) m srt
+    pp_nodes :: Key i a -> Map (Node i) -> String
+    pp_nodes (Key k) m 
       | Just (Node sig) <- M.lookup k (M.hmap id m) =
-          let (Ordering o) = srt M.! k in
           case sig of
-            (Repeat str) -> "Repeat <" ++ show o ++ ">"
-            (Map f s)    -> "Map <"    ++ show o ++ "> (" ++ go s m srt ++ ")"
-            (Join l r)   -> "Zip <"    ++ show o ++ "> (" ++ go l m srt ++ ", " ++ go r m srt ++ ")"
-            (Left p)     -> "Left <"   ++ show o ++ "> (" ++ go p m srt ++ ")"
-            (Right p)    -> "Right <"  ++ show o ++ "> (" ++ go p m srt ++ ")"
-            (Delay v s)  -> "Delay <"  ++ show o ++ "> (" ++ go s m srt ++ ")"
+            (Repeat str) -> "Repeat"
+            (Map f s)    -> "Map ("   ++ pp_nodes s m ++ ")"
+            (Join l r)   -> "Zip ("   ++ pp_nodes l m ++ ", "
+                                      ++ pp_nodes r m ++ ")"
+            (Left p)     -> "Left ("  ++ pp_nodes p m ++ ")"
+            (Right p)    -> "Right (" ++ pp_nodes p m ++ ")"
+            (Delay v s)  -> "Delay (" ++ pp_nodes s m ++ ")"
       | otherwise = "Doh!"
 
+    pp_linked :: Map (Linked i) -> String
+    pp_linked m =
+      let d = fmap snd $ concat $ M.dump m
+      in  unwords $ fmap apa d
+      where
+        apa :: M.HideType (Linked i) -> String
+        apa (M.Hide (Linked sym out)) = case sym of
+          (Repeat c)  -> "Repeat"
+          (Map f s)   -> "Map" 
+          (Join l r)  -> "Zip" 
+          (Left l)    -> "Left"
+          (Right r)   -> "Right"
+          (Delay v s) -> "Delay"
+
 --------------------------------------------------------------------------------
+
+instance Show (Ordered i) where
+  show (Ordered n) = show (hashStableName n)
+
+instance Show (Link i a) where
+  show (Link n) = "todo"
