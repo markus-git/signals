@@ -48,6 +48,7 @@ library
                        pretty,
                        imperative-edsl >= 0.3,
                        observable-sharing >= 0.2.1.2,
+                       hashable >= 1.2,
                        -- greater versions break 
                        monad-control < 1.0, 
                        exception-transformers >= 0.3.0.4 && < 0.5,
