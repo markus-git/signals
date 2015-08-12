@@ -7,7 +7,6 @@ module Frontend.Signal.Observ where
 import Core (IExp)
 import Frontend.Signal (S, Signal(..), Sig(..), Symbol(..), U, Witness)
 import Frontend.Stream (Stream, Str)
-import Backend.Nested
 
 import qualified Frontend.Signal as S
 import qualified Frontend.Stream as Str

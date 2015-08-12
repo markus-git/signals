@@ -4,7 +4,6 @@
 module Frontend.Stream where
 
 import Core
-import Backend.Nested
 
 import Control.Applicative
 import Control.Monad
