@@ -103,4 +103,4 @@ instance CompileExpr exp => Interp (HeaderCMD exp) LLVM
 compile :: (Interp instr LLVM, MapInstr instr) => Program instr a -> String
 compile prog =
   let (h, b) = runLLVM (behavioural "test") $ interpret prog
-   in unlines [show $ pp h, show $ pp b]
+   in show (pp h) ++ '\n' : show (pp b)
