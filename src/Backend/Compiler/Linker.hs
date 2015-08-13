@@ -108,9 +108,9 @@ type M i          = Knot (Resolution i) (Constraint i) (State (Map (Node i)))
 node :: Name (S Symbol i a) -> M i (Node i (S Symbol i a))
 node name =
   do out <- get
-     case M.lookup name out of
+     return $ case M.lookup name out of
        Nothing   -> error "Linker.node:lookup failed"
-       Just node -> return node
+       Just node -> node
 
 resolve :: Key i a -> M i (Link i a)
 resolve (Key name) =
