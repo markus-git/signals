@@ -20,95 +20,74 @@ import Frontend.Signal.Observ
 import qualified Frontend.Stream as Str
 import qualified Frontend.Signal as S
 import Backend.Compiler.Cycles
-import Backend.Compiler.Linker
+import Backend.Compiler.Linker hiding (M)
 import Backend.Compiler.Sorter
 import Backend.VHDL.CMD
+import Backend.VHDL.Expr   (Expr( Var ))
+import Backend.VHDL.Syntax (Identifier(..))
+import Backend.VHDL.Generate
 
+import Control.Arrow (first, second)
 import Control.Monad.Reader
+import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Identity
 import Data.Maybe       (fromJust)
 import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
 import Data.Function    (on)
+import Data.Hashable
 import Data.Constraint
 import Data.Ref
-import qualified Data.Map     as Map
+import qualified Data.IntMap  as Map
 import qualified Data.Ref.Map as Rim
 
--- eehh...
 import Unsafe.Coerce
-import System.Mem.StableName (eqStableName, hashStableName)
 import Prelude hiding (lookup, Left, Right)
 
 --------------------------------------------------------------------------------
 -- * Channels
 --------------------------------------------------------------------------------
 
--- this is dumb..
-instance Eq (Rim.HideType Named) where
-  (Rim.Hide x) == (Rim.Hide y) = x `eqNamed` y
+type Channels = Map.IntMap Identifier
 
-instance Ord (Rim.HideType Named) where
-  compare (Rim.Hide x) (Rim.Hide y) = x `cpNamed` y
+chan_lookup :: Typeable a => Named a -> Channels -> Expr a
+chan_lookup n c = case Map.lookup (hash n) c of
+  Nothing -> error "Backend.Compiler.chan_lookup: lookup failed"
+  Just i  -> Var i
 
-eqNamed :: Named a -> Named b -> Bool
-eqNamed (Named  x) (Named  y) = x `eqStableName` y
-eqNamed (Lefty  x) (Lefty  y) = x `eqNamed` y
-eqNamed (Righty x) (Righty y) = x `eqNamed` y
-eqNamed _ _ = False
-
-cpNamed :: Named a -> Named b -> Ordering
-cpNamed (Named  x) (Named  y) = hashStableName x `compare` hashStableName y
-cpNamed (Named  _) _          = LT
-cpNamed (Lefty  x) (Lefty  y) = x `cpNamed` y
-cpNamed (Lefty  _) (Named  _) = GT
-cpNamed (Lefty  _) _          = LT
-cpNamed (Righty x) (Righty y) = x `cpNamed` y
-cpNamed (Righty _) _          = GT
+chan_insert :: Named a -> Identifier -> Channels -> Channels
+chan_insert n = Map.insert (hash n)
 
 --------------------------------------------------------------------------------
 
-type Hidden f = Rim.HideType f
+type Init = State (Int, Channels)
 
-hide :: f a -> Hidden f
-hide = Rim.Hide
+new :: Init Identifier
+new =
+  do i <- gets fst
+     modify $ first (+ 1)
+     return $ Ident $ 's' : show i
 
---------------------------------------------------------------------------------
-
--- this is really dumb...
-data Channel a where
-  Channel :: proxy i a -> Channel a
-
-type Map = Map.Map (Hidden Named) (Hidden Channel)
-
-(!) :: Map -> Named a -> Channel a
-(!) m n = maybe (error "Backend.Compiler.(!)") id (lookup n m)
-
-empty :: Map
-empty = Map.empty
-
-lookup :: Named a -> Map -> Maybe (Channel a)
-lookup n m = maybe Nothing (\(Rim.Hide x) -> Just $ unsafeCoerce x)
-           $ Map.lookup (Rim.Hide n) m
-
-insert :: Named a -> Channel a -> Map -> Map
-insert n c = Map.insert (Rim.Hide n) (Rim.Hide c)
-
---------------------------------------------------------------------------------
--- **
-
-initChannels 
-  :: (ConcurrentCMD (IExp i) :<: i)
-  => Rim.Map (Linked i)
-  -> Program i (Map)
-initChannels = undefined . fmap snd . concat . Rim.dump
+insert :: forall proxy i a. Witness a => proxy i a -> Names (S Symbol i a) -> Init ()
+insert _ n = go (wit :: Wit a) n
   where
-    apa :: Hidden (Linked i) -> [(Hidden Named, Hidden Channel)]
-    apa (Rim.Hide (Linked _ names)) = undefined
+    go :: Wit x -> Names (S Symbol i x) -> Init ()
+    go (WE)     (name) = add name
+    go (WP u v) (l, r) = go u l >> go v r
 
-    bepa :: Witness a => Names a -> Named a
-    bepa = undefined
+    add :: Named x -> Init ()
+    add name = new >>= \i -> modify $ second $ Map.insert (hash name) i
+
+chan_init   :: Rim.Map (Linked i) -> Channels
+chan_init m =
+  let links = fmap snd . concat $ Rim.dump m
+   in snd $ flip execState (1, Map.empty) $ forM_ links add
+  where
+    add :: Rim.HideType (Linked i) -> Init ()
+    add (Rim.Hide (Linked _ l@(Link out))) = insert l out
+
+--------------------------------------------------------------------------------
 
 {-
 -- |

@@ -75,7 +75,7 @@ name n = go (wit :: Wit a) (Named n)
 -- | Nodes where recursive calls to other nodes have been replaced with names
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Link :: Names (S Symbol i a) -> Link i a
+    Link :: Witness a => Names (S Symbol i a) -> Link i a
 
 -- | Container for linked nodes and the names of their own output
 data Linked (i :: (* -> *) -> * -> *) (a :: *)
