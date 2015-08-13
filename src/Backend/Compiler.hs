@@ -39,6 +39,7 @@ import Data.Function    (on)
 import Data.Hashable
 import Data.Constraint
 import Data.Ref
+import Data.Ref.Map (Name)
 import qualified Data.IntMap  as Map
 import qualified Data.Ref.Map as Rim
 
@@ -51,7 +52,7 @@ import Prelude hiding (lookup, Left, Right)
 
 type Channels = Map.IntMap Identifier
 
-chan_lookup :: Typeable a => Named a -> Channels -> Expr a
+chan_lookup :: Typeable a => Named (S Symbol i a) -> Channels -> Expr a
 chan_lookup n c = case Map.lookup (hash n) c of
   Nothing -> error "Backend.Compiler.chan_lookup: lookup failed"
   Just i  -> Var i
@@ -77,7 +78,7 @@ insert _ n = go (wit :: Wit a) n
     go (WP u v) (l, r) = go u l >> go v r
 
     add :: Named x -> Init ()
-    add name = new >>= \i -> modify $ second $ Map.insert (hash name) i
+    add name = new >>= \i -> modify $ second $ chan_insert name i
 
 chan_init   :: Rim.Map (Linked i) -> Channels
 chan_init m =
@@ -88,48 +89,31 @@ chan_init m =
     add (Rim.Hide (Linked _ l@(Link out))) = insert l out
 
 --------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
 
-{-
--- |
-initChannels :: (Ord s, Read s, Typeable instr, RefCMD (IExp instr) :<: instr)
-             => Resolution s instr
-             -> Prog instr (Channel s instr)
-initChannels res = do
-  outs <- M.traverseWithKey (const makeChannel) $ _output res
-  return $ C {
-    _ch_in  = M.map (copyChannel outs) $ _input res
-  , _ch_out = outs
-  }
+type M i = ReaderT (Rim.Map (Linked i)) (StateT Channels LLVM)
 
--- |
-makeChannel :: forall instr. (RefCMD (IExp instr) :<: instr) 
-            => TEx instr
-            -> Prog instr (REx instr)
-makeChannel (Ex s) = makes s >>= return . Ex
-  where
-    makes :: Suple instr a -> Prog instr (Ruple instr a)
-    makes (Seaf   _)   = C.newRef >>= return . Reaf
-    makes (Sranch r l) = do
-      r' <- makes r
-      l' <- makes l
-      return $ Rranch r' l'
+node :: Name (S Symbol i a) -> M i (Linked i (S Symbol i a))
+node name =
+  do out <- ask
+     return $ case Rim.lookup name out of
+       Nothing   -> error "Compiler.node: lookup failed"
+       Just node -> node
 
--- |
-copyChannel :: forall instr s. (Ord s, Read s, Typeable instr)
-            => Map s (REx instr)
-            -> TEx instr
-            -> REx instr
-copyChannel m (Ex s) = Ex $ copys s
-  where
-    copys :: Suple instr a -> Ruple instr a
-    copys (Sranch l r) = Rranch (copys l) (copys r)
-    copys (Seaf   i)   = case m ! read i of
-      (Ex (Reaf r)) -> case gcast r of
-        (Just x) -> Reaf x
--}
+chan :: Typeable a => Named (S Symbol i a) -> M i (Expr a)
+chan name = get >>= return . chan_lookup name
 
 --------------------------------------------------------------------------------
--- *
+
+comp' :: (ConcurrentCMD (IExp i) :<: i) => Ordered i -> M i ()
+comp' (Ordered sym) =
+  do (Linked n (Link out)) <- node sym
+     case n of
+       (Repeat c) ->
+         do --ch <- chan out
+            undefined
+
 --------------------------------------------------------------------------------
 {-
 compiler :: ( RefCMD  (IExp instr) :<: instr

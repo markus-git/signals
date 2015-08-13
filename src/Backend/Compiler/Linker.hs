@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Linker {-(
+module Backend.Compiler.Linker (
     Dist
   , Named(..)
   , Names
@@ -13,7 +13,8 @@ module Backend.Compiler.Linker {-(
   , Link(..)
   , Linked(..)
   , linker
-  )-}
+  , name
+  )
   where
 
 import Core
