@@ -17,6 +17,7 @@ import Control.Arrow
 import Control.Monad.State
 import Data.List (sortBy)
 import Data.Function (on)
+import Data.Typeable (Typeable)
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
@@ -36,7 +37,15 @@ data Status = Visited | Unvisited deriving Eq
 type Order = Int
 
 -- | ...
-data Tagged i a = Tagged Status Order (Name a) (Node i a)
+data Tagged i a where
+  Tagged :: (Witness a, Typeable a)
+         => Status
+         -> Order
+         -> Name     (S Symbol i a)
+         -> Node   i (S Symbol i a)
+         -> Tagged i (S Symbol i a)
+
+-- Node i (S Symbol i a)
 
 -- | ...
 type M i = State (Order, Map (Tagged i))
@@ -52,12 +61,18 @@ new = do
   return i
 
 -- | Updates the order and name-tag of a node
-tag :: Name (S Symbol i a) -> Order -> M i ()
-tag r o = modify $ second $ flip M.adjust r $ \(Tagged s _ _ n) -> Tagged s o r n
+tag :: forall i a. Name (S Symbol i a) -> Order -> M i ()
+tag r o = modify $ second $ flip M.adjust r update
+  where
+    update :: Tagged i (S Symbol i a) -> Tagged i (S Symbol i a)
+    update (Tagged s _ _ n) = Tagged s o r n
 
 -- | Marks a node as visited
 visited :: Name (S Symbol i a) -> M i ()
-visited r = modify $ second $ flip M.adjust r $ \(Tagged _ o k n) -> Tagged Visited o k n
+visited r = modify $ second $ flip M.adjust r update
+  where
+    update :: Tagged i (S Symbol i a) -> Tagged i (S Symbol i a)
+    update (Tagged _ o k n) = Tagged Visited o k n
 
 -- | Gets the status of a node
 status :: Name (S Symbol i a) -> M i Status
@@ -69,31 +84,6 @@ node r = gets $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
 
 --------------------------------------------------------------------------------
 -- * Sorter
---------------------------------------------------------------------------------
-
-data Ordered i
-  where
-    Ordered :: Witness a => Name (S Symbol i a) -> Ordered i
-
--- | Given a root and a set of graph nodes, a topological ordering is produced
-sorter :: Key i a -> Map (Node i) -> [Ordered i]
-sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
-  where
-    init :: Map (Node i) -> Map (Tagged i)
-    init = M.hmap $ \node -> Tagged Unvisited 0 undefined node
-
-    reduce :: Map (Tagged i) -> [Ordered i]
-    reduce = fmap snd
-           . sortBy (compare `on` fst)
-           . fmap apa
-           . fmap snd
-           . concat
-           . M.dump
-      where
-        -- Haskell is strange sometimes...
-        apa :: forall i. M.HideType (Tagged i) -> (Order, Ordered i)
-        apa (M.Hide (Tagged _ o k (Node _))) = (o, Ordered k)
-
 --------------------------------------------------------------------------------
 
 sort' :: Name (S Symbol i a) -> M i ()
@@ -114,5 +104,33 @@ sort' r =
     visit (Key k) =
       do s <- status k
          when (s /= Visited) (sort' k)
+
+--------------------------------------------------------------------------------
+
+data Ordered i
+  where
+    Ordered :: (Witness a, Typeable a) => Name (S Symbol i a) -> Ordered i
+
+-- | Given a root and a set of graph nodes, a topological ordering is produced
+sorter :: Key i a -> Map (Node i) -> [Ordered i]
+sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
+  where
+    init :: Map (Node i) -> Map (Tagged i)
+    init = M.hmap apa
+      where
+        apa :: forall i a. Node i a -> Tagged i a
+        apa n@(Node (keys :: S Key i b)) = Tagged Unvisited 0 undefined n
+
+    reduce :: Map (Tagged i) -> [Ordered i]
+    reduce = fmap snd
+           . sortBy (compare `on` fst)
+           . fmap apa
+           . fmap snd
+           . concat
+           . M.dump
+      where
+        -- Haskell is strange sometimes...
+        apa :: forall i. M.HideType (Tagged i) -> (Order, Ordered i)
+        apa (M.Hide (Tagged _ o k (Node _))) = (o, Ordered k)
 
 --------------------------------------------------------------------------------

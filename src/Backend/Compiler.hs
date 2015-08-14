@@ -54,7 +54,7 @@ type Channels = Map.IntMap Identifier
 
 chan_lookup :: Typeable a => Named (S Symbol i a) -> Channels -> Expr a
 chan_lookup n c = case Map.lookup (hash n) c of
-  Nothing -> error "Backend.Compiler.chan_lookup: lookup failed"
+  Nothing -> error "Compiler.chan_lookup: lookup failed"
   Just i  -> Var i
 
 chan_insert :: Named a -> Identifier -> Channels -> Channels
@@ -111,7 +111,8 @@ comp' (Ordered sym) =
   do (Linked n (Link out)) <- node sym
      case n of
        (Repeat c) ->
-         do --ch <- chan out
+         do ch <- chan out
+            
             undefined
 
 --------------------------------------------------------------------------------

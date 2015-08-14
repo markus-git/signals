@@ -14,6 +14,7 @@ import qualified Frontend.Stream as Str
 import Control.Monad
 import Control.Monad.State
 import Data.Functor.Identity
+import Data.Typeable (Typeable)
 import Data.Ref
 import Data.Ref.Map (Map, Name)
 
@@ -35,13 +36,13 @@ data Key (i :: (* -> *) -> * -> *) (a :: *)
 -- | ...
 data Node (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Node :: Witness a => S Key i a -> Node i (S Symbol i a)
+    Node :: (Witness a, Typeable a) => S Key i a -> Node i (S Symbol i a)
 
 --------------------------------------------------------------------------------
 
 -- | ...
-reify ::
-     Sig i a
+reify :: Typeable a
+  => Sig i a
   -> IO ( Key i (Identity a)
         , Map (Node i)
         )
@@ -65,8 +66,8 @@ reify (Sig (Signal sym)) =
 --
 -- ! I really need to add names: will fails on cycles!
 -- ! I see a pattern here...
-reify_node :: forall i a.
-     Symbol i a
+reify_node :: forall i a. Typeable a
+  => Symbol i a
   -> Map (Node i)
   -> IO ( Key i a
         , Map (Node i)
@@ -82,20 +83,20 @@ reify_node (Symbol ref@(Ref name s)) nodes
              do let node     = Node (S.Repeat s) :: Node i (S Symbol i a) 
                     nodes'   = M.insert ref node nodes
                 return (Key name, nodes')
-                
+
            (S.Map (f :: Stream i (U i b) -> Stream i (U i a)) (s :: Symbol i b)) ->
              do (k, nodes') <- reify_node s nodes
                 let node     = Node (S.Map f k) :: Node i (S Symbol i a)
                     nodes''  = M.insert ref node nodes'
                 return (Key name, nodes'')
-                
+
            (S.Join (l :: Symbol i b) (r :: Symbol i c)) ->
              do (kl, nodes')  <- reify_node l nodes
                 (kr, nodes'') <- reify_node r nodes
                 let node     = Node (S.Join kl kr) :: Node i (S Symbol i a)
                     nodes''' = M.insert ref node nodes''
                 return (Key name, nodes''')
-                
+
            (S.Left (l :: Symbol i (a, b))) ->
              do (k, nodes) <- reify_node l nodes
                 let node     = Node (S.Left k) :: Node i (S Symbol i a)
