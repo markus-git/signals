@@ -140,6 +140,9 @@ link' (Ordered sym) =
          do inp_l <- resolve l
             inp_r <- resolve r
             constrain (Join inp_l inp_r) (reify inp_l, reify inp_r)
+       (Delay c s) ->
+         do inp <- resolve s
+            constrain (Delay c inp) (name sym)
   where
     reify ~(Link n) = n
     constrain n l   = output $ Hide $ Pair sym $ Linked n $ Link l
