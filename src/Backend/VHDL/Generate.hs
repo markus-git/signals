@@ -202,8 +202,33 @@ instance Dummy Expression
 dummy :: Dummy a => a -> Expression
 dummy = flip ENand Nothing . relate
 
+boolean :: Bool -> Expression
+boolean b = 
+  (ENand
+   (Relation
+    (ShiftExpression
+     (SimpleExpression
+      (Nothing)
+      (Term
+       (FacPrim
+        (PrimLit
+         (LitString
+          (SLit (show b))))
+        (Nothing))
+       ([]))
+      ([]))
+     (Nothing))
+    (Nothing))
+   (Nothing))
+
 --------------------------------------------------------------------------------
 -- **
+
+true :: Expression
+true = boolean True
+
+false :: Expression
+false = boolean False
 
 and, or, xor, xnor :: Dummy a => [a] -> Expression
 and  = EAnd  . map relate

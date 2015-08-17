@@ -36,7 +36,7 @@ type instance IExp (ConcurrentCMD e :+: i) = e
 --------------------------------------------------------------------------------
 -- **
 
-(<=:) :: (ConcurrentCMD (IExp instr) :<: instr) => Identifier -> IExp instr Bool -> ProgramT instr m ()
+(<=:) :: (ConcurrentCMD (IExp instr) :<: instr) => Identifier -> IExp instr a -> ProgramT instr m ()
 (<=:) i = singleE . Assign i
 
 local :: (ConcurrentCMD (IExp instr) :<: instr) => Identifier -> Type -> ProgramT instr m ()

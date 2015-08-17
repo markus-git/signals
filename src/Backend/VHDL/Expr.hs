@@ -24,6 +24,7 @@ import qualified Prelude as P
 data Expr a
   where
     Var  :: Typeable a => Identifier -> Expr a
+    Val  :: Bool                     -> Expr Bool
 
     -- logical operators
     Not  :: Expr Bool -> Expr Bool
@@ -41,6 +42,9 @@ data Expr a
 
 ---------------------------------------------------------------------------------
 -- **
+
+bool :: Bool -> Expr Bool
+bool = Val
 
 not :: Expr Bool -> Expr Bool
 not = Not
@@ -72,6 +76,7 @@ instance CompileExpr Expr
 evaluate :: (Identifier -> Dynamic) -> Expr a -> a
 evaluate env exp = case exp of
   Var  v | Just a <- fromDynamic (env v) -> a
+  Val  v   -> v
   Not  x   -> P.not $ evaluate env x
   And  x y -> evaluate env x  &&   evaluate env y
   Or   x y -> evaluate env x  ||   evaluate env y
@@ -87,6 +92,7 @@ evaluate env exp = case exp of
 compile :: Expr a -> LLVM S.Expression
 compile exp = case exp of
   Var  v   -> return $ dummy v
+  Val  v   -> return $ G.boolean v
   Not  x   -> un  G.not  x
   And  x y -> bin G.and  x y
   Or   x y -> bin G.or   x y

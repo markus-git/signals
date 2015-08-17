@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Backend.Compiler.Cycles (
@@ -21,12 +22,17 @@ import qualified Data.Ref.Map as M
 import Prelude hiding (Left, Right, pred)
 
 -- Temp !
-import System.Mem.StableName (eqStableName)
-import Unsafe.Coerce
+import System.Mem.StableName (eqStableName, hashStableName)
 -- !
 
 --------------------------------------------------------------------------------
 -- * 
+--------------------------------------------------------------------------------
+
+-- | ...
+data Hide f where
+  Hide :: f a -> Hide f
+
 --------------------------------------------------------------------------------
 
 -- | A node can have three different states during cycle checking
@@ -35,31 +41,27 @@ import Unsafe.Coerce
 --   * Unvisited, node has not yet been checked for cycles
 data Status      = Visited | Visiting | Unvisited deriving Eq
 
-data Tagged i a  = Tagged Status (Predecessor i) (Node i a)
+data Tagged i a  = Tagged Status Predecessor (Node i a)
 
-data Record i    = Record (forall a. Key i a)
+type Record i    = Hide (Key i)
 
 -- | A node's predecessor
-data Predecessor i = Predecessor (forall a. Name (S Symbol i a))
-                   | None
+data Predecessor = Predecessor (Hide Name) | None
 
 -- | Cycle-checking monad
 type M i         = WriterT [Record i] (State (Map (Tagged i)))
 
 --------------------------------------------------------------------------------
-
+{-
 key  :: Record i -> Name (S Symbol i a)
-key  (Record (Key n)) = n
-
+key  (Hide (Key n)) = n
+-}
 untag :: Tagged i a -> Node i a
 untag (Tagged _ _ n) = n
 
-untag' :: Tagged i (S Symbol i a) -> S Key i a
-untag' (Tagged _ _ (Node n)) = n
-
-(=/=) :: (Predecessor i) -> (Predecessor i) -> Bool
-(=/=) (Predecessor n1) (Predecessor n2) = n1 `eqStableName` n2
-(=/=) _                _                = False
+(=/=) :: Predecessor -> Predecessor -> Bool
+(=/=) (Predecessor (Hide n1)) (Predecessor (Hide n2)) = n1 `eqStableName` n2
+(=/=) _ _ = False
 
 --------------------------------------------------------------------------------
 -- **
@@ -68,45 +70,41 @@ untag' (Tagged _ _ (Node n)) = n
 is :: Name a -> Status -> M i ()
 is r s = modify $ flip M.adjust r $ \(Tagged _ p n) -> Tagged s p n
 
--- | Gets the status of a tagged node
-status :: Name a -> M i Status
-status r = gets $ (\(Tagged s _ _) -> s) . (M.! r)
-
 -- | Sets the predecessor of a tagged node
-before :: Name a -> Predecessor i -> M i ()
+before :: Name a -> Predecessor -> M i ()
 before r p = modify $ flip M.adjust r $ \(Tagged s _ n) -> Tagged s p n
 
+-- | Gets the status of a tagged node
+status :: Name a -> M i Status
+status r = do
+  s <- get
+  return $ case M.lookup r s of
+    Nothing             -> error $ "Sorter.status: lookup failed"
+                                ++ "\n\t i: " ++ show (hashStableName r)
+    Just (Tagged s _ _) -> s
+
 -- | Gets the predecessor of a tagged node
-predecessor :: Name a -> M i (Predecessor i)
-predecessor r = gets $ (\(Tagged _ p _) -> p) . (M.! r)
+predecessor :: Name a -> M i Predecessor
+predecessor r =
+  do s <- get
+     return $ case M.lookup r s of
+       Nothing             -> error "Sorter.predecessor: lookup failed"
+       Just (Tagged _ p _) -> p
 
 node :: Name (S Symbol i a) -> M i (S Key i a)
-node r = gets $ untag' . (M.! r)
+node r =
+  do s <- get
+     return $ case M.lookup r s of
+       Nothing                    -> error "Sorter.node: lookup failed"
+       Just (Tagged _ _ (Node n)) -> n
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
--- | Checks if the given signal contains cycles
-cycles :: Key i a -> Map (Node i) -> Bool
-cycles (Key key) nodes = flip evalState (init nodes) $ go key
-  where
-    init :: Map (Node i) -> Map (Tagged i)
-    init = M.hmap $ \node -> Tagged Unvisited None node
-    
-    go :: Name (S Symbol i a) -> State (Map (Tagged i)) Bool
-    go node = do
-      (b, w) <- runWriterT $ cycle' node
-      bs     <- forM w $ \(Record (Key n)) ->
-        do (Node (Delay _ (Key k))) <- gets $ untag . (M.! n) -- skip the delay
-           go k
-      return $ and (b : bs)
-
---------------------------------------------------------------------------------
-
 -- ! Remove unsafe, It's not really needed.
-cycle' :: Name (S Symbol i a) -> M i Bool
-cycle' r =
+cycle' :: Key i a -> M i Bool
+cycle' key@(Key r) =
   do r `is` Visiting
      n  <- node r
      b  <- case n of
@@ -115,18 +113,42 @@ cycle' r =
        (Join  l r) -> (&&) <$> check l <*> check r
        (Left    l) -> check l
        (Right   r) -> check r
-       (Delay _ s) -> tell [Record $ unsafeCoerce s] >> return False
+       (Delay _ s) -> tell [Hide s] >> return False
      r `is` Visited
      return b
   where
     check :: Key i a -> M i Bool
-    check (Key r') =
-      do let q = Predecessor $ unsafeCoerce r
+    check key@(Key r') =
+      do let q = Predecessor (Hide r)
          p <- predecessor r'
          s <- status      r'
          case s of
-           Unvisited          -> r' `before` q >> cycle' r'
+           Unvisited          -> r' `before` q >> cycle' key
            Visiting | p =/= q -> return False
            _                  -> return True
          
 --------------------------------------------------------------------------------
+
+-- | Checks if the given signal contains cycles
+cycles :: Key i a -> Map (Node i) -> Bool
+cycles key nodes = flip evalState (init nodes) $ go key
+  where
+    init :: Map (Node i) -> Map (Tagged i)
+    init = M.hmap $ \node -> Tagged Unvisited None node
+    
+    go :: Key i a -> State (Map (Tagged i)) Bool
+    go node =
+      do (b, w) <- runWriterT $ cycle' node
+         (bs)   <- mapM add w
+         return $  and (b : bs)
+      where
+        add :: Record i -> State (Map (Tagged i)) Bool
+        add (Hide key@(Key n)) =
+          do s <- get
+             case M.lookup n s of
+               Nothing -> error "Cycles.cyles.add: lookup failed"
+               Just (Tagged _ _ (Node (Delay _ k))) ->
+                 go k
+
+--------------------------------------------------------------------------------
+
