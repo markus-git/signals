@@ -9,6 +9,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.State
 
+import Data.Char (toLower)
 import Data.List (find)
 
 import Prelude hiding (not)
@@ -213,7 +214,7 @@ boolean b =
        (FacPrim
         (PrimLit
          (LitString
-          (SLit (show b))))
+          (SLit (fmap toLower $ show b))))
         (Nothing))
        ([]))
       ([]))

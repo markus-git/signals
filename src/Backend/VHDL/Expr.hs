@@ -91,7 +91,7 @@ evaluate env exp = case exp of
 
 compile :: Expr a -> LLVM S.Expression
 compile exp = case exp of
-  Var  v   -> return $ dummy v
+  Var  v   -> return $ G.dummy v
   Val  v   -> return $ G.boolean v
   Not  x   -> un  G.not  x
   And  x y -> bin G.and  x y
