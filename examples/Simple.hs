@@ -6,8 +6,11 @@
 module Simple where
 
 import Core
+import Frontend.Stream
 import Frontend.Signal hiding (S)
 import Frontend.Signal.Observ
+
+import Backend.Compiler
 import Backend.Compiler.Cycles
 import Backend.Compiler.Sorter
 import Backend.Compiler.Linker
@@ -56,7 +59,8 @@ add = lift2 Add
 test_sig :: S Int
 test_sig = let x = int 1 in add x (neg x)
 
-test =
+test_reify :: IO ()
+test_reify =
   do (k, m) <- reify test_sig
 
      let c = cycles k m
