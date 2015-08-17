@@ -69,6 +69,7 @@ test_program sig =
        Str.run str
 
 test_signal :: S Bool
-test_signal = let t = true in and t (not t)
+test_signal = not (and true (or false false))
+  -- let t = not (Sig.delay (E.bool False) t) in t -- # Loop
 
 --------------------------------------------------------------------------------
