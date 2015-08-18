@@ -44,11 +44,9 @@ data Node (i :: (* -> *) -> * -> *) (a :: *)
 reify :: Typeable a
   => Sig i a
   -> IO ( Key i (Identity a)
-        , Map (Node i)
-        )
+        , Map (Node i))
 reify (Sig (Signal sym)) =
   do (Key k, ns, _) <- reify_node sym M.empty M.empty
-     M.debug ns print_node
      return (Key k, ns)
  
 -- | ...
@@ -60,8 +58,7 @@ reify_node :: forall i a. Typeable a
   -> Map (Name)
   -> IO ( Key i a
         , Map (Node i)
-        , Map (Name)
-        )
+        , Map (Name))
 reify_node (Symbol ref@(Ref name s)) nodes names
   | Just old <- M.lookup name names =
       do putStrLn $ "** reify_node: " ++ show (hashStableName name) ++ "<" ++ (print_s s) ++ "> is old"
