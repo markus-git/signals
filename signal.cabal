@@ -1,59 +1,63 @@
 name:                signal
-version:             0.1.0.0
--- synopsis:            
+version:             0.2.0.0
+synopsis:            Simple signal processing for DSLs
 -- description:         
 -- license:             
 -- license-file:        LICENSE
 author:              Markus Aronsson
 maintainer:          mararon@chalmers.se
 -- copyright:           
--- category:            
+category:            Language
 build-type:          Simple
 -- extra-source-files:  
 cabal-version:       >=1.10
 
+source-repository head
+  type:     git
+  location: git://github.com/markus-git/signal.git
+
 library
-  exposed-modules:     Core,
-                       Frontend.Stream,
-                       Frontend.Signal,
-                       Frontend.Signal.Observ,
-                       Backend.Knot,
-                       Backend.VHDL.Syntax,
-                       Backend.VHDL.Pretty,
-                       Backend.VHDL.Generate,
-                       Backend.VHDL.Expr,
-                       Backend.VHDL.CMD,
-                       Backend.Compiler,
-                       Backend.Compiler.Cycles,
-                       Backend.Compiler.Sorter,
-                       Backend.Compiler.Linker
+  exposed-modules:
+    Signal,
+    Signal.Compiler,
+    Signal.Compiler.Cycles,
+    Signal.Compiler.Sorter,
+    Signal.Compiler.Linker,
+    Signal.Compiler.Knot,
+    Signal.Core,
+    Signal.Core.Stream,
+    Signal.Core.Reify
+    
   -- other-modules:       
-  other-extensions:    ConstraintKinds,
-                       TypeFamilies,
-                       FlexibleContexts,
-                       FlexibleInstances,
-                       GADTs,
-                       DeriveDataTypeable,
-                       ScopedTypeVariables,
-                       KindSignatures,
-                       QuasiQuotes,
-                       RecursiveDo,
-                       Rank2Types
-                       
-  build-depends:       base >=4.7,
-                       constraints >=0.4 && <0.5,
-                       array >=0.5 && <0.6,
-                       mtl >=2.2 && <2.3,
-                       containers >=0.5 && <0.6,
-                       pretty,
-                       imperative-edsl >= 0.3,
-                       observable-sharing >= 0.2.1.2,
-                       hashable >= 1.2,
-                       -- greater versions break 
-                       monad-control < 1.0, 
-                       exception-transformers >= 0.3.0.4 && < 0.5,
-                       exception-mtl >= 0.3.0.5 && < 0.5
-                       
-  hs-source-dirs:      .,src
+  other-extensions:
+    GADTs,
+    KindSignatures,
+    Rank2Types,
+    TypeOperators,
+    ScopedTypeVariables,
+    TypeFamilies,
+    FlexibleInstances,
+    FlexibleContexts
   
-  default-language:    Haskell2010
+  build-depends:
+    base                 >=4.7 && <5,
+    constraints          >=0.4 && <0.5,
+    array                >=0.5 && <0.6,
+    mtl                  >=2.2 && <2.3,
+    containers           >=0.5 && <0.6,
+    pretty,
+    language-vhdl        >= 0.1,
+    imperative-edsl      >= 0.3,
+    imperative-edsl-vhdl >= 0.1.1.1,
+    observable-sharing   >= 0.2.2.1,
+    hashable             >= 1.2,
+    -- greater versions break 
+    monad-control          < 1.0, 
+    exception-transformers >= 0.3.0.4 && < 0.5,
+    exception-mtl          >= 0.3.0.5 && < 0.5
+                       
+  hs-source-dirs:
+    .,src
+  
+  default-language:
+    Haskell2010

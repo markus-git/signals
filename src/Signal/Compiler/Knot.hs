@@ -1,6 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
 
-module Backend.Knot (
+module Signal.Compiler.Knot (
     Knot
   , Solver
   , tie

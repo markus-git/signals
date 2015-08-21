@@ -2,14 +2,14 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Frontend.Signal.Observ where
+module Signal.Core.Reify where
 
-import Core (IExp)
-import Frontend.Signal (S, Signal(..), Sig(..), Symbol(..), U, Witness)
-import Frontend.Stream (Stream, Str)
+import Control.Monad.Operational.Compositional
 
-import qualified Frontend.Signal as S
-import qualified Frontend.Stream as Str
+import Signal.Core (S, Signal(..), Sig(..), Symbol(..), U, Witness)
+import Signal.Core.Stream (Stream, Str)
+import qualified Signal.Core as S
+import qualified Signal.Core.Stream as Str
 
 import Control.Monad
 import Control.Monad.State
@@ -60,12 +60,9 @@ reify_node :: forall i a. Typeable a
         , Map (Node i)
         , Map (Name))
 reify_node (Symbol ref@(Ref name s)) nodes names
-  | Just old <- M.lookup name names =
-      do putStrLn $ "** reify_node: " ++ show (hashStableName name) ++ "<" ++ (print_s s) ++ "> is old"
-         return (Key old, nodes, names)
+  | Just old <- M.lookup name names = return (Key old, nodes, names)
   | otherwise =
-      do putStrLn $ "** reify_node: " ++ show (hashStableName name) ++ "<" ++ (print_s s) ++ "> is new"
-         let names' = M.insert ref name names
+      do let names' = M.insert ref name names
          case s of
            (S.Repeat (s :: Stream i (IExp i b))) ->
              do let node     = Node (S.Repeat s) :: Node i (S Symbol i a) 
@@ -104,15 +101,3 @@ reify_node (Symbol ref@(Ref name s)) nodes names
                 return (Key name, nodes'', names'')
 
 --------------------------------------------------------------------------------
-
-print_node :: forall i a. Node i a -> String
-print_node (Node s) = print_s s
-
-print_s :: forall sym i a. S sym i a -> String
-print_s s = case s of
-  (S.Repeat str) -> "Repeat"
-  (S.Map f s)    -> "Map"
-  (S.Join l r)   -> "Zip"
-  (S.Left p)     -> "Left"
-  (S.Right p)    -> "Right"
-  (S.Delay v s)  -> "Delay"

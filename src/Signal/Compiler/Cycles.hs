@@ -4,13 +4,13 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Cycles (
+module Signal.Compiler.Cycles (
     cycles
   )
 where
 
-import Frontend.Signal 
-import Frontend.Signal.Observ
+import Signal.Core
+import Signal.Core.Reify
 
 import Control.Monad.State
 import Control.Monad.Writer

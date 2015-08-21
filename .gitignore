@@ -1,4 +1,3 @@
-### Haskell ###
 dist
 cabal-dev
 *.o
@@ -12,7 +11,7 @@ cabal-dev
 .hsenv
 .cabal-sandbox/
 cabal.sandbox.config
-cabal.config
+packages/
 *.prof
 *.aux
 *.hp

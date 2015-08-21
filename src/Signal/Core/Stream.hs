@@ -1,9 +1,9 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Frontend.Stream where
+module Signal.Core.Stream where
 
-import Core
+import Control.Monad.Operational.Compositional
 
 import Control.Applicative
 import Control.Monad

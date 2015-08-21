@@ -5,10 +5,12 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Frontend.Signal where
+module Signal.Core where
 
-import Core hiding (Ref, join)
-import Frontend.Stream (Stream(..))
+import Control.Monad.Operational.Compositional hiding (join)
+
+import Signal.Core.Stream (Stream(..))
+import qualified Signal.Core.Stream as S
 
 import Data.Functor.Identity
 import Data.Typeable (Typeable)
@@ -16,9 +18,7 @@ import Data.Ref
 import Data.Unique
 
 import Prelude hiding (Left, Right, map, repeat)
-
-import qualified Frontend.Stream as S
-import qualified Prelude         as P
+import qualified Prelude as P
 
 --------------------------------------------------------------------------------
 -- * Signals

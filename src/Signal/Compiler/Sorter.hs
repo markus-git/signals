@@ -3,15 +3,15 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Sorter (
+module Signal.Compiler.Sorter (
     Order
   , Ordered(..)
   , sorter
   )
 where
 
-import Frontend.Signal hiding (lift)
-import Frontend.Signal.Observ
+import Signal.Core hiding (lift)
+import Signal.Core.Reify
   
 import Control.Arrow
 import Control.Monad.State

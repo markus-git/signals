@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Backend.Compiler.Linker (
+module Signal.Compiler.Linker (
     Dist
   , Named(..)
   , Names
@@ -17,12 +17,12 @@ module Backend.Compiler.Linker (
   )
   where
 
-import Core
-import Frontend.Stream 
-import Frontend.Signal
-import Frontend.Signal.Observ
-import Backend.Knot
-import Backend.Compiler.Sorter
+import Signal.Core
+import Signal.Core.Stream 
+import Signal.Core.Reify
+
+import Signal.Compiler.Knot
+import Signal.Compiler.Sorter
 
 import Control.Monad.Reader
 import Control.Monad.Writer
