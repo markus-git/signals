@@ -5,6 +5,7 @@
 module Signal.Core.Reify where
 
 import Control.Monad.Operational.Compositional
+import Language.Embedded.VHDL (PredicateExp)
 
 import Signal.Core (S, Signal(..), Sig(..), Symbol(..), U, Witness)
 import Signal.Core.Stream (Stream, Str)
@@ -17,12 +18,11 @@ import Data.Functor.Identity
 import Data.Typeable (Typeable)
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-
 import qualified Data.Ref.Map as M
 
 import Prelude hiding (Left, Right)
 
-import System.Mem.StableName -- *** temp
+import System.Mem.StableName -- !
 
 --------------------------------------------------------------------------------
 -- * Graph representation of Signals
@@ -36,7 +36,7 @@ data Key (i :: (* -> *) -> * -> *) (a :: *)
 -- | ...
 data Node (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Node :: (Witness a, Typeable a) => S Key i a -> Node i (S Symbol i a)
+    Node :: (Witness i a, Typeable a) => S Key i a -> Node i (S Symbol i a)
 
 --------------------------------------------------------------------------------
 

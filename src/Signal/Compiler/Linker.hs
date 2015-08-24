@@ -63,10 +63,10 @@ instance Hashable (Named a)
 type Names a = Dist Named a
 
 -- | Takes a composite name and creates unique names for each part
-name :: forall sym i a. Witness a => Name (S sym i a) -> Names (S sym i a)
-name n = go (wit :: Wit a) (Named n)
+name :: forall sym i a. Witness i a => Name (S sym i a) -> Names (S sym i a)
+name n = go (wit :: Wit i a) (Named n)
   where
-    go :: Wit x -> Named (S sym i x) -> Names (S sym i x)
+    go :: Wit i x -> Named (S sym i x) -> Names (S sym i x)
     go (WE)     n = n
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
 
@@ -76,7 +76,7 @@ name n = go (wit :: Wit a) (Named n)
 -- | Nodes where recursive calls to other nodes have been replaced with names
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
   where
-    Link :: Witness a => Names (S Symbol i a) -> Link i a
+    Link :: Witness i a => Names (S Symbol i a) -> Link i a
 
 -- | Container for linked nodes and the names of their own output
 data Linked (i :: (* -> *) -> * -> *) (a :: *)
@@ -153,9 +153,9 @@ linker :: [Ordered i] -> Map (Node i) -> Resolution i
 linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
   where
     solve :: Solver (Resolution i) (Constraint i)
-    solve = foldr ins M.empty -- ~= fromList
-      
-    ins (Hide (Pair n l)) = M.insert (ref n) l        -- <--- This doesn't work
-    ref = flip Data.Ref.Ref undefined
+    solve = foldr ins M.empty
+
+    ins :: Item i -> Map (Linked i) -> Map (Linked i)
+    ins (Hide (Pair n l)) = M.insert (Data.Ref.Ref n undefined) l
 
 --------------------------------------------------------------------------------

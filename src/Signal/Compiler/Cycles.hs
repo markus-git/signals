@@ -4,10 +4,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler.Cycles (
-    cycles
-  )
-where
+module Signal.Compiler.Cycles (cycles) where
 
 import Signal.Core
 import Signal.Core.Reify
@@ -16,14 +13,11 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-
 import qualified Data.Ref.Map as M
 
 import Prelude hiding (Left, Right, pred)
 
--- Temp !
-import System.Mem.StableName (eqStableName, hashStableName)
--- !
+import System.Mem.StableName (eqStableName, hashStableName) -- !
 
 --------------------------------------------------------------------------------
 -- * 
@@ -52,19 +46,14 @@ data Predecessor = Predecessor (Hide Name) | None
 type M i         = WriterT [Record i] (State (Map (Tagged i)))
 
 --------------------------------------------------------------------------------
-{-
-key  :: Record i -> Name (S Symbol i a)
-key  (Hide (Key n)) = n
--}
+-- **
+
 untag :: Tagged i a -> Node i a
 untag (Tagged _ _ n) = n
 
 (=/=) :: Predecessor -> Predecessor -> Bool
 (=/=) (Predecessor (Hide n1)) (Predecessor (Hide n2)) = n1 `eqStableName` n2
 (=/=) _ _ = False
-
---------------------------------------------------------------------------------
--- **
 
 -- | Sets the status of a tagged node
 is :: Name a -> Status -> M i ()

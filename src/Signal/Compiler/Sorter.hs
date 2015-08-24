@@ -38,7 +38,7 @@ type Order = Int
 
 -- | ...
 data Tagged i a where
-  Tagged :: (Witness a, Typeable a)
+  Tagged :: (Witness i a, Typeable a)
          => Status
          -> Order
          -> Name     (S Symbol i a)
@@ -109,7 +109,7 @@ sort' r =
 
 data Ordered i
   where
-    Ordered :: (Witness a, Typeable a) => Name (S Symbol i a) -> Ordered i
+    Ordered :: (Witness i a, Typeable a) => Name (S Symbol i a) -> Ordered i
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Map (Node i) -> [Ordered i]

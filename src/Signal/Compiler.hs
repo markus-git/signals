@@ -51,17 +51,19 @@ import Prelude hiding (lookup, Left, Right)
 -- * Channels
 --------------------------------------------------------------------------------
 
+-- ! generalize ! Expr a --> IExp i a
+
 data Hide f where
   Hide :: f a -> Hide f
 
-data Channels i = Channels (Map.IntMap (Hide (IExp i)))
+data Channels (i :: (* -> *) -> * -> *) = Channels (Map.IntMap (Hide (IExp i)))
 
-lookupC :: Typeable a => Named (S Symbol i (Identity a)) -> Channels i -> IExp i a
+lookupC :: Named (S Symbol i (Identity a)) -> Channels i -> IExp i a
 lookupC n (Channels m) = case Map.lookup (hash n) m of
   Nothing       -> error "Compiler.lookupC: lookup failed"
   Just (Hide x) -> unsafeCoerce x
 
-insertC :: Named (S Symbol i a) -> IExp i a -> Channels i -> Channels i
+insertC :: Named (S Symbol i (Identity a)) -> IExp i a -> Channels i -> Channels i
 insertC n e (Channels m) = Channels $ Map.insert (hash n) (Hide e) m
 
 --------------------------------------------------------------------------------
@@ -73,9 +75,9 @@ new =
   do i <- gets fst
      modify $ first (+ 1)
      return $ newVar i
-
+{-
 insert
-  :: forall proxy i a. (CompileExp (IExp i), PredicateExp (IExp i) a, Witness a)
+  :: forall proxy i a. (CompileExp (IExp i), Witness a)
   => proxy i a
   -> Names (S Symbol i a)
   -> Init i ()
@@ -87,7 +89,7 @@ insert _ n = go (wit :: Wit a) n
 
     add :: PredicateExp (IExp i) x => Named (S Symbol i (Identity x)) -> Init i ()
     add name = new >>= \i -> modify $ second $ insertC name i
-{-
+-}{-
 chan_init   :: Rim.Map (Linked i) -> Channels
 chan_init m =
   let links = fmap snd . concat $ Rim.dump m
