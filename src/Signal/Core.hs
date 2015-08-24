@@ -7,7 +7,23 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
-module Signal.Core where
+module Signal.Core
+  ( Sig(..)
+  , Signal(..)
+  , Symbol(..)
+  , S(..)
+  , U
+    
+  , delay
+
+  , Wit(..)
+  , Witness(..)
+
+  , lift
+  , lift0
+  , lift1
+  , lift2
+  ) where
 
 import Control.Monad.Operational.Compositional hiding (join)
 import Language.Embedded.VHDL (PredicateExp)
@@ -130,6 +146,20 @@ delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 
 instance Eq (Signal i a) where
   Signal (Symbol s1) == Signal (Symbol s2) = s1 == s2
+
+instance (Num (IExp i a), PredicateExp (IExp i) a, Typeable a) => Num (Sig i a) where
+  (+)         = lift2 (+)
+  (-)         = lift2 (-)
+  (*)         = lift2 (*)
+  negate      = error "negate not implemented for Sig"
+  abs         = error "abs not implemented for Sig"
+  signum      = error "signum not implemented for Sig"
+  fromInteger = lift0 . fromInteger
+
+instance (Fractional (IExp i a), PredicateExp (IExp i) a, Typeable a) => Fractional (Sig i a) where
+  (/)          = lift2 (/)
+  recip        = error "recip not implemented for Sig"
+  fromRational = lift0 . fromRational
 
 --------------------------------------------------------------------------------
 -- * Nested Signals

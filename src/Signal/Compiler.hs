@@ -6,10 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler {-(
-    compiler
-  )-}
-  where
+module Signal.Compiler (compiler) where
 
 import Control.Monad.Operational.Compositional
 
@@ -48,8 +45,11 @@ import Unsafe.Coerce -- !
 import Prelude hiding (lookup, Left, Right)
 
 --------------------------------------------------------------------------------
--- * Channels
+-- *
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- ** 
 
 data Hide f where
   Hide :: f a -> Hide f
@@ -70,13 +70,6 @@ lookupE n = varE . lookupC n
 
 insertC :: Named (S Symbol i (Identity a)) -> Identifier -> Channels i -> Channels i
 insertC n i m = Map.insert (hash n) i m
-
-initC   :: forall i. CompileExp (IExp i) => Rim.Map (Linked i) -> Channels i
-initC m = let links = fmap snd . concat $ Rim.dump m in
-    snd $ flip execState (1, Map.empty) $ forM_ links add
-  where
-    add :: Rim.HideType (Linked i) -> Init i ()
-    add (Rim.Hide (Linked _ l@(Link out))) = insert l out
 
 --------------------------------------------------------------------------------
 
@@ -102,9 +95,15 @@ insert _ n = go (wit :: Wit i a) n
     add :: PredicateExp (IExp i) x => Named (S Symbol i (Identity x)) -> Init i ()
     add name = new >>= modify . second . insertC name
 
+initC   :: forall i. CompileExp (IExp i) => Rim.Map (Linked i) -> Channels i
+initC m = let links = fmap snd . concat $ Rim.dump m in
+    snd $ flip execState (1, Map.empty) $ forM_ links add
+  where
+    add :: Rim.HideType (Linked i) -> Init i ()
+    add (Rim.Hide (Linked _ l@(Link out))) = insert l out
+
 --------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
+-- **
 
 type M i = ReaderT (Rim.Map (Linked i)) (StateT (Channels i) (Program i))
 
@@ -143,6 +142,8 @@ writeE _ n e = go (wit :: Wit i a) n e
       do c <- gets $ lookupC name
          lift $ lift $ c <== expr
 
+--------------------------------------------------------------------------------
+-- *
 --------------------------------------------------------------------------------
 
 comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
