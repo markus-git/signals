@@ -46,9 +46,9 @@ library
     mtl                  >=2.2 && <2.3,
     containers           >=0.5 && <0.6,
     pretty,
-    language-vhdl        >= 0.1,
+    language-vhdl        >= 0.1.0.3,
     imperative-edsl      >= 0.3,
-    imperative-edsl-vhdl >= 0.1.1.1,
+    imperative-edsl-vhdl >= 0.1.1.2,
     observable-sharing   >= 0.2.2.1,
     hashable             >= 1.2,
     -- greater versions break 
