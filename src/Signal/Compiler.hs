@@ -22,6 +22,7 @@ import Signal.Compiler.Sorter
 
 import Language.VHDL          hiding (Name)
 import Language.Embedded.VHDL hiding (name)
+import Language.Embedded.VHDL.Monad (Type)
 
 import Control.Arrow    (first, second)
 import Control.Monad.Reader
@@ -29,8 +30,8 @@ import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Identity
 import Data.Either      (partitionEithers)
-import Data.Maybe       (fromJust)
-import Data.List        (sortBy, mapAccumR)
+import Data.Maybe       (catMaybes)
+import Data.List        (sortBy, delete)
 import Data.Traversable (traverse)
 import Data.Typeable
 import Data.Function    (on)
@@ -102,7 +103,15 @@ initC m = let links = fmap snd . concat $ Rim.dump m in
     snd $ flip execState (1, Map.empty) $ forM_ links add
   where
     add :: Rim.HideType (Linked i) -> Init i ()
-    add (Rim.Hide (Linked _ l@(Link out))) = insert l out
+    add (Rim.Hide (Linked s l@(Link out)))
+      | isUseful s = insert l out
+      | otherwise  = return ()
+
+    isUseful :: S sym i a -> Bool
+    isUseful (Join _ _) = False
+    isUseful (Left   _) = False
+    isUseful (Right  _) = False
+    isUseful _          = True
 
 --------------------------------------------------------------------------------
 -- **
@@ -180,8 +189,9 @@ comp' (Ordered sym) =
 compile'
   :: forall i a.
      ( ConcurrentCMD (IExp i) :<: i
-     , CompileExp (IExp i)
-     , PredicateExp (IExp i) a
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
      , Typeable a
      )
   => Key i (Identity a)
@@ -189,34 +199,60 @@ compile'
   -> [Ordered i]
   -> Str i a
 compile' k@(Key root) links order = Stream $ 
-  do let ch      = initC links
-     let (ds,ns) = partitionEithers $ fmap isDelay order
-     forM_ ds $ initDelay ch
-     run ch $ do
-       mapM_ comp' ns
-       mapM_ comp' ds
-       readE k (name root)
+  do let channel = initC links
+         output  = name root
+     init     channel
+     initRoot channel
+     run channel $ do
+       let (delays, nodes) = splitDelays
+       mapM_ comp' nodes
+       mapM_ comp' delays
+       readE k output
   where
     run :: Channels i -> M i (IExp i a) -> Program i (Program i (IExp i a))
-    run ch = return . flip evalStateT ch . flip runReaderT links
+    run  ch = return . flip evalStateT ch . flip runReaderT links
 
-    isDelay :: Ordered i -> Either (Ordered i) (Ordered i)
-    isDelay o@(Ordered n) = case Rim.lookup n links of
+    init :: Channels i -> Program i ()
+    init ch = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
+        Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
+        Just (Linked (Delay v _)   (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
+        Just (Linked (Repeat v)    (Link o)) -> signalL (lookupC o ch) std_logic Nothing
+        Just (Linked (Map _ _)   l@(Link o)) -> inits l signalL ch o
+        _ -> return ()
+
+    initRoot :: Channels i -> Program i ()
+    initRoot ch = inits k signal ch (name root)
+
+    splitDelays :: ([Ordered i], [Ordered i])
+    splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
       Nothing -> error "compile'.isDelay: sorter appears to have added an extra delay"
       Just (Linked (Delay _ _) _) -> P.Left  o
       Just _                      -> P.Right o
-
-    initDelay :: Channels i -> Ordered i -> Program i ()
-    initDelay ch (Ordered n) = case Rim.lookup n links of
-      Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
-      Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
+    
+inits
+  :: forall proxy i a b.
+     ( ConcurrentCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , Witness i a
+     )
+  => proxy i a
+  -> (Identifier -> Type -> Maybe (IExp i a) -> Program i b)
+  -> Channels i
+  -> Names (S Symbol i a)
+  -> Program i ()
+inits _ f ch n = go (wit :: Wit i a) n
+  where
+    go :: Wit i x -> Names (S Symbol i x) -> Program i ()
+    go (WP u v) (l, r) = go u l >> go v r
+    go (WE)     (name) = void $ f (lookupC name ch) std_logic Nothing
 
 --------------------------------------------------------------------------------
 
 compiler
   :: ( ConcurrentCMD (IExp i) :<: i
-     , CompileExp (IExp i)
-     , PredicateExp (IExp i) a
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
      , Typeable a
      )
   => Sig i a -> IO (Str i a)

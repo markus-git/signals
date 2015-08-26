@@ -22,6 +22,7 @@ import Data.Ref
 import Data.Ref.Map (Map, Name)
 import qualified Data.Ref.Map as M
 
+import System.Mem.StableName (eqStableName)
 import Unsafe.Coerce -- !
 
 import Prelude hiding (Left, Right)
@@ -110,6 +111,9 @@ sort' r =
 data Ordered i
   where
     Ordered :: (Witness i a, Typeable a) => Name (S Symbol i a) -> Ordered i
+
+instance Eq (Ordered i) where
+  Ordered l == Ordered r = eqStableName l r
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Map (Node i) -> [Ordered i]
