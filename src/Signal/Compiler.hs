@@ -215,36 +215,27 @@ compile' k@(Key root) links order = Stream $
     init :: Channels i -> Program i ()
     init ch = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
         Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
-        Just (Linked (Delay v _)   (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
-        Just (Linked (Repeat v)    (Link o)) -> signalL (lookupC o ch) std_logic Nothing
-        Just (Linked (Map _ _)   l@(Link o)) -> inits l signalL ch o
+        Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
+        Just (Linked (Repeat v)  (Link o)) -> signalL (lookupC o ch) std_logic Nothing
+        Just (Linked (Map _ _)   link)     -> dist link
+          where
+            dist :: forall i a. (ConcurrentCMD (IExp i) :<: i) => Link i a -> Program i ()
+            dist (Link n) = go (wit :: Wit i a) n
+              where
+                go :: Wit i x -> Names (S Symbol i x) -> Program i ()
+                go (WP u v) (l, r) = go u l >> go v r
+                go (WE)     (name) = signalL (lookupC name ch) std_logic Nothing
+                
         _ -> return ()
 
     initRoot :: Channels i -> Program i ()
-    initRoot ch = inits k signal ch (name root)
+    initRoot ch = void $ signal (lookupC (name root) ch) std_logic Out Nothing
 
     splitDelays :: ([Ordered i], [Ordered i])
     splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
       Nothing -> error "compile'.isDelay: sorter appears to have added an extra delay"
       Just (Linked (Delay _ _) _) -> P.Left  o
       Just _                      -> P.Right o
-    
-inits
-  :: forall proxy i a b.
-     ( ConcurrentCMD (IExp i) :<: i
-     , HeaderCMD     (IExp i) :<: i
-     , Witness i a
-     )
-  => proxy i a
-  -> (Identifier -> Type -> Maybe (IExp i a) -> Program i b)
-  -> Channels i
-  -> Names (S Symbol i a)
-  -> Program i ()
-inits _ f ch n = go (wit :: Wit i a) n
-  where
-    go :: Wit i x -> Names (S Symbol i x) -> Program i ()
-    go (WP u v) (l, r) = go u l >> go v r
-    go (WE)     (name) = void $ f (lookupC name ch) std_logic Nothing
 
 --------------------------------------------------------------------------------
 
