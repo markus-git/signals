@@ -28,6 +28,7 @@ import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Identity
+import Data.Either      (partitionEithers)
 import Data.Maybe       (fromJust)
 import Data.List        (sortBy, mapAccumR)
 import Data.Traversable (traverse)
@@ -43,6 +44,7 @@ import qualified Data.Ref.Map as Rim
 import Unsafe.Coerce -- !
 
 import Prelude hiding (lookup, Left, Right)
+import qualified Prelude as P
 
 --------------------------------------------------------------------------------
 -- *
@@ -153,15 +155,18 @@ comp' (Ordered sym) =
        (Repeat c) ->
          do v <- down c
             writeE olink out v
+            
        (Map f ilink@(Link s)) ->
          do e <- readE ilink s
             v <- up    ilink e
             let o = f v
             y <- down o
             writeE olink out y
-       (Delay v ilink@(Link s)) ->   -- ! This is clearly wrong
+            
+       (Delay _ ilink@(Link s)) ->
          do e <- readE ilink s
-            writeE olink out v
+            writeE olink out e
+            
        _ -> return ()
   where
     down :: Stream i a -> M i a
@@ -180,22 +185,31 @@ compile'
      , Typeable a
      )
   => Key i (Identity a)
-  -> Rim.Map (Node i)
   -> Rim.Map (Linked i)
   -> [Ordered i]
   -> Str i a
-compile' k@(Key root) nodes links order = Stream $ 
-  do let ch = initC links
+compile' k@(Key root) links order = Stream $ 
+  do let ch      = initC links
+     let (ds,ns) = partitionEithers $ fmap isDelay order
+     forM_ ds $ initDelay ch
      run ch $ do
-       mapM_ comp' order
-       out <- readE k (name root)
-       ret out
+       mapM_ comp' ns
+       mapM_ comp' ds
+       readE k (name root)
   where
     run :: Channels i -> M i (IExp i a) -> Program i (Program i (IExp i a))
-    run c = return . flip evalStateT c . flip runReaderT links
+    run ch = return . flip evalStateT ch . flip runReaderT links
 
-    ret :: U i (Identity a) -> M i (IExp i a)
-    ret = return
+    isDelay :: Ordered i -> Either (Ordered i) (Ordered i)
+    isDelay o@(Ordered n) = case Rim.lookup n links of
+      Nothing -> error "compile'.isDelay: sorter appears to have added an extra delay"
+      Just (Linked (Delay _ _) _) -> P.Left  o
+      Just _                      -> P.Right o
+
+    initDelay :: Channels i -> Ordered i -> Program i ()
+    initDelay ch (Ordered n) = case Rim.lookup n links of
+      Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
+      Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
 
 --------------------------------------------------------------------------------
 
@@ -215,6 +229,6 @@ compiler sig =
      
      return $ case cycle of
        True  -> error "Compiler.compiler: found cycle"
-       False -> compile' root nodes links order
+       False -> compile' root links order
 
 --------------------------------------------------------------------------------
