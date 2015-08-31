@@ -51,12 +51,6 @@ import qualified Prelude as P
 -- *
 --------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------
--- ** 
-
-data Hide f where
-  Hide :: f a -> Hide f
-
 type Channels (i :: (* -> *) -> * -> *) = Map.IntMap Identifier
 
 lookupC :: Named (S Symbol i (Identity a)) -> Channels i -> Identifier
@@ -154,8 +148,6 @@ writeE _ n e = go (wit :: Wit i a) n e
          lift $ lift $ c <== expr
 
 --------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
 
 comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 comp' (Ordered sym) =
@@ -185,6 +177,8 @@ comp' (Ordered sym) =
     up _ = return . Str.Stream . return . return 
 
 --------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
 
 compile'
   :: forall i a.
@@ -200,10 +194,10 @@ compile'
   -> Str i a
 compile' k@(Key root) links order = Stream $ 
   do let channel = initC links
-         output  = name root
+         output  = name  root
      init     channel
      initRoot channel
-     run channel $ do
+     run      channel $ do
        let (delays, nodes) = splitDelays
        mapM_ comp' nodes
        mapM_ comp' delays
@@ -214,22 +208,33 @@ compile' k@(Key root) links order = Stream $
 
     init :: Channels i -> Program i ()
     init ch = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
-        Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
-        Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) std_logic (Just v)
-        Just (Linked (Repeat v)  (Link o)) -> signalL (lookupC o ch) std_logic Nothing
-        Just (Linked (Map _ _)   link)     -> dist link
-          where
-            dist :: forall i a. (ConcurrentCMD (IExp i) :<: i) => Link i a -> Program i ()
-            dist (Link n) = go (wit :: Wit i a) n
-              where
-                go :: Wit i x -> Names (S Symbol i x) -> Program i ()
-                go (WP u v) (l, r) = go u l >> go v r
-                go (WE)     (name) = signalL (lookupC name ch) std_logic Nothing
-                
-        _ -> return ()
+      Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
+      Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
+      Just (Linked (Repeat v)  (Link o)) -> go o
+        where
+          go :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
+             => Named (S Symbol i (Identity x))
+             -> Program i ()
+          go name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
+          
+      Just (Linked (Map _ _)   link)     -> dist link
+        where
+          dist :: forall i a. (ConcurrentCMD (IExp i) :<: i) => Link i a -> Program i ()
+          dist (Link n) = go (wit :: Wit i a) n
+            where
+              go :: Wit i x -> Names (S Symbol i x) -> Program i ()
+              go (WP u v) (l, r) = go u l >> go v r
+              go (WE)     (name) = og name
+
+              og :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
+                 => Named (S Symbol i (Identity x))
+                 -> Program i ()
+              og name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
+              
+      _ -> return ()
 
     initRoot :: Channels i -> Program i ()
-    initRoot ch = void $ signal (lookupC (name root) ch) std_logic Out Nothing
+    initRoot ch = void $ signal (lookupC (name root) ch) Out (Nothing :: Maybe (IExp i a))
 
     splitDelays :: ([Ordered i], [Ordered i])
     splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
