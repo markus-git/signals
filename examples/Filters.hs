@@ -7,6 +7,8 @@ import Language.VHDL
 import Language.Embedded.VHDL
 import Control.Monad.Operational.Compositional
 
+import Data.Word
+
 import Prelude hiding (repeat, map, zipWith, div)
 import qualified Prelude as P
 
@@ -25,38 +27,38 @@ type S = Sig (CMD E)
 
 --------------------------------------------------------------------------------
 
-repeat :: E Float -> S Float
+repeat :: E Word8 -> S Word8
 repeat = lift0
 
-map :: (E Float -> E Float) -> S Float -> S Float
+map :: (E Word8 -> E Word8) -> S Word8 -> S Word8
 map f = lift1 f
 
-zipWith :: (E Float -> E Float -> E Float) -> S Float -> S Float -> S Float
+zipWith :: (E Word8 -> E Word8 -> E Word8) -> S Word8 -> S Word8 -> S Word8
 zipWith f = lift2 f
 
 --------------------------------------------------------------------------------
 
-divs :: S Float -> S Float -> S Float
+divs :: S Word8 -> S Word8 -> S Word8
 divs = zipWith div
 
-sums :: [S Float] -> S Float
+sums :: [S Word8] -> S Word8
 sums = P.foldr1 (+)
 
-muls :: [E Float] -> [S Float] -> [S Float]
+muls :: [E Word8] -> [S Word8] -> [S Word8]
 muls es = P.zipWith (*) (P.map repeat es)
 
-delays :: [E Float] -> S Float -> [S Float]
+delays :: [E Word8] -> S Word8 -> [S Word8]
 delays es s = scanl (flip delay) s es
 
 --------------------------------------------------------------------------------
 -- ** Some filters
 
-fir :: [E Float] -> S Float -> S Float
+fir :: [E Word8] -> S Word8 -> S Word8
 fir as = sums . muls as . delays ds
   where
     ds = P.replicate (P.length as) 0
 
-iir :: [E Float] -> [E Float] -> S Float -> S Float
+iir :: [E Word8] -> [E Word8] -> S Word8 -> S Word8
 iir (a:as) bs s = o
   where
     u = fir bs s
@@ -69,7 +71,7 @@ iir (a:as) bs s = o
 
 type P = Program (CMD E)
 
-compSF :: (S Float -> S Float) -> IO (P ())
+compSF :: (S Word8 -> S Word8) -> IO (P ())
 compSF f =
   do prog <- compiler $ f $ repeat 1 -- temp
      return $ void $ run prog
