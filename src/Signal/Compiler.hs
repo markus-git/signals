@@ -112,13 +112,6 @@ initC m = let links = fmap snd . concat $ Rim.dump m in
 
 type M i = ReaderT (Rim.Map (Linked i)) (StateT (Channels i) (Program i))
 
-node :: Name (S Symbol i a) -> M i (Linked i (S Symbol i a))
-node name =
-  do out <- ask
-     return $ case Rim.lookup name out of
-       Nothing   -> error "Compiler.node: lookup failed"
-       Just node -> node
-
 readE
   :: forall proxy i a. (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i), Witness i a)
   => proxy i a
@@ -151,7 +144,7 @@ writeE _ n e = go (wit :: Wit i a) n e
 
 comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 comp' (Ordered sym) =
-  do (Linked n olink@(Link out)) <- node sym
+  do (Linked n olink@(Link out)) <- asks (Rim.! sym)
      case n of
        (Repeat c) ->
          do v <- down c
