@@ -193,40 +193,40 @@ compile'
   -> [Ordered i]
   -> Str i a
 compile' k@(Key root) links order = Stream $ 
-  do let channel = initC links
-         output  = name  root
-     init     channel
-     initRoot channel
-     run      channel $ do
+  do init
+     initRoot
+     run $ do
        let (delays, nodes) = splitDelays
        mapM_ comp' nodes
        mapM_ comp' delays
-       readE k output
+       readE k (name root)
   where
-    run :: Channels i -> M i (IExp i a) -> Program i (Program i (IExp i a))
-    run  ch = return . flip evalStateT ch . flip runReaderT links
+    ch :: Channels i
+    ch = initC links
+    
+    run :: M i (IExp i a) -> Program i (Program i (IExp i a))
+    run = return . flip evalStateT ch . flip runReaderT links
 
-    init :: Channels i -> Program i ()
-    init ch = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
+    init :: Program i ()
+    init = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
       Nothing -> error "compile'.initD: sorter appears to have added an extra node"
       Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
-      Just (Linked (Repeat v)  (Link o)) -> initNode o ch
+      Just (Linked (Repeat v)  (Link o)) -> initNode o
       Just (Linked (Map _ _)   (Link o :: Link i z)) -> dist (wit :: Wit i z) o
         where
           dist :: Wit i x -> Names (S Symbol i x) -> Program i ()
           dist (WP u v) (l, r) = dist u l >> dist v r
-          dist (WE)     (name) = initNode name ch              
+          dist (WE)     (name) = initNode name
       _ -> return ()
 
     initNode :: forall i x.
          (ConcurrentCMD (IExp i) :<: i, Typeable x)
       => Named (S Symbol i (Identity x))
-      -> Channels i
       -> Program  i ()
-    initNode name ch = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
+    initNode name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
 
-    initRoot :: Channels i -> Program i ()
-    initRoot ch = void $ signal (lookupC (name root) ch) Out (Nothing :: Maybe (IExp i a))
+    initRoot :: Program i ()
+    initRoot = void $ signal (lookupC (name root) ch) Out (Nothing :: Maybe (IExp i a))
 
     splitDelays :: ([Ordered i], [Ordered i])
     splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
