@@ -208,37 +208,29 @@ compile' k@(Key root) links order = Stream $
 
     init :: Channels i -> Program i ()
     init ch = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
-      Nothing -> error "compile'.initD: sorter appears to have added an extra delay"
+      Nothing -> error "compile'.initD: sorter appears to have added an extra node"
       Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
-      Just (Linked (Repeat v)  (Link o)) -> go o
+      Just (Linked (Repeat v)  (Link o)) -> initNode o ch
+      Just (Linked (Map _ _)   (Link o :: Link i z)) -> dist (wit :: Wit i z) o
         where
-          go :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
-             => Named (S Symbol i (Identity x))
-             -> Program i ()
-          go name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
-          
-      Just (Linked (Map _ _)   link)     -> dist link
-        where
-          dist :: forall i a. (ConcurrentCMD (IExp i) :<: i) => Link i a -> Program i ()
-          dist (Link n) = go (wit :: Wit i a) n
-            where
-              go :: Wit i x -> Names (S Symbol i x) -> Program i ()
-              go (WP u v) (l, r) = go u l >> go v r
-              go (WE)     (name) = og name
-
-              og :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
-                 => Named (S Symbol i (Identity x))
-                 -> Program i ()
-              og name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
-              
+          dist :: Wit i x -> Names (S Symbol i x) -> Program i ()
+          dist (WP u v) (l, r) = dist u l >> dist v r
+          dist (WE)     (name) = initNode name ch              
       _ -> return ()
+
+    initNode :: forall i x.
+         (ConcurrentCMD (IExp i) :<: i, Typeable x)
+      => Named (S Symbol i (Identity x))
+      -> Channels i
+      -> Program  i ()
+    initNode name ch = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
 
     initRoot :: Channels i -> Program i ()
     initRoot ch = void $ signal (lookupC (name root) ch) Out (Nothing :: Maybe (IExp i a))
 
     splitDelays :: ([Ordered i], [Ordered i])
     splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
-      Nothing -> error "compile'.isDelay: sorter appears to have added an extra delay"
+      Nothing -> error "compile'.isDelay: sorter appears to have added an extra node"
       Just (Linked (Delay _ _) _) -> P.Left  o
       Just _                      -> P.Right o
 
