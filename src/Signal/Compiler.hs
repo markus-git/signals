@@ -48,69 +48,57 @@ import Prelude hiding (lookup, Left, Right)
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
--- *
+-- * Channels
 --------------------------------------------------------------------------------
 
-type Channels (i :: (* -> *) -> * -> *) = Map.IntMap Identifier
+type Channels = Map.IntMap Identifier
 
-lookupC :: Named (S Symbol i (Identity a)) -> Channels i -> Identifier
+lookupC :: Named (S Symbol i (Identity a)) -> Channels -> Identifier
 lookupC n m = case Map.lookup (hash n) m of
   Nothing -> error "Compiler.lookupC: lookup failed"
   Just i  -> i
 
-lookupE
-  :: (CompileExp (IExp i), PredicateExp (IExp i) a)
-  => Named (S Symbol i (Identity a))
-  -> Channels i
-  -> IExp i a
-lookupE n = varE . lookupC n
-
-insertC :: Named (S Symbol i (Identity a)) -> Identifier -> Channels i -> Channels i
+insertC :: Named (S Symbol i (Identity a)) -> Identifier -> Channels -> Channels
 insertC n i m = Map.insert (hash n) i m
 
 --------------------------------------------------------------------------------
+-- ** Initialization of Channels
 
-type Init i = State (Integer, Channels i)
+type Init = State (Integer, Channels)
 
-new :: Init i Identifier
+new :: Init Identifier
 new = 
   do i <- gets fst
      modify $ first (+ 1)
      return $ newVar i
 
-insert
-  :: forall proxy i a. (CompileExp (IExp i), Witness i a)
-  => proxy i a
-  -> Names (S Symbol i a)
-  -> Init i ()
-insert _ n = go (wit :: Wit i a) n
-  where
-    go :: Wit i x -> Names (S Symbol i x) -> Init i ()
-    go (WE)     (name) = add name
-    go (WP u v) (l, r) = go u l >> go v r
-
-    add :: PredicateExp (IExp i) x => Named (S Symbol i (Identity x)) -> Init i ()
-    add name = new >>= modify . second . insertC name
-
-initC   :: forall i. CompileExp (IExp i) => Rim.Map (Linked i) -> Channels i
+initC   :: forall i. CompileExp (IExp i) => Rim.Map (Linked i) -> Channels
 initC m = let links = fmap snd . concat $ Rim.dump m in
     snd $ flip execState (1, Map.empty) $ forM_ links add
   where
-    add :: Rim.HideType (Linked i) -> Init i ()
+    add :: Rim.HideType (Linked i) -> Init ()
     add (Rim.Hide (Linked s l@(Link out)))
       | isUseful s = insert l out
       | otherwise  = return ()
 
-    isUseful :: S sym i a -> Bool
-    isUseful (Join _ _) = False
-    isUseful (Left   _) = False
-    isUseful (Right  _) = False
-    isUseful _          = True
+    insert :: forall a. Witness i a => Link i a -> Names (S Symbol i a) -> Init ()
+    insert _ n = go (wit :: Wit i a) n
+      where
+        go :: Wit i x -> Names (S Symbol i x) -> Init ()
+        go (WE)     (name) = new >>= modify . second . insertC name
+        go (WP u v) (l, r) = go u l >> go v r
+
+-- | Useful refers to whether or not code has to be generated during compilation
+isUseful :: S sym i a -> Bool
+isUseful (Join _ _) = False
+isUseful (Left   _) = False
+isUseful (Right  _) = False
+isUseful _          = True
 
 --------------------------------------------------------------------------------
 -- **
 
-type M i = ReaderT (Rim.Map (Linked i)) (StateT (Channels i) (Program i))
+type M i = ReaderT (Rim.Map (Linked i)) (StateT Channels (Program i))
 
 readE
   :: forall proxy i a. (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i), Witness i a)
@@ -120,7 +108,7 @@ readE
 readE _ n = go (wit :: Wit i a) n
   where
     go :: Wit i x -> Names (S Symbol i x) -> M i (U i x)
-    go (WE)     (name) = gets $ lookupE name
+    go (WE)     (name) = gets $ varE . lookupC name
     go (WP u v) (l, r) =
       do l' <- go u l
          r' <- go v r
@@ -148,19 +136,16 @@ comp' (Ordered sym) =
      case n of
        (Repeat c) ->
          do v <- down c
-            writeE olink out v
-            
+            writeE olink out v            
        (Map f ilink@(Link s)) ->
          do e <- readE ilink s
             v <- up    ilink e
             let o = f v
             y <- down o
-            writeE olink out y
-            
+            writeE olink out y            
        (Delay _ ilink@(Link s)) ->
          do e <- readE ilink s
-            writeE olink out e
-            
+            writeE olink out e            
        _ -> return ()
   where
     down :: Stream i a -> M i a
@@ -194,7 +179,7 @@ compile' k@(Key root) links order = Stream $
        mapM_ comp' delays
        readE k (name root)
   where
-    ch :: Channels i
+    ch :: Channels
     ch = initC links
     
     run :: M i (IExp i a) -> Program i (Program i (IExp i a))
