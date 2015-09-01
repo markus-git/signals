@@ -42,8 +42,6 @@ import Data.Ref.Map     (Name)
 import qualified Data.IntMap  as Map
 import qualified Data.Ref.Map as Rim
 
-import Unsafe.Coerce -- !
-
 import Prelude hiding (lookup, Left, Right)
 import qualified Prelude as P
 
@@ -74,12 +72,18 @@ new =
 
 initC   :: forall i. CompileExp (IExp i) => Rim.Map (Linked i) -> Channels
 initC m = let links = fmap snd . concat $ Rim.dump m in
-    snd $ flip execState (1, Map.empty) $ forM_ links add
+    snd $ flip execState (1, Map.empty) $ mapM_ add links
   where
     add :: Rim.HideType (Linked i) -> Init ()
     add (Rim.Hide (Linked s l@(Link out)))
       | isUseful s = insert l out
       | otherwise  = return ()
+
+    isUseful :: S sym i a -> Bool
+    isUseful (Join _ _) = False
+    isUseful (Left   _) = False
+    isUseful (Right  _) = False
+    isUseful _          = True
 
     insert :: forall a. Witness i a => Link i a -> Names (S Symbol i a) -> Init ()
     insert _ n = go (wit :: Wit i a) n
@@ -88,15 +92,8 @@ initC m = let links = fmap snd . concat $ Rim.dump m in
         go (WE)     (name) = new >>= modify . second . insertC name
         go (WP u v) (l, r) = go u l >> go v r
 
--- | Useful refers to whether or not code has to be generated during compilation
-isUseful :: S sym i a -> Bool
-isUseful (Join _ _) = False
-isUseful (Left   _) = False
-isUseful (Right  _) = False
-isUseful _          = True
-
 --------------------------------------------------------------------------------
--- **
+-- ** Reading / Writing to and from Channels
 
 type M i = ReaderT (Rim.Map (Linked i)) (StateT Channels (Program i))
 
@@ -129,6 +126,8 @@ writeE _ n e = go (wit :: Wit i a) n e
          lift $ lift $ c <== expr
 
 --------------------------------------------------------------------------------
+-- * Compilation
+--------------------------------------------------------------------------------
 
 comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 comp' (Ordered sym) =
@@ -155,8 +154,7 @@ comp' (Ordered sym) =
     up _ = return . Str.Stream . return . return 
 
 --------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
+-- ** 
 
 compile'
   :: forall i a.
@@ -213,6 +211,7 @@ compile' k@(Key root) links order = Stream $
       Just _                      -> P.Right o
 
 --------------------------------------------------------------------------------
+-- **
 
 compiler
   :: ( ConcurrentCMD (IExp i) :<: i
