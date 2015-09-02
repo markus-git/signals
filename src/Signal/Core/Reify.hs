@@ -2,7 +2,12 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Core.Reify where
+module Signal.Core.Reify
+  ( Key  (..)
+  , Node (..)
+  , Nodes
+  , reify
+  )where
 
 import Control.Monad.Operational.Compositional
 import Language.Embedded.VHDL (PredicateExp)
@@ -12,6 +17,8 @@ import Signal.Core.Stream (Stream, Str)
 import qualified Signal.Core as S
 import qualified Signal.Core.Stream as Str
 
+import Control.Applicative ((<$>))
+import Control.Arrow       (first, second)
 import Control.Monad
 import Control.Monad.State
 import Data.Functor.Identity
@@ -39,65 +46,65 @@ data Node (i :: (* -> *) -> * -> *) (a :: *)
     Node :: (Witness i a, Typeable a) => S Key i a -> Node i (S Symbol i a)
 
 --------------------------------------------------------------------------------
+-- ** Reify Monad
 
--- | ...
-reify :: Typeable a
-  => Sig i a
-  -> IO ( Key i (Identity a)
-        , Map (Node i))
-reify (Sig (Signal sym)) =
-  do (Key k, ns, _) <- reify_node sym M.empty M.empty
-     return (Key k, ns)
- 
--- | ...
---
--- ! I see a pattern here...
-reify_node :: forall i a. Typeable a
+type Nodes i = Map (Node i)
+
+type Names   = Map (Name)
+
+type Reify i = StateT (Nodes i, Names) IO
+
+--------------------------------------------------------------------------------
+-- ** Helpers for insert/lookup
+
+insertNode :: Ref (S Symbol i a) -> Node i (S Symbol i a) -> Reify i (Key i a)
+insertNode ref@(Ref name _) node = modify (first $ M.insert ref node) >> return (Key name)
+
+insertName :: Ref (S Symbol i a) -> Reify i ()
+insertName ref@(Ref name _) = modify . second $ M.insert ref name
+
+lookupName :: Ref (S Symbol i a) -> Reify i (Maybe (Key i a))
+lookupName ref@(Ref name _) = do
+  node  <- gets (M.lookup name . snd)
+  return $ case node of
+    Nothing  -> Nothing
+    Just old -> Just (Key old)
+
+--------------------------------------------------------------------------------
+-- * Reification of Signals
+--------------------------------------------------------------------------------
+
+reify'
+  :: forall i a. Typeable a
   => Symbol i a
-  -> Map (Node i)
-  -> Map (Name)
-  -> IO ( Key i a
-        , Map (Node i)
-        , Map (Name))
-reify_node (Symbol ref@(Ref name s)) nodes names
-  | Just old <- M.lookup name names = return (Key old, nodes, names)
-  | otherwise =
-      do let names' = M.insert ref name names
-         case s of
-           (S.Repeat (s :: Stream i (IExp i b))) ->
-             do let node     = Node (S.Repeat s) :: Node i (S Symbol i a) 
-                    nodes'   = M.insert ref node nodes
-                return (Key name, nodes', names')
+  -> Reify  i (Key i a)
+reify' (Symbol ref@(Ref _ node)) =
+  do name <- lookupName ref
+     case name of
+       Just old -> return old
+       Nothing  -> case node of
+         (S.Repeat str) -> insertNode ref (Node (S.Repeat str))
+         (S.Map  f sig) ->
+           do key <- reify' sig
+              insertNode ref (Node (S.Map f key))
+         (S.Join l r) ->
+           do lkey <- reify' l
+              rkey <- reify' r
+              insertNode ref (Node (S.Join lkey rkey))
+         (S.Left   l) ->
+           do lkey <- reify' l
+              insertNode ref (Node (S.Left lkey))
+         (S.Right  r) ->
+           do rkey <- reify' r
+              insertNode ref (Node (S.Right rkey))
+         (S.Delay v sig) ->
+           do key <- reify' sig
+              insertNode ref (Node (S.Delay v key))
 
-           (S.Map (f :: Stream i (U i b) -> Stream i (U i a)) (s :: Symbol i b)) ->
-             do (k, nodes', names'') <- reify_node s nodes names'
-                let node     = Node (S.Map f k) :: Node i (S Symbol i a)
-                    nodes''  = M.insert ref node nodes'
-                return (Key name, nodes'', names'')
+--------------------------------------------------------------------------------
+-- **
 
-           (S.Join (l :: Symbol i b) (r :: Symbol i c)) ->
-             do (kl, nodes',  names'')  <- reify_node l nodes  names'
-                (kr, nodes'', names''') <- reify_node r nodes' names''
-                let node     = Node (S.Join kl kr) :: Node i (S Symbol i a)
-                    nodes''' = M.insert ref node nodes''
-                return (Key name, nodes''', names''')
-
-           (S.Left (l :: Symbol i (a, b))) ->
-             do (k, nodes', names'') <- reify_node l nodes names'
-                let node     = Node (S.Left k) :: Node i (S Symbol i a)
-                    nodes''  = M.insert ref node nodes'
-                return (Key name, nodes'', names'')
-
-           (S.Right (r :: Symbol i (b, a))) ->
-             do (k, nodes', names'') <- reify_node r nodes names'
-                let node     = Node (S.Right k) :: Node i (S Symbol i a)
-                    nodes''  = M.insert ref node nodes'
-                return (Key name, nodes'', names'')
-                
-           (S.Delay (e :: IExp i b) (s :: Symbol i (Identity b))) ->
-             do (k, nodes', names'') <- reify_node s nodes names'
-                let node     = Node (S.Delay e k) :: Node i (S Symbol i a)
-                    nodes''  = M.insert ref node nodes'
-                return (Key name, nodes'', names'')
+reify :: Typeable a => Sig i a -> IO (Key i (Identity a), Nodes i)
+reify (Sig (Signal sym)) = second fst <$> runStateT (reify' sym) (M.empty, M.empty)
 
 --------------------------------------------------------------------------------

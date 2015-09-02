@@ -116,10 +116,10 @@ instance Eq (Ordered i) where
   Ordered l == Ordered r = eqStableName l r
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
-sorter :: Key i a -> Map (Node i) -> [Ordered i]
+sorter :: Key i a -> Nodes i -> [Ordered i]
 sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
   where
-    init :: Map (Node i) -> Map (Tagged i)
+    init :: Nodes i -> Map (Tagged i)
     init = M.hmap apa
       where
         apa :: forall i a. Node i a -> Tagged i a

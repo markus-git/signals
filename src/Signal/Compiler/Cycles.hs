@@ -37,13 +37,11 @@ data Status      = Visited | Visiting | Unvisited deriving Eq
 
 data Tagged i a  = Tagged Status Predecessor (Node i a)
 
-type Record i    = Hide (Key i)
-
 -- | A node's predecessor
 data Predecessor = Predecessor (Hide Name) | None
 
 -- | Cycle-checking monad
-type M i         = WriterT [Record i] (State (Map (Tagged i)))
+type M i         = WriterT [Hide (Key i)] (State (Map (Tagged i)))
 
 --------------------------------------------------------------------------------
 -- **
@@ -119,10 +117,10 @@ cycle' key@(Key r) =
 --------------------------------------------------------------------------------
 
 -- | Checks if the given signal contains cycles
-cycles :: Key i a -> Map (Node i) -> Bool
+cycles :: Key i a -> Nodes i -> Bool
 cycles key nodes = flip evalState (init nodes) $ go key
   where
-    init :: Map (Node i) -> Map (Tagged i)
+    init :: Nodes i -> Map (Tagged i)
     init = M.hmap $ \node -> Tagged Unvisited None node
     
     go :: Key i a -> State (Map (Tagged i)) Bool
@@ -131,7 +129,7 @@ cycles key nodes = flip evalState (init nodes) $ go key
          (bs)   <- mapM add w
          return $  and (b : bs)
       where
-        add :: Record i -> State (Map (Tagged i)) Bool
+        add :: Hide (Key i) -> State (Map (Tagged i)) Bool
         add (Hide key@(Key n)) =
           do s <- get
              case M.lookup n s of

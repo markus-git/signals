@@ -102,7 +102,7 @@ type Resolution i = Map (Linked i)
 
 type Constraint i = Item i
 
-type M i          = Knot (Resolution i) (Constraint i) (State (Map (Node i)))
+type M i          = Knot (Resolution i) (Constraint i) (State (Nodes i))
 
 --------------------------------------------------------------------------------
 
@@ -149,7 +149,7 @@ link' (Ordered sym) =
 
 --------------------------------------------------------------------------------
 
-linker :: [Ordered i] -> Map (Node i) -> Resolution i
+linker :: [Ordered i] -> Nodes i -> Resolution i
 linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
   where
     solve :: Solver (Resolution i) (Constraint i)
