@@ -9,9 +9,11 @@ module Signal.Compiler.Linker (
     Dist
   , Named(..)
   , Names
-  , Resolution(..)
+    
   , Link(..)
   , Linked(..)
+  , Links
+    
   , linker
   , name
   )
@@ -83,6 +85,9 @@ data Linked (i :: (* -> *) -> * -> *) (a :: *)
   where
     Linked :: S Link i a -> Link i a -> Linked i (S Symbol i a)
 
+-- | ...
+type Links i = Map (Linked i)
+
 --------------------------------------------------------------------------------
 -- ** We will however need to hide their types as they vary between nodes
 
@@ -98,9 +103,9 @@ type Item i = Hide (Pair Name (Linked i))
 -- * Linking monad
 --------------------------------------------------------------------------------
 
-type Resolution i = Map (Linked i)
+type Resolution i = Links i
 
-type Constraint i = Item i
+type Constraint i = Item  i
 
 type M i          = Knot (Resolution i) (Constraint i) (State (Nodes i))
 
@@ -131,6 +136,8 @@ link' :: Ordered i -> M i ()
 link' (Ordered sym) =
   do (Node n) <- node sym
      case n of
+       (Var d) ->
+         do constrain (Var d) (name sym)
        (Repeat c) ->
          do constrain (Repeat c) (name sym)
        (Map f s) ->
@@ -149,13 +156,13 @@ link' (Ordered sym) =
 
 --------------------------------------------------------------------------------
 
-linker :: [Ordered i] -> Nodes i -> Resolution i
+linker :: [Ordered i] -> Nodes i -> Links i
 linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
   where
     solve :: Solver (Resolution i) (Constraint i)
     solve = foldr ins M.empty
 
-    ins :: Item i -> Map (Linked i) -> Map (Linked i)
+    ins :: Item i -> Links i -> Links i
     ins (Hide (Pair n l)) = M.insert (Data.Ref.Ref n undefined) l
 
 --------------------------------------------------------------------------------

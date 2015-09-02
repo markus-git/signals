@@ -92,6 +92,7 @@ sort' r =
   do visited r
      n <- node r
      case n of
+       (Var     _) -> return ()
        (Repeat  _) -> return ()
        (Map   _ s) -> visit s
        (Join  l r) -> visit l >> visit r

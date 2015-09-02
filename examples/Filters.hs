@@ -25,6 +25,9 @@ type E = Expr
 -- | Short-hand for signals over our commands
 type S = Sig (CMD E)
 
+-- | ...
+type Sr a = Str (CMD E) a
+
 --------------------------------------------------------------------------------
 
 repeat :: E Word8 -> S Word8
@@ -71,10 +74,17 @@ iir (a:as) bs s = o
 
 type P = Program (CMD E)
 
-compSF :: (S Word8 -> S Word8) -> IO (P ())
-compSF f =
+compS  :: (S Word8 -> S Word8) -> IO (P ())
+compS f =
   do prog <- compiler $ f $ repeat 1 -- temp
      return $ void $ run prog
+
+compSF :: (S Word8 -> S Word8) -> IO (P ())
+compSF f =
+  do prog <- compiler_fun f
+     return $ void $ run $ prog $ (Stream . return $ return 0)
+
+--------------------------------------------------------------------------------
 
 compFIR :: IO ()
 compFIR =
@@ -83,7 +93,7 @@ compFIR =
 
 compIIR :: IO ()
 compIIR =
-  do prog <- compSF (iir [1,2] [2,1])
+  do prog <- compS (iir [1,2] [2,1])
      putStrLn $ compile prog
 
 --------------------------------------------------------------------------------

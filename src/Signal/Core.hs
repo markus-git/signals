@@ -14,6 +14,7 @@ module Signal.Core
   , S(..)
   , U
     
+  , variable
   , delay
 
   , Wit(..)
@@ -33,6 +34,7 @@ import qualified Signal.Core.Stream as S
 
 import Data.Functor.Identity
 import Data.Typeable (Typeable)
+import Data.Dynamic  (Dynamic)
 import Data.Ref
 import Data.Unique
 
@@ -77,6 +79,9 @@ data S sig i a
 
     Delay  :: (Typeable a, PredicateExp (IExp i) a)
            => IExp i a -> sig i (Identity a) -> S sig i (Identity a)
+
+    Var    :: (Witness i a, Typeable a)
+           => Dynamic -> S sig i a
 
 -- | Type for nested tuples, stripping away all Identity
 type family U (i :: (* -> *) -> * -> *) a :: *
@@ -138,6 +143,15 @@ right
   -> Signal i b
 right (Signal s) = signal $ Right s
 
+variable
+  :: (Witness i a, Typeable a)
+  => Dynamic
+  -> Signal i a
+variable = signal . Var 
+
+--------------------------------------------------------------------------------
+-- **
+
 delay :: (Typeable a, PredicateExp e a, e ~ IExp i) => e a -> Sig i a -> Sig i a
 delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 
@@ -151,14 +165,14 @@ instance (Num (IExp i a), PredicateExp (IExp i) a, Typeable a) => Num (Sig i a) 
   (+)         = lift2 (+)
   (-)         = lift2 (-)
   (*)         = lift2 (*)
-  negate      = error "negate not implemented for Sig"
-  abs         = error "abs not implemented for Sig"
-  signum      = error "signum not implemented for Sig"
+  negate      = lift1 negate
+  abs         = lift1 abs
+  signum      = lift1 signum
   fromInteger = lift0 . fromInteger
 
 instance (Fractional (IExp i a), PredicateExp (IExp i) a, Typeable a) => Fractional (Sig i a) where
   (/)          = lift2 (/)
-  recip        = error "recip not implemented for Sig"
+  recip        = lift1 recip
   fromRational = lift0 . fromRational
 
 --------------------------------------------------------------------------------

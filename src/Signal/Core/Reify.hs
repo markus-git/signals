@@ -6,7 +6,9 @@ module Signal.Core.Reify
   ( Key  (..)
   , Node (..)
   , Nodes
+    
   , reify
+  , reify_fun
   )where
 
 import Control.Monad.Operational.Compositional
@@ -22,9 +24,10 @@ import Control.Arrow       (first, second)
 import Control.Monad
 import Control.Monad.State
 import Data.Functor.Identity
-import Data.Typeable (Typeable)
+import Data.Typeable       (Typeable)
+import Data.Dynamic        (Dynamic, toDyn)
 import Data.Ref
-import Data.Ref.Map (Map, Name)
+import Data.Ref.Map        (Map, Name)
 import qualified Data.Ref.Map as M
 
 import Prelude hiding (Left, Right)
@@ -83,6 +86,7 @@ reify' (Symbol ref@(Ref _ node)) =
      case name of
        Just old -> return old
        Nothing  -> case node of
+         (S.Var    dyn) -> insertNode ref (Node (S.Var    dyn))
          (S.Repeat str) -> insertNode ref (Node (S.Repeat str))
          (S.Map  f sig) ->
            do key <- reify' sig
@@ -102,9 +106,30 @@ reify' (Symbol ref@(Ref _ node)) =
               insertNode ref (Node (S.Delay v key))
 
 --------------------------------------------------------------------------------
--- **
+-- ** ... 
 
+-- | ...
 reify :: Typeable a => Sig i a -> IO (Key i (Identity a), Nodes i)
 reify (Sig (Signal sym)) = second fst <$> runStateT (reify' sym) (M.empty, M.empty)
+
+-- | ...
+reify_fun
+  :: ( PredicateExp (IExp i) a
+     , Typeable i
+     , Typeable a
+     , Typeable b
+     )
+  => (Sig i a -> Sig i b)
+  -> IO ( Key i (Identity b)
+        , Key i (Identity a)
+        , Nodes i
+        )
+reify_fun f =
+  do let (Sig (Signal (Symbol (Ref var _))), sig) = let a = Sig (S.variable (toDyn f)) in (a, f a)
+     (key, nodes) <- reify sig
+     return
+        ( key
+        , Key var
+        , nodes)
 
 --------------------------------------------------------------------------------

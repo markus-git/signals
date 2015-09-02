@@ -6,7 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler (compiler) where
+module Signal.Compiler (compiler, compiler_fun) where
 
 import Control.Monad.Operational.Compositional
 
@@ -133,6 +133,8 @@ comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i
 comp' (Ordered sym) =
   do (Linked n olink@(Link out)) <- asks (Rim.! sym)
      case n of
+       (Var _) ->
+         do return ()
        (Repeat c) ->
          do v <- down c
             writeE olink out v            
@@ -165,7 +167,7 @@ compile'
      , Typeable a
      )
   => Key i (Identity a)
-  -> Rim.Map (Linked i)
+  -> Links i
   -> [Ordered i]
   -> Str i a
 compile' k@(Key root) links order = Stream $ 
@@ -186,19 +188,18 @@ compile' k@(Key root) links order = Stream $
     init :: Program i ()
     init = forM_ (Ordered root `delete` order) $ \(Ordered n) -> case Rim.lookup n links of
       Nothing -> error "compile'.initD: sorter appears to have added an extra node"
-      Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
-      Just (Linked (Repeat v)  (Link o)) -> initNode o
-      Just (Linked (Map _ _)   (Link o :: Link i z)) -> dist (wit :: Wit i z) o
+      Just (Linked (Repeat v) (Link o)) -> initNode o
+      Just (Linked (Map _ _)  (Link o :: Link i z)) -> dist (wit :: Wit i z) o
         where
           dist :: Wit i x -> Names (S Symbol i x) -> Program i ()
           dist (WP u v) (l, r) = dist u l >> dist v r
           dist (WE)     (name) = initNode name
+      Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
       _ -> return ()
 
-    initNode :: forall i x.
-         (ConcurrentCMD (IExp i) :<: i, Typeable x)
+    initNode :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
       => Named (S Symbol i (Identity x))
-      -> Program  i ()
+      -> Program i ()
     initNode name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
 
     initRoot :: Program i ()
@@ -231,5 +232,93 @@ compiler sig =
      return $ case cycle of
        True  -> error "Compiler.compiler: found cycle"
        False -> compile' root links order
+
+--------------------------------------------------------------------------------
+-- * Testing
+--------------------------------------------------------------------------------
+
+compile'_fun
+  :: forall i a b.
+     ( ConcurrentCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) b
+     , Typeable i
+     , Typeable a
+     , Typeable b
+     )
+  => Key i (Identity b)
+  -> Key i (Identity a)
+  -> Links i
+  -> [Ordered i]
+  -> (Str i a -> Str i b)
+compile'_fun outp@(Key root) inp@(Key var) links order (Stream sinit) = Stream $ 
+  do next <- sinit
+     init
+     run $ do
+       val <- lift $ lift $ next
+       writeE inp (name var) val
+       
+       let (delays, nodes) = splitDelays
+       mapM_ comp' nodes
+       mapM_ comp' delays
+       readE outp (name root)
+  where
+    ch :: Channels
+    ch = initC links
+    
+    run :: M i (IExp i b) -> Program i (Program i (IExp i b))
+    run = return . flip evalStateT ch . flip runReaderT links
+
+    init :: Program i ()
+    init = do
+      signal (lookupC (name var)  ch) In  (Nothing :: Maybe (IExp i a)) -- input
+      signal (lookupC (name root) ch) Out (Nothing :: Maybe (IExp i b)) -- output
+      let   rest = foldr delete order [Ordered root, Ordered var]
+      forM_ rest $ \(Ordered n) -> case Rim.lookup n links of
+        Just (Linked (Repeat v) (Link o)) -> initNode o
+        Just (Linked (Map _ _)  (Link o :: Link i z)) -> dist (wit :: Wit i z) o
+          where
+            dist :: Wit i x -> Names (S Symbol i x) -> Program i ()
+            dist (WP u v) (l, r) = dist u l >> dist v r
+            dist (WE)     (name) = initNode name
+        Just (Linked (Delay v _) (Link o)) -> signalL (lookupC o ch) (Just v)
+        _ -> return ()
+
+    initNode :: forall i x. (ConcurrentCMD (IExp i) :<: i, Typeable x)
+      => Named (S Symbol i (Identity x))
+      -> Program  i ()
+    initNode name = signalL (lookupC name ch) (Nothing :: Maybe (IExp i x))
+
+    splitDelays :: ([Ordered i], [Ordered i])
+    splitDelays = partitionEithers $ flip fmap order $ \o@(Ordered n) -> case Rim.lookup n links of
+      Nothing -> error "compile'.isDelay: sorter appears to have added an extra node"
+      Just (Linked (Delay _ _) _) -> P.Left  o
+      Just _                      -> P.Right o
+
+--------------------------------------------------------------------------------
+
+compiler_fun
+  :: ( ConcurrentCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) b
+     , Typeable i
+     , Typeable a
+     , Typeable b
+     )
+  => (Sig i a -> Sig i b) -> IO (Str i a -> Str i b)
+compiler_fun sf =
+  do (root, input, nodes) <- reify_fun sf
+     
+     let order = sorter root  nodes
+         cycle = cycles root  nodes
+         links = linker order nodes
+     
+     return $ case cycle of
+       True  -> error "Compiler.compiler: found cycle"
+       False -> compile'_fun root input links order
 
 --------------------------------------------------------------------------------

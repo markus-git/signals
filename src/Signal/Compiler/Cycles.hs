@@ -95,6 +95,7 @@ cycle' key@(Key r) =
   do r `is` Visiting
      n  <- node r
      b  <- case n of
+       (Var     _) -> return False
        (Repeat  _) -> return False
        (Map   _ s) -> check s
        (Join  l r) -> (&&) <$> check l <*> check r
