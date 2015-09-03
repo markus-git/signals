@@ -240,7 +240,8 @@ compile'
   -> [Ordered i]
   -> Str i a
 compile' k@(Key root) links order = Stream $ 
-  do compile'_init channels links orders
+  do signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i a))
+     compile'_init channels links orders
      compile'_run  channels links $ do
        mapM_ comp' nodes
        mapM_ comp' delays
@@ -268,6 +269,8 @@ compile'_fun
   -> (Str i a -> Str i b)
 compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
   do next <- str
+     signal (lookupC (name var)  channels) In  (Nothing :: Maybe (IExp i a))
+     signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i b))
      compile'_init channels links orders
      compile'_run  channels links $ do
        -- input
