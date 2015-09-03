@@ -4,8 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Sorter (
-    Order
-  , Ordered(..)
+    Ordered(..)
   , sorter
   )
 where
