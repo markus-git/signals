@@ -20,7 +20,7 @@ import Signal.Compiler.Cycles
 import Signal.Compiler.Linker
 import Signal.Compiler.Sorter
 
-import Language.VHDL          hiding (Name)
+import Language.VHDL    (Identifier(..))
 import Language.Embedded.VHDL hiding (name)
 import Language.Embedded.VHDL.Monad (Type)
 
@@ -95,35 +95,37 @@ initC m = let links = fmap snd . concat $ Rim.dump m in
 --------------------------------------------------------------------------------
 -- ** Reading / Writing to and from Channels
 
-type M i = ReaderT (Rim.Map (Linked i)) (StateT Channels (Program i))
+type M i = ReaderT (Rim.Map (Linked i), Channels) (Program i)
 
 readE
-  :: forall proxy i a. (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i), Witness i a)
+  :: forall proxy i a. (CompileExp (IExp i), Witness i a)
   => proxy i a
   -> Names (S Symbol i a)
   -> M i (U i a)
 readE _ n = go (wit :: Wit i a) n
   where
     go :: Wit i x -> Names (S Symbol i x) -> M i (U i x)
-    go (WE)     (name) = gets $ varE . lookupC name
+    go (WE)     (name) = asks $ varE . lookupC name . snd
     go (WP u v) (l, r) =
       do l' <- go u l
          r' <- go v r
          return (l', r')
 
-writeE
-  :: forall proxy i a. (ConcurrentCMD (IExp i) :<: i, Witness i a)
+writeS
+  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
   => proxy i a
   -> Names (S Symbol i a)
   -> U i a
   -> M i ()
-writeE _ n e = go (wit :: Wit i a) n e
+writeS _ n e = go (wit :: Wit i a) n e
   where
     go :: Wit i x -> Names (S Symbol i x) -> U i x -> M i ()
     go (WP u v) (l, r) (a, b) = go u l a >> go v r b
     go (WE)     (name) (expr) =
-      do c <- gets $ lookupC name
-         lift $ lift $ c <== expr
+      do c <- asks $ lookupC name . snd
+         lift $ c <== expr
+
+-- *** need writeV, for variable assignment
 
 --------------------------------------------------------------------------------
 -- * Compilation
@@ -131,6 +133,7 @@ writeE _ n e = go (wit :: Wit i a) n e
 
 compiler
   :: ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
@@ -148,8 +151,11 @@ compiler sig =
        True  -> error "Compiler.compiler: found cycle"
        False -> compile' root links order
 
+--------------------------------------------------------------------------------
+
 compiler_fun
   :: ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
@@ -173,11 +179,110 @@ compiler_fun sf =
 --------------------------------------------------------------------------------
 -- **
 
+compile'
+  :: forall i a.
+     ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
+     , Typeable a
+     )
+  => Key i (Identity a)
+  -> Links i
+  -> [Ordered i]
+  -> Str i a
+compile' k@(Key root) links order = Stream $ 
+  do signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i a))
+     compile'_init channels links orders
+     compile'_run  channels links $ do
+       mapM_ comp' nodes
+       mapM_ comp' delays
+       readE k (name root)
+  where
+    channels        = initC links    
+    (orders)        = foldr delete order [Ordered root]
+    (delays, nodes) = compile'_split channels links order
+
+--------------------------------------------------------------------------------
+
+compile'_fun
+  :: forall i a b.
+     ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) b
+     , Typeable i
+     , Typeable a
+     , Typeable b
+     )
+  => Key i (Identity b)
+  -> Key i (Identity a)
+  -> Links i
+  -> [Ordered i]
+  -> (Str i a -> Str i b)
+compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
+  do next <- str
+     signal (lookupC (name var)  channels) In  (Nothing :: Maybe (IExp i a))
+     signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i b))
+     compile'_init channels links orders
+     compile'_run  channels links $ do
+       -- input
+       val <- lift $ next
+       -- network
+       wrap $ do
+         writeS inp (name var) val
+         mapM_ comp' nodes
+         mapM_ comp' delays
+       -- output
+       readE outp (name root)
+  where
+    channels        = initC links    
+    (orders)        = foldr delete order [Ordered root, Ordered var]
+    (delays, nodes) = compile'_split channels links order
+
+    -- Wraps a 'M' action in a process
+    wrap :: M i () -> M i ()
+    wrap = lift . process (Ident "main") [lookupC (name var) channels]
+                . flip runReaderT (links, channels)
+
+--------------------------------------------------------------------------------
+-- **
+
+comp' :: (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
+comp' (Ordered sym) =
+  do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
+     case n of
+       (Repeat c) ->
+         do v <- down c
+            writeS olink out v            
+       (Map f ilink@(Link s)) ->
+         do e <- readE ilink s
+            v <- up    ilink e
+            let o = f v
+            y <- down o
+            writeS olink out y            
+       (Delay _ ilink@(Link s)) ->
+         do e <- readE ilink s
+            writeS olink out e            
+       _ -> return ()
+  where
+    down :: Stream i a -> M i a
+    down = lift . Str.run
+
+    up   :: forall proxy i a. proxy i a -> U i a -> M i (Stream i (U i a))
+    up _ = return . Str.Stream . return . return 
+
+--------------------------------------------------------------------------------
+-- **
+
 type Order i = [Ordered i]
 
 -- | Declare variable instances for each node in 'order'
 compile'_init
-  :: forall i. (ConcurrentCMD (IExp i) :<: i)
+  :: forall i. (SequentialCMD (IExp i) :<: i)
   => Channels
   -> Links i
   -> Order i
@@ -195,7 +300,7 @@ compile'_init channels links order = forM_ order $ \(Ordered n) ->
     _ -> return ()
   where
     init
-      :: forall i a. (ConcurrentCMD (IExp i) :<: i, Typeable a)
+      :: forall i a. (SequentialCMD (IExp i) :<: i, Typeable a)
       => Named (S Symbol i (Identity a))
       -> Maybe (IExp i a)
       -> Program i ()
@@ -222,96 +327,6 @@ compile'_run
   -> Links i
   -> M i (IExp i a)
   -> Program i (Program i (IExp i a))
-compile'_run channels links = return . flip evalStateT channels . flip runReaderT links
-
---------------------------------------------------------------------------------
--- **
-
-compile'
-  :: forall i a.
-     ( ConcurrentCMD (IExp i) :<: i
-     , HeaderCMD     (IExp i) :<: i
-     , CompileExp    (IExp i)
-     , PredicateExp  (IExp i) a
-     , Typeable a
-     )
-  => Key i (Identity a)
-  -> Links i
-  -> [Ordered i]
-  -> Str i a
-compile' k@(Key root) links order = Stream $ 
-  do signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i a))
-     compile'_init channels links orders
-     compile'_run  channels links $ do
-       mapM_ comp' nodes
-       mapM_ comp' delays
-       readE k (name root)
-  where
-    channels        = initC links    
-    (orders)        = foldr delete order [Ordered root]
-    (delays, nodes) = compile'_split channels links order
-
-compile'_fun
-  :: forall i a b.
-     ( ConcurrentCMD (IExp i) :<: i
-     , HeaderCMD     (IExp i) :<: i
-     , CompileExp    (IExp i)
-     , PredicateExp  (IExp i) a
-     , PredicateExp  (IExp i) b
-     , Typeable i
-     , Typeable a
-     , Typeable b
-     )
-  => Key i (Identity b)
-  -> Key i (Identity a)
-  -> Links i
-  -> [Ordered i]
-  -> (Str i a -> Str i b)
-compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
-  do next <- str
-     signal (lookupC (name var)  channels) In  (Nothing :: Maybe (IExp i a))
-     signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i b))
-     compile'_init channels links orders
-     compile'_run  channels links $ do
-       -- input
-       val <- lift $ lift $ next
-       writeE inp (name var) val
-       -- network
-       mapM_ comp' nodes
-       mapM_ comp' delays
-       readE outp (name root)
-  where
-    channels        = initC links    
-    (orders)        = foldr delete order [Ordered root, Ordered var]
-    (delays, nodes) = compile'_split channels links order    
-
---------------------------------------------------------------------------------
--- **
-
-comp' :: (ConcurrentCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
-comp' (Ordered sym) =
-  do (Linked n olink@(Link out)) <- asks (Rim.! sym)
-     case n of
-       (Var _) ->
-         do return ()
-       (Repeat c) ->
-         do v <- down c
-            writeE olink out v            
-       (Map f ilink@(Link s)) ->
-         do e <- readE ilink s
-            v <- up    ilink e
-            let o = f v
-            y <- down o
-            writeE olink out y            
-       (Delay _ ilink@(Link s)) ->
-         do e <- readE ilink s
-            writeE olink out e            
-       _ -> return ()
-  where
-    down :: Stream i a -> M i a
-    down = lift . lift . Str.run
-
-    up   :: forall proxy i a. proxy i a -> U i a -> M i (Stream i (U i a))
-    up _ = return . Str.Stream . return . return 
+compile'_run channels links = return . flip runReaderT (links, channels)
 
 --------------------------------------------------------------------------------
