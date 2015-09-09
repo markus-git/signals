@@ -17,7 +17,7 @@ import qualified Prelude as P
 --------------------------------------------------------------------------------
 
 -- | The kinds of commands we can use
-type CMD exp = ConcurrentCMD exp :+: HeaderCMD exp
+type CMD exp = SequentialCMD exp :+: ConcurrentCMD exp :+: HeaderCMD exp
 
 -- | Short-hand for the expression type we will use
 type E = Expr
