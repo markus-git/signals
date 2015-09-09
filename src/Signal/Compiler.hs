@@ -125,6 +125,20 @@ writeS _ n e = go (wit :: Wit i a) n e
       do c <- asks $ lookupC name . snd
          lift $ c <== expr
 
+writeV
+  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
+  => proxy i a
+  -> Names (S Symbol i a)
+  -> U i a
+  -> M i ()
+writeV _ n e = go (wit :: Wit i a) n e
+  where
+    go :: Wit i x -> Names (S Symbol i x) -> U i x -> M i ()
+    go (WP u v) (l, r) (a, b) = go u l a >> go v r b
+    go (WE)     (name) (expr) =
+      do c <- asks $ lookupC name . snd
+         lift $ c ==: expr
+
 -- *** need writeV, for variable assignment
 
 --------------------------------------------------------------------------------
@@ -196,13 +210,21 @@ compile' k@(Key root) links order = Stream $
   do signal (lookupC (name root) channels) Out (Nothing :: Maybe (IExp i a))
      compile'_init channels links orders
      compile'_run  channels links $ do
-       mapM_ comp' nodes
-       mapM_ comp' delays
+       -- network
+       wrap $ do
+         let r = name root
+         mapM_ (comp' k) nodes
+         mapM_ (comp' k) delays
+       -- output
        readE k (name root)
   where
     channels        = initC links    
     (orders)        = foldr delete order [Ordered root]
     (delays, nodes) = compile'_split channels links order
+
+    -- Wraps a 'M' action in a process
+    wrap :: M i () -> M i ()
+    wrap = lift . process (Ident "main") [] . flip runReaderT (links, channels)
 
 --------------------------------------------------------------------------------
 
@@ -234,8 +256,8 @@ compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
        -- network
        wrap $ do
          writeS inp (name var) val
-         mapM_ comp' nodes
-         mapM_ comp' delays
+         mapM_ (comp' outp) nodes
+         mapM_ (comp' outp) delays
        -- output
        readE outp (name root)
   where
@@ -251,28 +273,37 @@ compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
 --------------------------------------------------------------------------------
 -- **
 
-comp' :: (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
-comp' (Ordered sym) =
+comp'
+  :: forall i a. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i), Witness i a, Typeable a)
+  => Key i a    -- root node of signal graph
+  -> Ordered i  -- node to compile
+  -> M i ()
+comp' (Key root) node@(Ordered sym) =
   do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
      case n of
        (Repeat c) ->
          do v <- down c
-            writeS olink out v            
+            write olink out v
        (Map f ilink@(Link s)) ->
          do e <- readE ilink s
             v <- up    ilink e
             let o = f v
             y <- down o
-            writeS olink out y            
+            write olink out y            
        (Delay _ ilink@(Link s)) ->
          do e <- readE ilink s
-            writeS olink out e            
+            write olink out e
        _ -> return ()
   where
-    down :: Stream i a -> M i a
+    -- there must be a better way than this..
+    write :: forall proxy b. Witness i b => proxy i b -> Names (S Symbol i b) -> U i b -> M i ()
+    write | (Ordered root) == node = writeS
+          | otherwise              = writeV
+
+    down :: Stream i b -> M i b
     down = lift . Str.run
 
-    up   :: forall proxy i a. proxy i a -> U i a -> M i (Stream i (U i a))
+    up   :: proxy i b -> U i b -> M i (Stream i (U i b))
     up _ = return . Str.Stream . return . return 
 
 --------------------------------------------------------------------------------
