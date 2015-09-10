@@ -22,7 +22,8 @@ import Signal.Compiler.Sorter
 
 import Language.VHDL (Identifier(..))
 import Language.Embedded.VHDL hiding (name)
-import qualified Language.Embedded.VHDL as M
+import qualified Language.Embedded.VHDL       as E
+import qualified Language.Embedded.VHDL.Monad as EM
 
 import Control.Arrow    (first, second)
 import Control.Monad.Reader (ReaderT, asks)
@@ -105,7 +106,7 @@ makeChannels (Key root) m = let links = fmap snd . concat $ Rim.dump m in
         go (WE)     (name) =
           do old@(Ident d) <- next
              let new = Ident (d ++ "_in")
-             modify $ second $ insertNode  name old M.Signal
+             modify $ second $ insertNode  name old E.Signal
              modify $ second $ insertDelay name old new
 
     newNode  :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Kind -> Init ()
@@ -115,7 +116,7 @@ makeChannels (Key root) m = let links = fmap snd . concat $ Rim.dump m in
         go (WP u v)  (l, r)    = go u l >> go v r
         go (WE) name@(Named n) =
           -- ! this is a bit clunky
-          do let  kind = if root `eqStableName` n then M.Signal else k
+          do let  kind = if root `eqStableName` n then E.Signal else k
              i <- next
              modify $ second $ insertNode name i kind
     
@@ -129,8 +130,8 @@ isUseful :: S sym i a -> Maybe Kind
 isUseful (Join _ _)  = Nothing
 isUseful (Left _)    = Nothing
 isUseful (Right _)   = Nothing
-isUseful (Var _)     = Just M.Signal
-isUseful _           = Just M.Variable
+isUseful (Var _)     = Just E.Signal
+isUseful _           = Just E.Variable
 
 --------------------------------------------------------------------------------
 -- ** Reading / Writing to and from Channels
@@ -159,7 +160,7 @@ write _ n e = go (wit :: Wit i a) n e
     go (WE)     (name) (expr) =
       do (c, k) <- asks $ lookupNode name . snd
          lift $ case k of
-           M.Signal -> c <== expr
+           E.Signal -> c <== expr
            _        -> c ==: expr
 
 --------------------------------------------------------------------------------
@@ -178,10 +179,7 @@ writed _ name e =
 -- * Compilation
 --------------------------------------------------------------------------------
 
-comp'
-  :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i))
-  => Ordered i
-  -> M i ()
+comp' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 comp' (Ordered sym) =
   do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
      case n of
@@ -206,6 +204,15 @@ comp' (Ordered sym) =
     up _ = return . Str.Stream . return . return 
 
 --------------------------------------------------------------------------------
+
+compd' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
+compd' (Ordered sym) =
+  do channels <- asks snd
+     (Linked (Delay _ (_ :: Link i (Identity b))) olink@(Link out)) <- asks $ (Rim.! sym) . fst
+     let (i, o) = lookupDelay out channels
+     lift $ i <== (varE o :: IExp i b)
+
+--------------------------------------------------------------------------------
 -- **
 
 type Order i = [Ordered i]
@@ -222,25 +229,25 @@ initialize
 initialize channels links order = forM_ order $ \(Ordered n) ->
   case Rim.lookup n links of
     Nothing -> error "Compiler.compile'_init: lookup failed"
-    Just (Linked (Delay v _) (Link o)) -> init o (Just v)
-    Just (Linked (Repeat  v) (Link o)) -> init o (Nothing)
+    Just (Linked (Delay v _) (Link o)) -> initd o (Just v)
+    Just (Linked (Repeat  v) (Link o)) -> init  o (Nothing)
     Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (wit :: Wit i x) o
       where
         dist :: Wit i a -> Names (S Symbol i a) -> Program i ()
         dist (WP u v) (l, r) = dist u l >> dist v r
-        dist (WE)     (name) = init name (Nothing)        
+        dist (WE)     (name) = init name (Nothing)
     _ -> return ()
   where
-    init
-      :: forall a. Typeable a
-      => Named (S Symbol i (Identity a))
-      -> Maybe (IExp i a)
-      -> Program i ()
-    init n v =
-      let (i, k) = lookupNode n channels
-       in case k of
-           M.Signal   -> M.signalG   i v
-           M.Variable -> M.variableL i v
+    init  :: forall a. Typeable a => Named (S Symbol i (Identity a)) -> Maybe (IExp i a) -> Program i ()
+    init  n v =
+      do let (i, k) = lookupNode n channels
+         E.variableL i v
+
+    initd :: forall a. Typeable a => Named (S Symbol i (Identity a)) -> Maybe (IExp i a) -> Program i ()
+    initd n v =
+      do let (i, o) = lookupDelay n channels
+         E.signalG i v
+         E.signalG o (Nothing :: Maybe (IExp i a))
 
 --------------------------------------------------------------------------------
 -- **
@@ -264,18 +271,24 @@ compile'_fun
   -> (Str i a -> Str i b)
 compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
   do next <- str
+     clk  <- clock
      signal (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
      signal (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
      compile'_run  channels links $ do
        -- input
        val <- lift $ next
+       
        -- network
-       wrap $ do
+       wrap "combinatorial" scomb $ do
          lift $ initialize channels links orders
          -- this is different from C, as we have drivers in VHDL
          --writeS inp (name var) val
          mapM_ comp' nodes
          mapM_ comp' delays
+
+       wrap "sequential" [clk] $ do
+         mapM_ compd' delays
+         
        -- output
        read outp (name root)
   where
@@ -283,15 +296,20 @@ compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
     (orders)        = foldr delete order [Ordered root, Ordered var]
     (delays, nodes) = filterDelays channels links order
 
+    -- sensitivity lists for comb/seq processes    
+    scomb :: [Identifier]
+    scomb = fst (lookupNode (name var) channels) : (flip fmap delays $
+              \(Ordered n) -> case (Rim.!) links n of
+                Linked (Delay {}) (Link out) -> fst $ lookupNode out channels)
+
     -- Wraps a 'M' action in a process
-    wrap :: M i () -> M i ()
-    wrap = lift . process (Ident "main") [fst $ lookupNode (name var) channels]
-                . flip R.runReaderT (links, channels)
+    wrap :: String -> [Identifier] -> M i () -> M i ()
+    wrap s sl = lift . process (Ident s) sl . flip R.runReaderT (links, channels)
 
 -- | ...
 filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
 filterDelays channels links order = partitionEithers $ flip fmap order $
-  \ o@(Ordered n) -> case Rim.lookup n links of
+  \o@(Ordered n) -> case Rim.lookup n links of
       Just (Linked (Delay _ _) _) -> P.Left  o
       Just _                      -> P.Right o
 
