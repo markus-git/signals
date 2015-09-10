@@ -5,6 +5,7 @@ module Filters where
 import Signal
 import Language.VHDL
 import Language.Embedded.VHDL
+import Language.Embedded.VHDL.Expression
 import Control.Monad.Operational.Compositional
 
 import Data.Word
