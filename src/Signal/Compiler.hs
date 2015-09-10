@@ -91,7 +91,7 @@ makeChannels (Key root) m = let links = fmap snd . concat $ Rim.dump m in
     snd . flip S.execState (1, emptyChannels) $ mapM_ add links
   where
     add :: Rim.HideType (Linked i) -> Init ()
-    add (Rim.Hide (Linked (Delay _ _) l@(Link out))) = newNode l out (M.Signal) >> newDelay l out
+    add (Rim.Hide (Linked (Delay _ _) l@(Link out))) = {-newNode l out (M.Signal) >> -}newDelay l out
     add (Rim.Hide (Linked s           l@(Link out))) =
       case isUseful s of
         Nothing -> return ()
@@ -103,8 +103,10 @@ makeChannels (Key root) m = let links = fmap snd . concat $ Rim.dump m in
         go :: Wit i y -> Names (S Symbol i y) -> Init ()
         go (WP u v) (l, r) = go u l >> go v r
         go (WE)     (name) =
-          do i@(Ident s) <- gets $ fst . lookupNode name . snd
-             modify $ second $ insertDelay name i (Ident (s ++ "_in"))
+          do old@(Ident d) <- next
+             let new = Ident (d ++ "_in")
+             modify $ second $ insertNode  name old M.Signal
+             modify $ second $ insertDelay name old new
 
     newNode  :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Kind -> Init ()
     newNode _ n k = go (wit :: Wit i x) n
@@ -147,11 +149,6 @@ read _ n = go (wit :: Wit i a) n
          r' <- go v r
          return (l', r')
 
-readDelay -- ! This ain't pretty
-  :: forall proxy i a. (CompileExp (IExp i), PredicateExp (IExp i) a, Witness i (Identity a))
-  => proxy i (Identity a) -> Names (S Symbol i (Identity a)) -> M i (U i (Identity a))
-readDelay _ name = asks $ varE . snd . lookupDelay name . snd
-
 write
   :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
   => proxy i a -> Names (S Symbol i a) -> U i a -> M i ()
@@ -166,28 +163,145 @@ write _ n e = go (wit :: Wit i a) n e
            _        -> c ==: expr
 
 --------------------------------------------------------------------------------
+
+writed
+  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, PredicateExp (IExp i) a, Typeable a)
+  => proxy i (Identity a)
+  -> Names (S Symbol i (Identity a))
+  -> U i (Identity a)
+  -> M i ()
+writed _ name e =
+  do d <- asks $ snd . lookupDelay name . snd
+     lift $ d <== e
+
+--------------------------------------------------------------------------------
 -- * Compilation
 --------------------------------------------------------------------------------
 
-compiler
-  :: ( ConcurrentCMD (IExp i) :<: i
+comp'
+  :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i))
+  => Ordered i
+  -> M i ()
+comp' (Ordered sym) =
+  do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
+     case n of
+       (Repeat c) ->
+         do v <- down c
+            write olink out v
+       (Map f ilink@(Link s)) ->
+         do e <- read ilink s
+            v <- up   ilink e
+            let o = f v
+            y <- down o
+            write olink out y            
+       (Delay _ ilink@(Link s)) ->
+         do e <- read ilink s
+            writed olink out e
+       _ -> return ()
+  where
+    down :: Stream i b -> M i b
+    down = lift . Str.run
+
+    up   :: proxy i b -> U i b -> M i (Stream i (U i b))
+    up _ = return . Str.Stream . return . return 
+
+--------------------------------------------------------------------------------
+-- **
+
+type Order i = [Ordered i]
+
+-- | Declare signal/variable instances for each node in 'order'
+initialize
+  :: forall i. ( SequentialCMD (IExp i) :<: i
+               , ConcurrentCMD (IExp i) :<: i
+               )
+  => Channels
+  -> Links i
+  -> Order i
+  -> Program i ()
+initialize channels links order = forM_ order $ \(Ordered n) ->
+  case Rim.lookup n links of
+    Nothing -> error "Compiler.compile'_init: lookup failed"
+    Just (Linked (Delay v _) (Link o)) -> init o (Just v)
+    Just (Linked (Repeat  v) (Link o)) -> init o (Nothing)
+    Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (wit :: Wit i x) o
+      where
+        dist :: Wit i a -> Names (S Symbol i a) -> Program i ()
+        dist (WP u v) (l, r) = dist u l >> dist v r
+        dist (WE)     (name) = init name (Nothing)        
+    _ -> return ()
+  where
+    init
+      :: forall a. Typeable a
+      => Named (S Symbol i (Identity a))
+      -> Maybe (IExp i a)
+      -> Program i ()
+    init n v =
+      let (i, k) = lookupNode n channels
+       in case k of
+           M.Signal   -> M.signalG   i v
+           M.Variable -> M.variableL i v
+
+--------------------------------------------------------------------------------
+-- **
+
+compile'_fun
+  :: forall i a b.
+     ( ConcurrentCMD (IExp i) :<: i
      , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) b
+     , Typeable i
      , Typeable a
+     , Typeable b
      )
-  => Sig i a -> IO (Str i a)
-compiler sig =
-  do (root, nodes) <- reify sig
+  => Key i (Identity b)
+  -> Key i (Identity a)
+  -> Links i
+  -> [Ordered i]
+  -> (Str i a -> Str i b)
+compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
+  do next <- str
+     signal (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
+     signal (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
+     compile'_run  channels links $ do
+       -- input
+       val <- lift $ next
+       -- network
+       wrap $ do
+         lift $ initialize channels links orders
+         -- this is different from C, as we have drivers in VHDL
+         --writeS inp (name var) val
+         mapM_ comp' nodes
+         mapM_ comp' delays
+       -- output
+       read outp (name root)
+  where
+    channels        = makeChannels outp links 
+    (orders)        = foldr delete order [Ordered root, Ordered var]
+    (delays, nodes) = filterDelays channels links order
 
-     let order = sorter root  nodes
-         cycle = cycles root  nodes
-         links = linker order nodes
-     
-     return $ case cycle of
-       True  -> error "Compiler.compiler: found cycle"
-       False -> compile' root links order
+    -- Wraps a 'M' action in a process
+    wrap :: M i () -> M i ()
+    wrap = lift . process (Ident "main") [fst $ lookupNode (name var) channels]
+                . flip R.runReaderT (links, channels)
+
+-- | ...
+filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
+filterDelays channels links order = partitionEithers $ flip fmap order $
+  \ o@(Ordered n) -> case Rim.lookup n links of
+      Just (Linked (Delay _ _) _) -> P.Left  o
+      Just _                      -> P.Right o
+
+-- | ...
+compile'_run
+  :: Channels
+  -> Links i
+  -> M i (IExp i a)
+  -> Program i (Program i (IExp i a))
+compile'_run channels links = return . flip R.runReaderT (links, channels)
 
 --------------------------------------------------------------------------------
 
@@ -204,19 +318,17 @@ compiler_fun
      )
   => (Sig i a -> Sig i b) -> IO (Str i a -> Str i b)
 compiler_fun sf =
-  do (root, input, nodes) <- reify_fun sf
-     
+  do (root, input, nodes) <- reify_fun sf     
      let order = sorter root  nodes
          cycle = cycles root  nodes
-         links = linker order nodes
-     
+         links = linker order nodes     
      return $ case cycle of
        True  -> error "Compiler.compiler: found cycle"
        False -> compile'_fun root input links order
 
 --------------------------------------------------------------------------------
 -- **
-
+{-
 compile'
   :: forall i a.
      ( ConcurrentCMD (IExp i) :<: i
@@ -248,139 +360,27 @@ compile' outp@(Key root) links order = Stream $
     -- Wraps a 'M' action in a process
     wrap :: M i () -> M i ()
     wrap = lift . process (Ident "main") [] . flip R.runReaderT (links, channels)
-
+-}
 --------------------------------------------------------------------------------
-
-compile'_fun
-  :: forall i a b.
-     ( ConcurrentCMD (IExp i) :<: i
+{-
+compiler
+  :: ( ConcurrentCMD (IExp i) :<: i
      , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
-     , PredicateExp  (IExp i) b
-     , Typeable i
      , Typeable a
-     , Typeable b
      )
-  => Key i (Identity b)
-  -> Key i (Identity a)
-  -> Links i
-  -> [Ordered i]
-  -> (Str i a -> Str i b)
-compile'_fun outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
-  do next <- str
-     signal (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
-     signal (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
-     compile'_init channels links orders
-     compile'_run  channels links $ do
-       -- input
-       val <- lift $ next
-       -- network
-       wrap $ do
-         -- this is different from C, as we have drivers in VHDL
-         --writeS inp (name var) val
-         mapM_ comp' nodes
-         mapM_ comp' delays
-       -- output
-       read outp (name root)
-  where
-    channels        = makeChannels outp links 
-    (orders)        = foldr delete order [Ordered root, Ordered var]
-    (delays, nodes) = compile'_split channels links order
+  => Sig i a -> IO (Str i a)
+compiler sig =
+  do (root, nodes) <- reify sig
 
-    -- Wraps a 'M' action in a process
-    wrap :: M i () -> M i ()
-    wrap = lift . process (Ident "main") [fst $ lookupNode (name var) channels]
-                . flip R.runReaderT (links, channels)
-
---------------------------------------------------------------------------------
--- **
-
-comp'
-  :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i))
-  => Ordered i
-  -> M i ()
-comp' (Ordered sym) =
-  do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
-     case n of
-       (Repeat c) ->
-         do v <- down c
-            write olink out v
-       (Map f ilink@(Link s)) ->
-         do e <- read ilink s
-            v <- up   ilink e
-            let o = f v
-            y <- down o
-            write olink out y            
-       (Delay _ ilink@(Link s)) ->
-         do e <- read ilink s
-            write olink out e
-       _ -> return ()
-  where
-    down :: Stream i b -> M i b
-    down = lift . Str.run
-
-    up   :: proxy i b -> U i b -> M i (Stream i (U i b))
-    up _ = return . Str.Stream . return . return 
-
---------------------------------------------------------------------------------
--- **
-
-type Order i = [Ordered i]
-
--- | Declare variable instances for each node in 'order'
-compile'_init
-  :: forall i. (SequentialCMD (IExp i) :<: i, ConcurrentCMD (IExp i) :<: i)
-  => Channels
-  -> Links i
-  -> Order i
-  -> Program i ()
-compile'_init channels links order = forM_ order $ \(Ordered n) ->
-  case Rim.lookup n links of
-    Nothing -> error "Compiler.compile'_init: lookup failed"
-    Just (Linked (Delay v _) (Link o)) -> init o (Just v)
-    Just (Linked (Repeat  v) (Link o)) -> init o (Nothing)
-    Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (wit :: Wit i x) o
-      where
-        dist :: Wit i a -> Names (S Symbol i a) -> Program i ()
-        dist (WP u v) (l, r) = dist u l >> dist v r
-        dist (WE)     (name) = init name (Nothing)        
-    _ -> return ()
-  where
-    init
-      :: forall a. Typeable a
-      => Named (S Symbol i (Identity a))
-      -> Maybe (IExp i a)
-      -> Program i ()
-    init n v =
-      let (i, k) = lookupNode n channels
-       in case k of
-           M.Signal   -> M.signalCL  i v
-           M.Variable -> M.variableL i v
-
--- | Filter out all delay nodes from 'order'
-compile'_split
-  :: Channels
-  -> Links i
-  -> Order i
-  -> ( Order i -- delays
-     , Order i -- not delays
-     )
-compile'_split channels links order =
-    partitionEithers
-  $ flip fmap order
-  $ \o@(Ordered n) -> case Rim.lookup n links of
-      Just (Linked (Delay _ _) _) -> P.Left  o
-      Just _                      -> P.Right o
-
-
--- | Runs the 'M' monad wrapper and returns its program
-compile'_run
-  :: Channels
-  -> Links i
-  -> M i (IExp i a)
-  -> Program i (Program i (IExp i a))
-compile'_run channels links = return . flip R.runReaderT (links, channels)
-
+     let order = sorter root  nodes
+         cycle = cycles root  nodes
+         links = linker order nodes
+     
+     return $ case cycle of
+       True  -> error "Compiler.compiler: found cycle"
+       False -> compile' root links order
+-}
 --------------------------------------------------------------------------------

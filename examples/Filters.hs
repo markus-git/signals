@@ -73,12 +73,12 @@ iir (a:as) bs s = o
 --------------------------------------------------------------------------------
 
 type P = Program (CMD E)
-
+{-
 compS  :: (S Word8 -> S Word8) -> IO (P ())
 compS f =
   do prog <- compiler $ f $ repeat 1 -- temp
      return $ void $ run prog
-
+-}
 compSF :: (S Word8 -> S Word8) -> IO (P ())
 compSF f =
   do prog <- compiler_fun f
@@ -90,10 +90,10 @@ compFIR :: IO ()
 compFIR =
   do prog <- compSF (fir [1,2])
      putStrLn $ compile prog
-
+{-
 compIIR :: IO ()
 compIIR =
   do prog <- compS (iir [1,2] [2,1])
      putStrLn $ compile prog
-
+-}
 --------------------------------------------------------------------------------
