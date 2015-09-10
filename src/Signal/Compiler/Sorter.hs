@@ -45,8 +45,6 @@ data Tagged i a where
          -> Node   i (S Symbol i a)
          -> Tagged i (S Symbol i a)
 
--- Node i (S Symbol i a)
-
 -- | ...
 type M i = State (Order, Map (Tagged i))
 
