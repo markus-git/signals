@@ -93,7 +93,7 @@ type Order i = [Ordered i]
 
 -- | ...
 runM :: (HeaderCMD (IExp i) :<: i) => Channels -> Links i -> M i (IExp i a) -> Program i (Program i (IExp i a))
-runM channels links = return . architecture "test" . flip CMR.runReaderT (links, channels)
+runM channels links = return . flip CMR.runReaderT (links, channels)
 
 --------------------------------------------------------------------------------
 -- ** Reading / Writing to and from Channels
@@ -266,18 +266,16 @@ compile'
   -> Links i
   -> [Ordered i]
   -> (Str i a -> Str i b)
-compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
-  do let clk = Ident "clk"
+compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
+  do -- initialization
      next <- str
-     runM channels links $ do
-       -- initialization
-       lift $ do
-         clock
-         signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
-         signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
-         initialize channels links orders
+     clk  <- clock
+     signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
+     signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
+     initialize channels links orders
 
-       -- input
+     -- main loop
+     runM channels links $ do
        val <- lift $ next
        
        -- network
@@ -303,15 +301,19 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
               \(Ordered n) -> case (Rim.!) links n of
                 Linked (Delay {}) (Link out) -> fst $ lookupNode out channels)
 
-    -- Wraps a 'M' action in a process
+    -- wraps a 'M' action in a process
     wrap  :: String -> [Identifier] -> M i () -> M i ()
     wrap  s sl = lift . process (Ident s) sl . flip CMR.runReaderT (links, channels)
 
+    -- wrapst a 'M' action in a process, only activates on a rising clock edge
     wrapd :: String -> Identifier -> M i () -> M i ()
     wrapd s sl@(Ident clk) = lift . process (Ident s) [sl] . E.when rising . flip CMR.runReaderT (links, channels)
       where
         rising :: IExp i Bool
         rising = varE (Ident $ "rising_edge(" ++ clk ++ ")")
+
+    inArchitecture :: String -> Program i (Program i x) -> Program i (Program i x)
+    inArchitecture name = return . architecture name . join
 
 --------------------------------------------------------------------------------
 
