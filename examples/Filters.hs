@@ -2,13 +2,15 @@
 
 module Filters where
 
-import Signal
 import Language.VHDL
 import Language.Embedded.VHDL
 import Language.Embedded.VHDL.Expression
 import Control.Monad.Operational.Compositional
 
+import Signal
+
 import Data.Word
+import System.IO
 
 import Prelude hiding (repeat, map, zipWith, div)
 import qualified Prelude as P
@@ -74,12 +76,7 @@ iir (a:as) bs s = o
 --------------------------------------------------------------------------------
 
 type P = Program (CMD E)
-{-
-compS  :: (S Word8 -> S Word8) -> IO (P ())
-compS f =
-  do prog <- compiler $ f $ repeat 1 -- temp
-     return $ void $ run prog
--}
+
 compSF :: (S Word8 -> S Word8) -> IO (P ())
 compSF f =
   do prog <- compiler f
@@ -87,14 +84,16 @@ compSF f =
 
 --------------------------------------------------------------------------------
 
-compFIR :: IO ()
-compFIR =
+test :: IO ()
+test =
   do prog <- compSF (fir [1,2])
      putStrLn $ compile prog
-{-
-compIIR :: IO ()
-compIIR =
-  do prog <- compS (iir [1,2] [2,1])
-     putStrLn $ compile prog
--}
+
 --------------------------------------------------------------------------------
+-- *
+--------------------------------------------------------------------------------
+
+write :: IO ()
+write =
+  do prog <- compSF (fir [1,2])
+     writeFile "generated.vhdl" (compile prog)
