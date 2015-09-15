@@ -256,7 +256,8 @@ compile'
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
      , PredicateExp  (IExp i) b
-     , Typeable i
+     , PredicateExp  (IExp i) Bool -- !!!
+     , Typeable i                  -- !!!
      , Typeable a
      , Typeable b
      )
@@ -285,7 +286,7 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
          mapM_ comp' nodes
          mapM_ comp' delays
 
-       wrap "sequential" [clk] $ do
+       wrapd "sequential" clk $ do
          mapM_ compd' delays
          
        -- output
@@ -302,8 +303,14 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $
                 Linked (Delay {}) (Link out) -> fst $ lookupNode out channels)
 
     -- Wraps a 'M' action in a process
-    wrap :: String -> [Identifier] -> M i () -> M i ()
-    wrap s sl = lift . process (Ident s) sl . flip CMR.runReaderT (links, channels)
+    wrap  :: String -> [Identifier] -> M i () -> M i ()
+    wrap  s sl = lift . process (Ident s) sl . flip CMR.runReaderT (links, channels)
+
+    wrapd :: String -> Identifier -> M i () -> M i ()
+    wrapd s sl@(Ident clk) = lift . process (Ident s) [sl] . E.when rising . flip CMR.runReaderT (links, channels)
+      where
+        rising :: IExp i Bool
+        rising = varE (Ident $ "rising_edge(" ++ clk ++ ")")
 
 --------------------------------------------------------------------------------
 
@@ -314,7 +321,8 @@ compiler
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) a
      , PredicateExp  (IExp i) b
-     , Typeable i
+     , PredicateExp  (IExp i) Bool -- !!!
+     , Typeable i                  -- !!!
      , Typeable a
      , Typeable b
      )
