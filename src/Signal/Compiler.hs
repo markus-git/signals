@@ -267,12 +267,11 @@ compile'
   -> [Ordered i]
   -> (Str i a -> Str i b)
 compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
-  do -- initialization
+  do -- initialization of inputs/outputs
      next <- str
      clk  <- clock
      signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
      signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
-     initialize channels links orders
 
      -- main loop
      runM channels links $ do
@@ -280,6 +279,8 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
        
        -- network
        wrap "combinatorial" scomb $ do
+         lift $ initialize channels links orders
+         
          -- this is different from C, as we have drivers in VHDL
          --writeS inp (name var) val
          mapM_ comp' nodes
