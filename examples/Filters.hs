@@ -82,7 +82,7 @@ compS f =
 -}
 compSF :: (S Word8 -> S Word8) -> IO (P ())
 compSF f =
-  do prog <- compiler_fun f
+  do prog <- compiler f
      return $ void $ run $ prog $ (Stream . return $ return 0)
 
 --------------------------------------------------------------------------------
