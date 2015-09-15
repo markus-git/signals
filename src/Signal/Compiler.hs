@@ -267,15 +267,16 @@ compile'
   -> [Ordered i]
   -> (Str i a -> Str i b)
 compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ 
-  do next <- str
-
-     -- initialization
-     clk  <- clock
-     signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
-     signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
-     initialize channels links orders
-     
+  do let clk = Ident "clk"
+     next <- str
      runM channels links $ do
+       -- initialization
+       lift $ do
+         clock
+         signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
+         signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
+         initialize channels links orders
+
        -- input
        val <- lift $ next
        
