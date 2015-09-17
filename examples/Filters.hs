@@ -9,6 +9,7 @@ import Control.Monad.Operational.Compositional
 
 import Signal
 
+import Data.Bits
 import Data.Word
 import System.IO
 
@@ -97,3 +98,5 @@ write :: IO ()
 write =
   do prog <- compSF (fir [1,2])
      writeFile "generated.vhdl" (compile prog)
+
+--------------------------------------------------------------------------------

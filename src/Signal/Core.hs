@@ -32,6 +32,7 @@ import Language.Embedded.VHDL (PredicateExp)
 import Signal.Core.Stream (Stream(..))
 import qualified Signal.Core.Stream as S
 
+import Data.Bits (Bits)
 import Data.Functor.Identity
 import Data.Typeable (Typeable)
 import Data.Dynamic  (Dynamic)
@@ -161,7 +162,7 @@ delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 instance Eq (Signal i a) where
   Signal (Symbol s1) == Signal (Symbol s2) = s1 == s2
 
-instance (Num (IExp i a), PredicateExp (IExp i) a, Typeable a) => Num (Sig i a) where
+instance (Num (IExp i a), PredicateExp (IExp i) a, Bits a, Typeable a) => Num (Sig i a) where
   (+)         = lift2 (+)
   (-)         = lift2 (-)
   (*)         = lift2 (*)
@@ -170,7 +171,7 @@ instance (Num (IExp i a), PredicateExp (IExp i) a, Typeable a) => Num (Sig i a) 
   signum      = lift1 signum
   fromInteger = lift0 . fromInteger
 
-instance (Fractional (IExp i a), PredicateExp (IExp i) a, Typeable a) => Fractional (Sig i a) where
+instance (Fractional (IExp i a), PredicateExp (IExp i) a, Bits a, Typeable a) => Fractional (Sig i a) where
   (/)          = lift2 (/)
   recip        = lift1 recip
   fromRational = lift0 . fromRational
