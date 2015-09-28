@@ -11,6 +11,7 @@ where
 
 import Signal.Core hiding (lift)
 import Signal.Core.Reify
+import Signal.Core.Witness
   
 import Control.Arrow
 import Control.Monad.State

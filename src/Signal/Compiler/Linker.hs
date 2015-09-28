@@ -7,24 +7,22 @@
 
 module Signal.Compiler.Linker (
     Dist
-  , Named(..)
-  , Names
-    
-  , Link(..)
+  , Named (..)
+  , Names    
+  , Link  (..)
   , Linked(..)
-  , Links
-    
+  , Links    
   , linker
   , name
   )
   where
 
 import Signal.Core
-import Signal.Core.Stream 
 import Signal.Core.Reify
-
+import Signal.Core.Witness
 import Signal.Compiler.Knot
 import Signal.Compiler.Sorter
+import Signal.Compiler.Linker.Names
 
 import Control.Monad.Reader
 import Control.Monad.Writer
@@ -33,47 +31,17 @@ import Control.Monad.Identity
 import Data.Hashable
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-import qualified Data.Ref.Map as M
-
 import Unsafe.Coerce
+
+import qualified Data.Ref.Map as M
 
 import Prelude hiding (Left, Right, Ordering)
 
 --------------------------------------------------------------------------------
--- * 
+-- * ...
 --------------------------------------------------------------------------------
-
--- ! This doesn't belong here, new module?
-type family Dist (p :: * -> *) a
-type instance Dist p (S sym i (Identity a)) = p (S sym i (Identity a))
-type instance Dist p (S sym i (a, b))       = (Dist p (S sym i a), Dist p (S sym i b))
-
--- Naming things has always been tricky..
-data Named a
-  where
-    Named  :: Name  (S sym i a)      -> Named (S sym i a)
-    Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
-    Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
-
-instance Hashable (Named a)
-  where
-    hashWithSalt s (Named n)  = s `hashWithSalt` n
-    hashWithSalt s (Lefty l)  = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
-    hashWithSalt s (Righty r) = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
-
--- | ...
-type Names a = Dist Named a
-
--- | Takes a composite name and creates unique names for each part
-name :: forall sym i a. Witness i a => Name (S sym i a) -> Names (S sym i a)
-name n = go (wit :: Wit i a) (Named n)
-  where
-    go :: Wit i x -> Named (S sym i x) -> Names (S sym i x)
-    go (WE)     n = n
-    go (WP l r) n = (go l (Lefty n), go r (Righty n))
-
---------------------------------------------------------------------------------
--- ** Once we have names for every wire, we can substitute the old group names
+-- Once we have names for every wire (Names), we can substitute the old
+-- group names
 
 -- | Nodes where recursive calls to other nodes have been replaced with names
 data Link   (i :: (* -> *) -> * -> *) (a :: *)
@@ -100,8 +68,7 @@ data Pair f g a where
 type Item i = Hide (Pair Name (Linked i))
 
 --------------------------------------------------------------------------------
--- * Linking monad
---------------------------------------------------------------------------------
+-- ** Linking monad
 
 type Resolution i = Links i
 

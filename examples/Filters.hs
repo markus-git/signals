@@ -7,7 +7,7 @@ import Language.Embedded.VHDL
 import Language.Embedded.VHDL.Expression
 import Control.Monad.Operational.Compositional
 
-import Signal
+import Signal hiding (E)
 
 import Data.Bits
 import Data.Word
@@ -90,8 +90,6 @@ test =
   do prog <- compSF (fir [1,2])
      putStrLn $ compile prog
 
---------------------------------------------------------------------------------
--- *
 --------------------------------------------------------------------------------
 
 write :: IO ()

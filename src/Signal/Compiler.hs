@@ -8,22 +8,17 @@
 
 module Signal.Compiler (compiler) where
 
-import Control.Monad.Operational.Compositional
-
-import Language.VHDL (Identifier(..))
-import Language.Embedded.VHDL hiding (name)
-import qualified Language.Embedded.VHDL as E
-
 import Signal.Core hiding (lift)
-import Signal.Core.Stream 
+import Signal.Core.Stream
+import Signal.Core.Witness
 import Signal.Core.Reify
 import qualified Signal.Core        as S
 import qualified Signal.Core.Stream as Str
-
 import Signal.Compiler.Cycles
 import Signal.Compiler.Linker
 import Signal.Compiler.Sorter
 
+import Control.Monad.Operational.Compositional
 import Control.Arrow    (first, second)
 import Control.Monad.Reader (ReaderT, asks)
 import Control.Monad.State  (StateT, State, modify, gets, lift)
@@ -42,6 +37,9 @@ import Data.Ref
 import Data.Ref.Map     (Name)
 import qualified Data.IntMap  as Map
 import qualified Data.Ref.Map as Rim
+import Language.VHDL (Identifier(..))
+import Language.Embedded.VHDL hiding (name)
+import qualified Language.Embedded.VHDL as E
 import System.Mem.StableName (eqStableName)
 
 import Prelude hiding (read, lookup, Left, Right)
@@ -66,11 +64,7 @@ lookupNode  :: Named (S Symbol i (Identity a)) -> Channels -> (Identifier, Kind)
 lookupNode n c = (Map.!) (chan_nodes c) (hash n)
 
 lookupDelay :: Named (S Symbol i (Identity a)) -> Channels -> (Identifier, Identifier)
-lookupDelay n c = case Map.lookup (hash n) (chan_delays c) of
-  Nothing -> error $ "! " ++ show (Map.size (chan_delays c))
-  Just x  -> x
-
-  --(Map.!) (chan_delays c) (hash n)
+lookupDelay n c = (Map.!) (chan_delays c) (hash n)
 
 insertNode  :: Named (S Symbol i (Identity a)) -> Identifier -> Kind -> Channels -> Channels
 insertNode n i k (Channels ns ds) = Channels (Map.insert (hash n) (i, k) ns) ds
@@ -101,10 +95,10 @@ runM channels links = return . flip CMR.runReaderT (links, channels)
 -- | ...
 read 
   :: forall proxy i a. (CompileExp (IExp i), Witness i a)
-  => proxy i a -> Names (S Symbol i a) -> M i (U i a)
-read _ n = go (wit :: Wit i a) n
+  => proxy i a -> Names (S Symbol i a) -> M i (E i a)
+read _ n = go (witness :: Wit i a) n
   where
-    go :: Wit i x -> Names (S Symbol i x) -> M i (U i x)
+    go :: Wit i x -> Names (S Symbol i x) -> M i (E i x)
     go (WE)     (name) = asks $ varE . fst . lookupNode name . snd
     go (WP u v) (l, r) =
       do l' <- go u l
@@ -114,10 +108,10 @@ read _ n = go (wit :: Wit i a) n
 -- | ...
 write
   :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
-  => proxy i a -> Names (S Symbol i a) -> U i a -> M i ()
-write _ n e = go (wit :: Wit i a) n e
+  => proxy i a -> Names (S Symbol i a) -> E i a -> M i ()
+write _ n e = go (witness :: Wit i a) n e
   where
-    go :: Wit i x -> Names (S Symbol i x) -> U i x -> M i ()
+    go :: Wit i x -> Names (S Symbol i x) -> E i x -> M i ()
     go (WP u v) (l, r) (a, b) = go u l a >> go v r b
     go (WE)     (name) (expr) =
       do (c, k) <- asks $ lookupNode name . snd
@@ -130,7 +124,7 @@ writed
   :: forall proxy i a. (SequentialCMD (IExp i) :<: i, PredicateExp (IExp i) a, Typeable a)
   => proxy i (Identity a)
   -> Names (S Symbol i (Identity a))
-  -> U i (Identity a)
+  -> E i (Identity a)
   -> M i ()
 writed _ name e =
   do d <- asks $ snd . lookupDelay name . snd
@@ -153,7 +147,7 @@ fromLinks (Key root) links =
         Just k  -> newNode l out k c
 
     newNode :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Kind -> Channels -> Si Channels
-    newNode _ n k c = go (wit :: Wit i x) n c
+    newNode _ n k c = go (witness :: Wit i x) n c
       where
         go :: Wit i y -> Names (S Symbol i y) -> Channels -> Si Channels
         go (WP u v)   (l, r)    c = go u l c >> go v r c
@@ -163,7 +157,7 @@ fromLinks (Key root) links =
           return $ insertNode name i kind c          
 
     newDelay :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Channels -> Si Channels
-    newDelay _ n c = go (wit :: Wit i x) n c
+    newDelay _ n c = go (witness :: Wit i x) n c
       where
         go :: Wit i y -> Names (S Symbol i y) -> Channels -> Si Channels
         go (WP u v) (l, r) c = go u l c >> go v r c
@@ -192,7 +186,7 @@ initialize channels links order = forM_ order $ \(Ordered n) ->
     Nothing -> error "Compiler.compile'_init: lookup failed"
     Just (Linked (Delay v _) (Link o)) -> initd o (Just v)
     Just (Linked (Repeat  v) (Link o)) -> init  o (Nothing)
-    Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (wit :: Wit i x) o
+    Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (witness :: Wit i x) o
       where
         dist :: Wit i a -> Names (S Symbol i a) -> Program i ()
         dist (WP u v) (l, r) = dist u l >> dist v r
@@ -219,30 +213,19 @@ comp' (Ordered sym) =
   do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
      case n of
        (Repeat c) ->
-         do v <- down c
-            write olink out v
+         do write olink out c
        (Map f ilink@(Link s)) ->
-         do e <- read ilink s
-            v <- up   ilink e
-            let o = f v
-            y <- down o
-            write olink out y            
+         do v <- read ilink s
+            write olink out (f v)
        (Delay _ ilink@(Link s)) ->
          do e <- read ilink s
             writed olink out e
        _ -> return ()
-  where
-    down :: Stream i b -> M i b
-    down = lift . Str.run
-
-    up   :: proxy i b -> U i b -> M i (Stream i (U i b))
-    up _ = return . Str.Stream . return . return 
 
 compd' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 compd' (Ordered sym) =
-  do channels <- asks snd
-     (Linked (Delay _ (_ :: Link i (Identity b))) olink@(Link out)) <- asks $ (Rim.! sym) . fst
-     let (i, o) = lookupDelay out channels
+  do (Linked (Delay _ (_ :: Link i (Identity b))) olink@(Link out)) <- asks $ (Rim.! sym) . fst
+     (i, o) <- asks (lookupDelay out . snd)
      lift $ i <== (varE o :: IExp i b)
 
 --------------------------------------------------------------------------------
@@ -332,7 +315,7 @@ compiler
      )
   => (Sig i a -> Sig i b) -> IO (Str i a -> Str i b)
 compiler sf =
-  do (root, input, nodes) <- reify_fun sf     
+  do (root, input, nodes) <- freify sf     
      let order = sorter root  nodes
          cycle = cycles root  nodes
          links = linker order nodes     

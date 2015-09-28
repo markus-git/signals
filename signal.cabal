@@ -23,9 +23,11 @@ library
     Signal.Compiler.Cycles,
     Signal.Compiler.Sorter,
     Signal.Compiler.Linker,
+    Signal.Compiler.Linker.Names,
     Signal.Compiler.Knot,
     Signal.Core,
     Signal.Core.Stream,
+    Signal.Core.Witness,
     Signal.Core.Reify
     
   -- other-modules:       
