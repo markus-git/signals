@@ -72,12 +72,9 @@ compiler sf =
        False -> compile' root input links order
 
 --------------------------------------------------------------------------------
--- ** Compilation
+-- ** Compilation of nodes
 
 type M i = ReaderT (Rim.Map (Linked i), Channels) (Program i)
-
---------------------------------------------------------------------------------
--- **
 
 comp' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 comp' (Ordered sym) =
@@ -100,7 +97,7 @@ compDelay' (Ordered sym) =
      lift $ i <== (varE o :: IExp i b)
 
 --------------------------------------------------------------------------------
--- **
+-- ** Compilation of graphs
 
 type Order i = [Ordered i]
 
@@ -122,56 +119,54 @@ compile'
   -> Order i
   -> (Str i a -> Str i b)
 compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
-  do -- initialization of inputs/outputs
-     next <- str
+  do next <- str
      clk  <- clock
-     signalPort (fst $ lookupNode (name var)  channels) In  (Nothing :: Maybe (IExp i a))
-     signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
+     signalPort (find inp)  In  (Nothing :: Maybe (IExp i a))
+     signalPort (find outp) Out (Nothing :: Maybe (IExp i b))
 
      -- main loop
      return . run $ do
        val <- lift $ next
        
-       -- network
-       inProcess "combinatorial" ssl $ do
+       -- combinatorial part
+       inProcess "combinatorial" sensitive $ do
          lift $ initialize channels links orders
-         
-         -- this is different from C, as we have drivers in VHDL
-         -- writeS inp (name var) val
          mapM_ comp' nodes
          mapM_ comp' delays
 
+       -- sequential part
        inProcess "sequential" [clk] $ do
          mapReaderT (E.when (rising clk)) $
            mapM_ compDelay' delays
-         
-       -- output
+
+       -- return output
        read outp (name root)
   where
+    (delays, nodes) = filterDelays channels links order
     channels        = fromLinks outp links 
     orders          = foldr delete order [Ordered root, Ordered var]
-    (delays, nodes) = filterDelays channels links order
+    sensitive       = find inp : fmap find' delays
+      where find' (Ordered n) = case Rim.lookup n links of
+              Just (Linked (Delay {}) (Link out)) -> fst (lookupNode out channels)
 
-    -- sensitivity lists for combinatorial process
-    ssl = fst (lookupNode (name var) channels) : (flip fmap delays $
-              \(Ordered n) -> case (Rim.!) links n of
-                Linked (Delay {}) (Link out) -> fst $ lookupNode out channels)
-
-    -- | Run 'M' to produce its program
+    -- Run 'M' to produce its program
     run :: M i x -> Program i x
     run = flip CMR.runReaderT (links, channels)
 
-    -- ! temp fix, replace
+    find :: (PredicateExp (IExp i) x, Typeable x) => Key i (Identity x) -> Identifier
+    find (Key k) = fst $ lookupNode (name k) channels
+
+    -- ! really bad temp fix, replace
     rising :: Identifier -> IExp i Bool
     rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
 
-    -- | Run the 'M' action inside a process
-    inProcess :: String -> [Identifier] -> M i () -> M i ()
-    inProcess name is = mapReaderT (process name is)
+-- | Run the 'M' action inside a process
+inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> M i () -> M i ()
+inProcess name is = mapReaderT (process name is)
 
-    -- | Run a program inside an architecture
-    inArchitecture :: String -> Program i (Program i x) -> Program i (Program i x)
-    inArchitecture name = fmap (architecture name)
+-- | Run a program inside an architecture
+inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i x) -> Program i (Program i x)
+inArchitecture name = fmap (architecture name)
 
 -- | ...
 filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
@@ -242,22 +237,23 @@ initialize
 initialize channels links order = forM_ order $ \(Ordered n) ->
   case Rim.lookup n links of
     Nothing -> error "Compiler.compile'_init: lookup failed"
-    Just (Linked (Delay v _) (Link o)) -> initd o (Just v)
-    Just (Linked (Repeat  v) (Link o)) -> init  o (Nothing)
-    Just (Linked (Map   _ _) (Link o :: Link i x)) -> dist (witness :: Wit i x) o
+    Just (Linked (Delay v _) (Link o)) -> initDelay o (Just v)
+    Just (Linked (Repeat  v) (Link o)) -> init      o (Nothing)
+    Just (Linked (Map   _ _) (Link o :: Link i x)) ->
+        dist (witness :: Wit i x) o
       where
         dist :: Wit i a -> Names (S Symbol i a) -> Program i ()
         dist (WP u v) (l, r) = dist u l >> dist v r
-        dist (WE)     (name) = init name (Nothing)
+        dist (WE)     (name) = init name Nothing
     _ -> return ()
   where
-    init  :: forall a. PredicateExp (IExp i) a => Named (S Symbol i (Identity a)) -> Maybe (IExp i a) -> Program i ()
-    init  n v =
+    init :: forall a. PredicateExp (IExp i) a => Ix i a -> Maybe (IExp i a) -> Program i ()
+    init n v =
       do let (i, k) = lookupNode n channels
          E.variableL i v
 
-    initd :: forall a. PredicateExp (IExp i) a => Named (S Symbol i (Identity a)) -> Maybe (IExp i a) -> Program i ()
-    initd n v =
+    initDelay :: forall a. PredicateExp (IExp i) a => Ix i a -> Maybe (IExp i a) -> Program i ()
+    initDelay n v =
       do let (i, o) = lookupDelay n channels
          E.signalG i v
          E.signalG o (Nothing :: Maybe (IExp i a))
