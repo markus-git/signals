@@ -76,57 +76,6 @@ compiler sf =
 
 type M i = ReaderT (Rim.Map (Linked i), Channels) (Program i)
 
-runM :: Channels -> Links i -> M i (IExp i a) -> Program i (Program i (IExp i a))
-runM channels links = return . flip CMR.runReaderT (links, channels)
-
---------------------------------------------------------------------------------
--- ** Reading / Writing to and from Channels in environment
-
--- | Read a channels value
-read 
-  :: forall proxy i a. (CompileExp (IExp i), Witness i a)
-  => proxy i a
-  -> Names (S Symbol i a)
-  -> M i (E i a)
-read _ n = go (witness :: Wit i a) n
-  where
-    go :: Wit i x -> Names (S Symbol i x) -> M i (E i x)
-    go (WE)     (name) = asks $ varE . fst . lookupNode name . snd
-    go (WP u v) (l, r) =
-      do l' <- go u l
-         r' <- go v r
-         return (l', r')
-
-
--- | Write some value to a channel
-write 
-  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
-  => proxy i a
-  -> Names (S Symbol i a)
-  -> E i a
-  -> M i ()
-write _ n e = go (witness :: Wit i a) n e
-  where
-    go :: Wit i x -> Names (S Symbol i x) -> E i x -> M i ()
-    go (WP u v) (l, r) (a, b) = go u l a >> go v r b
-    go (WE)     (name) (expr) =
-      do (c, k) <- asks $ lookupNode name . snd
-         lift $ case k of
-           E.Signal -> c <== expr
-           _        -> c ==: expr
-
-
--- | Write a some value to a delay's channel
-writeDelay
-  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, PredicateExp (IExp i) a, Typeable a)
-  => proxy i (Identity a)
-  -> Names (S Symbol i (Identity a))
-  -> E i (Identity a)
-  -> M i ()
-writeDelay _ name e =
-  do d <- asks $ snd . lookupDelay name . snd
-     lift $ d <== e
-
 --------------------------------------------------------------------------------
 -- **
 
@@ -144,7 +93,6 @@ comp' (Ordered sym) =
             writeDelay olink out e
        _ -> return ()
 
-
 compDelay' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 compDelay' (Ordered sym) =
   do (Linked (Delay _ (_ :: Link i (Identity b))) olink@(Link out)) <- asks $ (Rim.! sym) . fst
@@ -153,6 +101,8 @@ compDelay' (Ordered sym) =
 
 --------------------------------------------------------------------------------
 -- **
+
+type Order i = [Ordered i]
 
 compile'
   :: forall i a b.
@@ -169,7 +119,7 @@ compile'
   => Key i (Identity b)
   -> Key i (Identity a)
   -> Links i
-  -> [Ordered i]
+  -> Order i
   -> (Str i a -> Str i b)
 compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
   do -- initialization of inputs/outputs
@@ -179,7 +129,7 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
      signalPort (fst $ lookupNode (name root) channels) Out (Nothing :: Maybe (IExp i b))
 
      -- main loop
-     runM channels links $ do
+     return . run $ do
        val <- lift $ next
        
        -- network
@@ -203,27 +153,25 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
     (delays, nodes) = filterDelays channels links order
 
     -- sensitivity lists for combinatorial process
-    ssl :: [Identifier]
     ssl = fst (lookupNode (name var) channels) : (flip fmap delays $
               \(Ordered n) -> case (Rim.!) links n of
                 Linked (Delay {}) (Link out) -> fst $ lookupNode out channels)
+
+    -- | Run 'M' to produce its program
+    run :: M i x -> Program i x
+    run = flip CMR.runReaderT (links, channels)
 
     -- ! temp fix, replace
     rising :: Identifier -> IExp i Bool
     rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
 
-    -- | Run a M action inside a process
+    -- | Run the 'M' action inside a process
     inProcess :: String -> [Identifier] -> M i () -> M i ()
-    inProcess name is = lift . process name is . run
-      where
-        run = flip CMR.runReaderT (links, channels)
+    inProcess name is = mapReaderT (process name is)
 
     -- | Run a program inside an architecture
     inArchitecture :: String -> Program i (Program i x) -> Program i (Program i x)
-    inArchitecture name = return . architecture name . join
-
-
-type Order i = [Ordered i]
+    inArchitecture name = fmap (architecture name)
 
 -- | ...
 filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
@@ -233,13 +181,60 @@ filterDelays channels links order = partitionEithers $ flip fmap order $
       Just _                      -> P.Right o
 
 --------------------------------------------------------------------------------
+-- ** Reading / Writing to and from Channels in environment
+
+-- | Read a channels value
+read 
+  :: forall proxy i a. (CompileExp (IExp i), Witness i a)
+  => proxy i a
+  -> Names (S Symbol i a)
+  -> M i (E i a)
+read _ n = go (witness :: Wit i a) n
+  where
+    go :: Wit i x -> Names (S Symbol i x) -> M i (E i x)
+    go (WE)     (name) = asks $ varE . fst . lookupNode name . snd
+    go (WP u v) (l, r) =
+      do l' <- go u l
+         r' <- go v r
+         return (l', r')
+
+-- | Write some value to a channel
+write 
+  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
+  => proxy i a
+  -> Names (S Symbol i a)
+  -> E i a
+  -> M i ()
+write _ n e = go (witness :: Wit i a) n e
+  where
+    go :: Wit i x -> Names (S Symbol i x) -> E i x -> M i ()
+    go (WP u v) (l, r) (a, b) = go u l a >> go v r b
+    go (WE)     (name) (expr) =
+      do (c, k) <- asks $ lookupNode name . snd
+         lift $ case k of
+           E.Signal -> c <== expr
+           _        -> c ==: expr
+
+-- | Write a some value to a delay's channel
+writeDelay
+  :: forall proxy i a. (SequentialCMD (IExp i) :<: i, PredicateExp (IExp i) a)
+  => proxy i (Identity a)
+  -> Names (S Symbol i (Identity a))
+  -> E i (Identity a)
+  -> M i ()
+writeDelay _ name e =
+  do d <- asks $ snd . lookupDelay name . snd
+     lift $ d <== e
+
+--------------------------------------------------------------------------------
 -- ** Initialization
 
 -- | Declare signal/variable instances for each node in 'order'
 initialize
-  :: forall i. ( SequentialCMD (IExp i) :<: i
-               , ConcurrentCMD (IExp i) :<: i
-               )
+  :: forall i.
+     ( SequentialCMD (IExp i) :<: i
+     , ConcurrentCMD (IExp i) :<: i
+     )
   => Channels
   -> Links i
   -> Order i

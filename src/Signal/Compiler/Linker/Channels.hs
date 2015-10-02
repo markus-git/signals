@@ -48,19 +48,21 @@ emptyChannels = Channels (Map.empty) (Map.empty)
 --------------------------------------------------------------------------------
 -- ** Lookup / Insert
 
-lookupNode  :: Named (S Symbol i (Identity a)) -> Channels -> (Identifier, Kind)
+type Ix i a = Named (S Symbol i (Identity a))
+
+lookupNode  :: Ix i a -> Channels -> (Identifier, Kind)
 lookupNode n c = (Map.!) (chan_nodes c) (hash n)
 
-lookupDelay :: Named (S Symbol i (Identity a)) -> Channels -> (Identifier, Identifier)
+lookupDelay :: Ix i a -> Channels -> (Identifier, Identifier)
 lookupDelay n c = (Map.!) (chan_delays c) (hash n)
 
-insertNode  :: Named (S Symbol i (Identity a)) -> Identifier -> Kind -> Channels -> Channels
+insertNode  :: Ix i a -> Identifier -> Kind -> Channels -> Channels
 insertNode n i k (Channels ns ds) = Channels (Map.insert (hash n) (i, k) ns) ds
 
-insertDelay :: Named (S Symbol i (Identity a)) -> Identifier -> Identifier -> Channels -> Channels
+insertDelay :: Ix i a -> Identifier -> Identifier -> Channels -> Channels
 insertDelay n ni no (Channels ns ds) = Channels ns (Map.insert (hash n) (ni, no) ds)
 
-markNode    :: Named (S Symbol i (Identity a)) -> Kind -> Channels -> Channels
+markNode    :: Ix i a -> Kind -> Channels -> Channels
 markNode n k (Channels ns ds) = Channels (Map.adjust (second (const k)) (hash n) ns) ds
 
 --------------------------------------------------------------------------------
@@ -78,7 +80,12 @@ fromLinks (Key root) links =
         Nothing -> return c
         Just k  -> new l out k c
 
-    new :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Kind -> Channels -> State Int Channels
+    new :: forall x. Witness i x
+        => Link i x
+        -> Names (S Symbol i x)
+        -> Kind
+        -> Channels
+        -> State Int Channels
     new _ n k c = go (witness :: Wit i x) n c
       where
         go :: Wit i y -> Names (S Symbol i y) -> Channels -> State Int Channels
@@ -88,7 +95,11 @@ fromLinks (Key root) links =
           i <- next
           return $ insertNode name i kind c          
 
-    newDelay :: forall x. Witness i x => Link i x -> Names (S Symbol i x) -> Channels -> State Int Channels
+    newDelay :: forall x. Witness i x
+             => Link i x
+             -> Names (S Symbol i x)
+             -> Channels
+             -> State Int Channels
     newDelay _ n c = go (witness :: Wit i x) n c
       where
         go :: Wit i y -> Names (S Symbol i y) -> Channels -> State Int Channels
@@ -97,10 +108,12 @@ fromLinks (Key root) links =
           old@(Ident d) <- next
           return $ insertDelay name old (Ident $ d ++ "_in") (insertNode name old E.Signal c)
 
-    next :: State Int Identifier
-    next = do i <- CMS.get
-              CMS.put (i + 1)
-              return (Ident $ 'v' : show i) -- ! tmp fix, replace
+ -- ! tmp fix, replace
+next :: State Int Identifier
+next = do
+  i <- CMS.get
+  CMS.put (i + 1)
+  return (Ident $ 'v' : show i)
 
 isUseful :: S sym i a -> Maybe Kind
 isUseful (Join _ _)  = Nothing
