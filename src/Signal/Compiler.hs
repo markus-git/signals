@@ -19,7 +19,7 @@ import Signal.Compiler.Sorter
 import Signal.Compiler.Linker
 import Signal.Compiler.Linker.Channels
 
-import Control.Monad.Reader (ReaderT, asks, lift)
+import Control.Monad.Reader (ReaderT, asks, lift, mapReaderT)
 import Control.Monad.Identity
 import Control.Monad.Operational.Compositional
 import qualified Control.Monad.Reader as CMR
@@ -66,7 +66,7 @@ compiler sf =
   do (root, input, nodes) <- freify sf     
      let order = sorter root  nodes
          cycle = cycles root  nodes
-         links = linker order nodes     
+         links = linker order nodes
      return $ case cycle of
        True  -> error "Compiler.compiler: found cycle"
        False -> compile' root input links order
@@ -97,6 +97,7 @@ read _ n = go (witness :: Wit i a) n
          r' <- go v r
          return (l', r')
 
+
 -- | Write some value to a channel
 write 
   :: forall proxy i a. (SequentialCMD (IExp i) :<: i, Witness i a)
@@ -113,6 +114,7 @@ write _ n e = go (witness :: Wit i a) n e
          lift $ case k of
            E.Signal -> c <== expr
            _        -> c ==: expr
+
 
 -- | Write a some value to a delay's channel
 writeDelay
@@ -141,6 +143,7 @@ comp' (Ordered sym) =
          do e <- read ilink s
             writeDelay olink out e
        _ -> return ()
+
 
 compDelay' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 compDelay' (Ordered sym) =
@@ -188,8 +191,9 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
          mapM_ comp' nodes
          mapM_ comp' delays
 
-       inProcess "sequential" [clk] $ do -- missing rising_edge(clk)
-         mapM_ compDelay' delays
+       inProcess "sequential" [clk] $ do
+         mapReaderT (E.when (rising clk)) $
+           mapM_ compDelay' delays
          
        -- output
        read outp (name root)
@@ -197,8 +201,6 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
     channels        = fromLinks outp links 
     orders          = foldr delete order [Ordered root, Ordered var]
     (delays, nodes) = filterDelays channels links order
-
-    run = flip CMR.runReaderT (links, channels)
 
     -- sensitivity lists for combinatorial process
     ssl :: [Identifier]
@@ -210,11 +212,18 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
     rising :: Identifier -> IExp i Bool
     rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
 
+    -- | Run a M action inside a process
     inProcess :: String -> [Identifier] -> M i () -> M i ()
     inProcess name is = lift . process name is . run
+      where
+        run = flip CMR.runReaderT (links, channels)
 
+    -- | Run a program inside an architecture
     inArchitecture :: String -> Program i (Program i x) -> Program i (Program i x)
     inArchitecture name = return . architecture name . join
+
+
+type Order i = [Ordered i]
 
 -- | ...
 filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
@@ -225,8 +234,6 @@ filterDelays channels links order = partitionEithers $ flip fmap order $
 
 --------------------------------------------------------------------------------
 -- ** Initialization
-
-type Order i = [Ordered i]
 
 -- | Declare signal/variable instances for each node in 'order'
 initialize
