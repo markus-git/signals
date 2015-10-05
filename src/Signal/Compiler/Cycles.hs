@@ -102,6 +102,7 @@ cycle' key@(Key r) =
        (Left    l) -> check l
        (Right   r) -> check r
        (Delay _ s) -> tell [Hide s] >> return False
+       (Mux   s c) -> (&&) <$> check s <*> (and <$> mapM (check . snd) c)
      r `is` Visited
      return b
   where

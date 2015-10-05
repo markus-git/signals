@@ -117,6 +117,12 @@ link' (Ordered sym) =
        (Delay c s) ->
          do inp <- resolve s
             constrain (Delay c inp) (name sym)
+       (Mux s choices) ->
+         do inp  <- resolve s
+            inps <- forM choices $ \(c, s) ->
+                do s' <- resolve s
+                   return (c, s')
+            constrain (Mux inp inps) (name sym)
   where
     reify ~(Link n) = n
     constrain n l   = output $ Hide $ Pair sym $ Linked n $ Link l

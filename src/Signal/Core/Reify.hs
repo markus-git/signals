@@ -89,7 +89,7 @@ reify' (Symbol ref@(Ref _ node)) =
          (S.Var    dyn) -> insertNode ref (Node (S.Var    dyn))
          (S.Repeat str) -> insertNode ref (Node (S.Repeat str))
          (S.Map  f sig) ->
-           do key <- reify' sig
+           do key  <- reify' sig
               insertNode ref (Node (S.Map f key))
          (S.Join l r) ->
            do lkey <- reify' l
@@ -102,8 +102,14 @@ reify' (Symbol ref@(Ref _ node)) =
            do rkey <- reify' r
               insertNode ref (Node (S.Right rkey))
          (S.Delay v sig) ->
-           do key <- reify' sig
+           do key  <- reify' sig
               insertNode ref (Node (S.Delay v key))
+         (S.Mux sig choices) ->
+           do key  <- reify' sig
+              keys <- forM choices $ \(c, s) ->
+                do s' <- reify' s
+                   return (c, s')
+              insertNode ref (Node (S.Mux key keys))
 
 --------------------------------------------------------------------------------
 

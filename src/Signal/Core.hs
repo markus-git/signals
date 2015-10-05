@@ -30,7 +30,7 @@ import Data.Typeable          (Typeable)
 import Data.Dynamic           (Dynamic)
 import Data.Ref
 import Data.Unique
-import Language.Embedded.VHDL (PredicateExp)
+import Language.Embedded.VHDL.Interface
 
 import Prelude hiding (Left, Right, map, repeat)
 import qualified Prelude as P
@@ -40,10 +40,10 @@ import qualified Prelude as P
 --------------------------------------------------------------------------------
 
 -- | ...
-newtype Sig    i a = Sig    (Signal i (Identity a))
+newtype Sig    i a = Sig { runSig :: Signal i (Identity a) }
 
 -- | ...
-newtype Signal i a = Signal (Symbol i a)
+newtype Signal i a = Signal { runSignal :: Symbol i a }
 
 -- | ...
 newtype Symbol i a = Symbol (Ref (S Symbol i a))
@@ -51,36 +51,31 @@ newtype Symbol i a = Symbol (Ref (S Symbol i a))
 -- | ...
 data S sig i a
   where
-    Repeat :: (Typeable a, PredicateExp (IExp i) a)
-           => IExp i a
-           -> S sig i (Identity a)
-              
-    Map    :: (Witness i a, Witness i b)
-           => (E i a -> E i b)
-           -> sig i a
-           -> S sig i b
+    -- ^ Constant signals
+    Repeat :: (Typeable a, PredicateExp (IExp i) a) => IExp i a -> S sig i (Identity a)
 
-    Join   :: (Witness i a, Witness i b)
-           => sig i a
-           -> sig i b
-           -> S sig i (a, b)
-    
-    Left   :: (Witness i a, Witness i b)
-           => sig i (a, b)
-           -> S sig i a
-    
-    Right  :: (Witness i a, Witness i b)
-           => sig i (a, b)
-           -> S sig i b
+    -- ^ Signal transformers
+    Map    :: (Witness i a, Witness i b) => (E i a -> E i b) -> sig i a -> S sig i b
 
+    -- ^ Wiring operators
+    Join   :: (Witness i a, Witness i b) => sig i a -> sig i b -> S sig i (a, b)
+    Left   :: (Witness i a, Witness i b) => sig i (a, b) -> S sig i a
+    Right  :: (Witness i a, Witness i b) => sig i (a, b) -> S sig i b
+
+    -- ^ Registers
     Delay  :: (Typeable a, PredicateExp (IExp i) a)
            => IExp i a
            -> sig i (Identity a)
            -> S sig i (Identity a)
 
-    Var    :: Witness i a
-           => Dynamic
-           -> S sig i a
+    -- ^ Multiplexers
+    Mux    :: (Typeable a, PredicateExp (IExp i) a, Witness i b)
+           => sig i (Identity a)
+           -> [(IExp i a, sig i b)]
+           -> S sig i b
+
+    -- ^ Variable trick
+    Var    :: Witness i a => Dynamic -> S sig i a
 
 -- | Type for nested tuples, stripping away all Identity
 type family E i a
@@ -91,19 +86,17 @@ type family E i a
 --------------------------------------------------------------------------------
 -- ** Some `smart` constructions
 
--- | ...
 signal :: S Symbol i a -> Signal i a
 signal = Signal . symbol
 
--- | ...
 symbol :: S Symbol i a -> Symbol i a
 symbol = Symbol . ref
 
--- | ... do I use this one?..
 unsymbol :: Symbol i a -> S Symbol i a
 unsymbol (Symbol s) = deref s
 
 --------------------------------------------------------------------------------
+-- internal
 
 repeat :: (Typeable a, PredicateExp (IExp i) a) => IExp i a -> Signal i (Identity a)
 repeat s = signal $ Repeat s
@@ -124,9 +117,22 @@ variable :: Witness i a => Dynamic -> Signal i a
 variable = signal . Var 
 
 --------------------------------------------------------------------------------
+-- user
 
+-- | Delay a signal by one instant, returning the given value in the first instant
 delay :: (Typeable a, PredicateExp (IExp i) a) => IExp i a -> Sig i a -> Sig i a
 delay e (Sig (Signal s)) = Sig . signal $ Delay e s
+
+-- | Choose output signal according to a control signal
+--
+-- ^ List must be total, covering all cases
+-- ^ ...
+mux :: ( Typeable a, PredicateExp (IExp i) a
+       , Typeable b, PredicateExp (IExp i) b)
+    => Sig i a
+    -> [(IExp i a, Sig i b)]
+    -> Sig i b
+mux (Sig (Signal s)) = Sig . signal . Mux s . fmap (fmap (runSignal . runSig))
 
 --------------------------------------------------------------------------------
 -- ** Properties of signals
@@ -230,7 +236,23 @@ lift
 lift _ f = pack . (map f :: Signal i a -> Signal i b) . unpack
 
 --------------------------------------------------------------------------------
--- ** Some common lifting operations
+-- * Some common signal operations
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- ** Multiplexing
+
+mux2 :: ( Typeable a
+        , EvaluateExp  (IExp i)
+        , PredicateExp (IExp i) a
+        , PredicateExp (IExp i) Bool)
+      => Sig i Bool
+      -> (Sig i a, Sig i a)
+      -> Sig i a
+mux2 b (t, f) = mux b [(litE True, t), (litE False, f)]
+
+--------------------------------------------------------------------------------
+-- ** Lifting
 
 lift0 :: (Typeable a, PredicateExp e a, e ~ IExp i) => e a -> Sig i a
 lift0 = Sig . repeat

@@ -97,6 +97,7 @@ sort' r =
        (Left    l) -> visit l
        (Right   r) -> visit r
        (Delay _ s) -> visit s
+       (Mux   s c) -> visit s >> mapM_ (visit . snd) c
      o <- new
      r `tag` o
   where
