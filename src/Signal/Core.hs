@@ -71,7 +71,7 @@ data S sig i a
     -- ^ Multiplexers
     Mux    :: (Typeable a, PredicateExp (IExp i) a, Witness i b)
            => sig i (Identity a)
-           -> [(IExp i a, sig i b)]
+           -> [(a, sig i b)]
            -> S sig i b
 
     -- ^ Variable trick
@@ -130,7 +130,7 @@ delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 mux :: ( Typeable a, PredicateExp (IExp i) a
        , Typeable b, PredicateExp (IExp i) b)
     => Sig i a
-    -> [(IExp i a, Sig i b)]
+    -> [(a, Sig i b)]
     -> Sig i b
 mux (Sig (Signal s)) = Sig . signal . Mux s . fmap (fmap (runSignal . runSig))
 
@@ -242,14 +242,14 @@ lift _ f = pack . (map f :: Signal i a -> Signal i b) . unpack
 --------------------------------------------------------------------------------
 -- ** Multiplexing
 
-mux2 :: ( Typeable a
-        , EvaluateExp  (IExp i)
-        , PredicateExp (IExp i) a
-        , PredicateExp (IExp i) Bool)
-      => Sig i Bool
-      -> (Sig i a, Sig i a)
-      -> Sig i a
-mux2 b (t, f) = mux b [(litE True, t), (litE False, f)]
+mux2
+  :: ( Typeable a
+     , PredicateExp (IExp i) a
+     , PredicateExp (IExp i) Bool)
+  => Sig i Bool
+  -> (Sig i a, Sig i a)
+  -> Sig i a
+mux2 b (t, f) = mux b [(True, t), (False, f)]
 
 --------------------------------------------------------------------------------
 -- ** Lifting
