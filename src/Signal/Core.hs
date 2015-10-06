@@ -14,8 +14,14 @@ module Signal.Core
   , S     (..)
   , E    
   , variable
+
+    -- ^ ...
   , delay
+  , mux
   , lift
+    
+    -- ^ ...
+  , mux2
   , lift0
   , lift1
   , lift2
