@@ -20,6 +20,7 @@ library
   exposed-modules:
     Signal,
     Signal.Compiler,
+    Signal.Compiler.Interface,
     Signal.Compiler.Cycles,
     Signal.Compiler.Sorter,
     Signal.Compiler.Linker,
