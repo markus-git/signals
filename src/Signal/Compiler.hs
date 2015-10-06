@@ -14,11 +14,13 @@ import Signal.Core.Witness
 import Signal.Core.Reify
 import qualified Signal.Core as S
 
+import Signal.Compiler.Interface
 import Signal.Compiler.Cycles
 import Signal.Compiler.Sorter
 import Signal.Compiler.Linker
 import Signal.Compiler.Linker.Channels
 
+import Control.Arrow        (first, second)
 import Control.Monad.Reader (ReaderT, asks, lift, mapReaderT)
 import Control.Monad.Identity
 import Control.Monad.Operational.Compositional
@@ -54,6 +56,7 @@ compiler
      , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
+     , Compile       (IExp i)
      , PredicateExp  (IExp i) a
      , PredicateExp  (IExp i) b
      , PredicateExp  (IExp i) Bool -- !!!
@@ -76,7 +79,13 @@ compiler sf =
 
 type M i = ReaderT (Rim.Map (Linked i), Channels) (Program i)
 
-comp' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
+comp'
+  :: forall i.
+     ( SequentialCMD (IExp i) :<: i
+     , CompileExp (IExp i)
+     , Compile (IExp i)
+     )
+  => Ordered i -> M i ()
 comp' (Ordered sym) =
   do (Linked n olink@(Link out)) <- asks $ (Rim.! sym) . fst
      case n of
@@ -88,7 +97,17 @@ comp' (Ordered sym) =
        (Delay _ ilink@(Link s)) ->
          do e <- read ilink s
             writeDelay olink out e
+       (Mux ilink@(Link s) links) ->
+         do state <- CMR.ask
+            let (cs, ls) = unzip links
+                choices  = flip fmap ls $ \clink@(Link c) -> run state $
+                  do e <- read clink c
+                     write olink out e
+            v <- read ilink s
+            lift $ switch v (zip (fmap literal cs) choices) (Nothing)
        _ -> return ()
+  where
+    run = flip CMR.runReaderT
 
 compDelay' :: forall i. (SequentialCMD (IExp i) :<: i, CompileExp (IExp i)) => Ordered i -> M i ()
 compDelay' (Ordered sym) =
@@ -107,6 +126,7 @@ compile'
      , SequentialCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i
      , CompileExp    (IExp i)
+     , Compile       (IExp i)
      , PredicateExp  (IExp i) a
      , PredicateExp  (IExp i) b
      , PredicateExp  (IExp i) Bool -- !!!
@@ -159,6 +179,8 @@ compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArc
     -- ! really bad temp fix, replace
     rising :: Identifier -> IExp i Bool
     rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
+
+--------------------------------------------------------------------------------
 
 -- | Run the 'M' action inside a process
 inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> M i () -> M i ()
