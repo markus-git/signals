@@ -36,6 +36,7 @@ import Data.Typeable          (Typeable)
 import Data.Dynamic           (Dynamic)
 import Data.Ref
 import Data.Unique
+
 import Language.Embedded.VHDL.Interface
 
 import Prelude hiding (Left, Right, map, repeat)

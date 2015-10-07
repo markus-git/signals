@@ -46,12 +46,15 @@ data Node (i :: (* -> *) -> * -> *) (a :: *)
     Node :: Witness i a => S Key i a -> Node i (S Symbol i a)
 
 -- | Reification of a signal into a mapping over its nodes and root key
-reify :: Typeable a => Sig i a -> IO (Key i (Identity a), Nodes i)
+reify :: Sig i a -> IO (Key i (Identity a), Nodes i)
 reify (Sig (Signal sym)) = second fst <$> runStateT (reify' sym) (M.empty, M.empty)
 
 -- | Reification of a signal function into a mapping over its nodes, root key and input key
 freify
-  :: (PredicateExp (IExp i) a, Typeable i, Typeable a, Typeable b)
+  :: ( PredicateExp (IExp i) a
+     , Typeable i
+     , Typeable a
+     , Typeable b)
   => (Sig i a -> Sig i b)
   -> IO ( Key i (Identity b) -- root
         , Key i (Identity a) -- input
@@ -72,10 +75,7 @@ type Nodes i = Map (Node i)
 type Names   = Map Name
 
 -- | Reification of a symbol tree
-reify' 
-  :: forall i a. Typeable a
-  => Symbol i a
-  -> Reify  i (Key i a)
+reify' :: forall i a.  Symbol i a -> Reify  i (Key i a)
 reify' (Symbol ref@(Ref k node)) =
   do name <- lookupName ref
      case name of
