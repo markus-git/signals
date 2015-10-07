@@ -6,7 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler (compiler) where
+module Signal.Compiler (compiler, compile) where
 
 import Signal.Core hiding (lift)
 import Signal.Core.Stream
@@ -39,7 +39,7 @@ import Data.Ref.Map     (Name)
 import qualified Data.Ref.Map as Rim
 
 import Language.VHDL    (Identifier(..))
-import Language.Embedded.VHDL           hiding (name)
+import Language.Embedded.VHDL           hiding (name, compile)
 import qualified Language.Embedded.VHDL as E
 
 import System.Mem.StableName (eqStableName)
@@ -72,7 +72,159 @@ compiler sf =
          links = linker order nodes
      return $ case cycle of
        True  -> error "Compiler.compiler: found cycle"
-       False -> compile' root input links order
+       False -> fcompile' root input links order
+
+compile
+  :: ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , Compile       (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) Bool -- !!!
+     , Typeable a
+     )
+  => Sig i a -> IO (Str i a)
+compile s =
+  do (root, nodes) <- reify s
+     let order = sorter root  nodes
+         cycle = cycles root  nodes
+         links = linker order nodes
+     return $ case cycle of
+       True  -> error "Compiler.compile: found cycle"
+       False -> compile' root links order
+
+--------------------------------------------------------------------------------
+-- ** Compilation of graphs
+
+type Order i = [Ordered i]
+
+-- | Signals are translated into constant streams
+compile'
+  :: forall i a.
+     ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , Compile       (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) Bool
+     , Typeable a
+     )
+  => Key i (Identity a)
+  -> Links i
+  -> Order i
+  -> Str i a
+compile' outp@(Key root) links order = Stream $ inArchitecture "test" $
+  do clk  <- clock
+     signalPort (find outp) Out (Nothing :: Maybe (IExp i a))
+     return . run $ do       
+       inProcess "combinatorial" sensitive $ do
+         lift $ initialize channels links orders
+         mapM_ comp' nodes
+         mapM_ comp' delays
+       inProcess "sequential" [clk] $ do
+         mapReaderT (E.when (rising clk)) $
+           mapM_ compDelay' delays
+       read outp (name root)
+  where
+    (delays, nodes) = filterDelays channels links order
+    channels        = fromLinks outp links 
+    orders          = (Ordered root) `delete` order
+    sensitive       = fmap find' delays
+      where find' (Ordered n) = case Rim.lookup n links of
+              Just (Linked (Delay {}) (Link out)) -> fst (lookupNode out channels)
+
+    -- Run 'M' to produce its program
+    run :: M i x -> Program i x
+    run = flip CMR.runReaderT (links, channels)
+
+    find :: (PredicateExp (IExp i) x, Typeable x) => Key i (Identity x) -> Identifier
+    find (Key k) = fst $ lookupNode (name k) channels
+
+    -- ! really bad temp fix, replace
+    rising :: Identifier -> IExp i Bool
+    rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
+
+--------------------------------------------------------------------------------
+
+-- | Signal transformers are translated into functions over streams
+fcompile'
+  :: forall i a b.
+     ( ConcurrentCMD (IExp i) :<: i
+     , SequentialCMD (IExp i) :<: i
+     , HeaderCMD     (IExp i) :<: i
+     , CompileExp    (IExp i)
+     , Compile       (IExp i)
+     , PredicateExp  (IExp i) a
+     , PredicateExp  (IExp i) b
+     , PredicateExp  (IExp i) Bool -- !!!
+     , Typeable a
+     , Typeable b
+     )
+  => Key i (Identity b)
+  -> Key i (Identity a)
+  -> Links i
+  -> Order i
+  -> (Str i a -> Str i b)
+fcompile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
+  do next <- str
+     clk  <- clock
+     signalPort (find inp)  In  (Nothing :: Maybe (IExp i a))
+     signalPort (find outp) Out (Nothing :: Maybe (IExp i a))
+
+     -- main loop
+     return . run $ do
+       val <- lift $ next
+       
+       -- combinatorial part
+       inProcess "combinatorial" sensitive $ do
+         lift $ initialize channels links orders
+         mapM_ comp' nodes
+         mapM_ comp' delays
+
+       -- sequential part
+       inProcess "sequential" [clk] $ do
+         mapReaderT (E.when (rising clk)) $
+           mapM_ compDelay' delays
+
+       -- return output
+       read outp (name root)
+  where
+    (delays, nodes) = filterDelays channels links order
+    channels        = fromLinks outp links
+    orders          = foldr delete order [Ordered root, Ordered var]
+    sensitive       = find inp : fmap find' delays
+      where find' (Ordered n) = case Rim.lookup n links of
+              Just (Linked (Delay {}) (Link out)) -> fst (lookupNode out channels)
+
+    -- Run 'M' to produce its program
+    run :: M i x -> Program i x
+    run = flip CMR.runReaderT (links, channels)
+
+    find :: (PredicateExp (IExp i) x, Typeable x) => Key i (Identity x) -> Identifier
+    find (Key k) = fst $ lookupNode (name k) channels
+
+    -- ! really bad temp fix, replace
+    rising :: Identifier -> IExp i Bool
+    rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
+
+--------------------------------------------------------------------------------
+
+-- | Run the 'M' action inside a process
+inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> M i () -> M i ()
+inProcess name is = mapReaderT (process name is)
+
+-- | Run a program inside an architecture
+inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i x) -> Program i (Program i x)
+inArchitecture name = fmap (architecture name)
+
+-- | ...
+filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
+filterDelays channels links order = partitionEithers $ flip fmap order $
+  \o@(Ordered n) -> case Rim.lookup n links of
+      Just (Linked (Delay _ _) _) -> P.Left  o
+      Just _                      -> P.Right o
 
 --------------------------------------------------------------------------------
 -- ** Compilation of nodes
@@ -114,88 +266,6 @@ compDelay' (Ordered sym) =
   do (Linked (Delay _ (_ :: Link i (Identity b))) olink@(Link out)) <- asks $ (Rim.! sym) . fst
      (i, o) <- asks (lookupDelay out . snd)
      lift $ i <== (varE o :: IExp i b)
-
---------------------------------------------------------------------------------
--- ** Compilation of graphs
-
-type Order i = [Ordered i]
-
-compile'
-  :: forall i a b.
-     ( ConcurrentCMD (IExp i) :<: i
-     , SequentialCMD (IExp i) :<: i
-     , HeaderCMD     (IExp i) :<: i
-     , CompileExp    (IExp i)
-     , Compile       (IExp i)
-     , PredicateExp  (IExp i) a
-     , PredicateExp  (IExp i) b
-     , PredicateExp  (IExp i) Bool -- !!!
-     , Typeable a
-     , Typeable b
-     )
-  => Key i (Identity b)
-  -> Key i (Identity a)
-  -> Links i
-  -> Order i
-  -> (Str i a -> Str i b)
-compile' outp@(Key root) inp@(Key var) links order (Stream str) = Stream $ inArchitecture "test" $
-  do next <- str
-     clk  <- clock
-     signalPort (find inp)  In  (Nothing :: Maybe (IExp i a))
-     signalPort (find outp) Out (Nothing :: Maybe (IExp i b))
-
-     -- main loop
-     return . run $ do
-       val <- lift $ next
-       
-       -- combinatorial part
-       inProcess "combinatorial" sensitive $ do
-         lift $ initialize channels links orders
-         mapM_ comp' nodes
-         mapM_ comp' delays
-
-       -- sequential part
-       inProcess "sequential" [clk] $ do
-         mapReaderT (E.when (rising clk)) $
-           mapM_ compDelay' delays
-
-       -- return output
-       read outp (name root)
-  where
-    (delays, nodes) = filterDelays channels links order
-    channels        = fromLinks outp links 
-    orders          = foldr delete order [Ordered root, Ordered var]
-    sensitive       = find inp : fmap find' delays
-      where find' (Ordered n) = case Rim.lookup n links of
-              Just (Linked (Delay {}) (Link out)) -> fst (lookupNode out channels)
-
-    -- Run 'M' to produce its program
-    run :: M i x -> Program i x
-    run = flip CMR.runReaderT (links, channels)
-
-    find :: (PredicateExp (IExp i) x, Typeable x) => Key i (Identity x) -> Identifier
-    find (Key k) = fst $ lookupNode (name k) channels
-
-    -- ! really bad temp fix, replace
-    rising :: Identifier -> IExp i Bool
-    rising (Ident formal) = varE . Ident $ "rising_edge(" ++ formal ++ ")"
-
---------------------------------------------------------------------------------
-
--- | Run the 'M' action inside a process
-inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> M i () -> M i ()
-inProcess name is = mapReaderT (process name is)
-
--- | Run a program inside an architecture
-inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i x) -> Program i (Program i x)
-inArchitecture name = fmap (architecture name)
-
--- | ...
-filterDelays :: Channels -> Links i -> Order i -> (Order i, Order i)
-filterDelays channels links order = partitionEithers $ flip fmap order $
-  \o@(Ordered n) -> case Rim.lookup n links of
-      Just (Linked (Delay _ _) _) -> P.Left  o
-      Just _                      -> P.Right o
 
 --------------------------------------------------------------------------------
 -- ** Reading / Writing to and from Channels in environment
