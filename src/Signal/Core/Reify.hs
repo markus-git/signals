@@ -10,7 +10,7 @@ module Signal.Core.Reify
   , freify
   ) where
 
-import Signal.Core
+import Signal.Core hiding (lift)
 import Signal.Core.Witness
 
 import Control.Monad.Operational.Compositional
@@ -71,47 +71,47 @@ type Nodes i = Map (Node i)
 -- | ...
 type Names   = Map Name
 
--- | ...
-type Reify i = StateT (Nodes i, Names) IO
-
---------------------------------------------------------------------------------
-
 -- | Reification of a symbol tree
 reify' 
   :: forall i a. Typeable a
   => Symbol i a
   -> Reify  i (Key i a)
-reify' (Symbol ref@(Ref _ node)) =
+reify' (Symbol ref@(Ref k node)) =
   do name <- lookupName ref
      case name of
-       Just old -> return old
-       Nothing  -> case node of
-         (S.Var    dyn) -> insertNode ref (Node (S.Var    dyn))
-         (S.Repeat str) -> insertNode ref (Node (S.Repeat str))
-         (S.Map  f sig) ->
-           do key  <- reify' sig
-              insertNode ref (Node (S.Map f key))
-         (S.Join l r) ->
-           do lkey <- reify' l
-              rkey <- reify' r
-              insertNode ref (Node (S.Join lkey rkey))
-         (S.Left   l) ->
-           do lkey <- reify' l
-              insertNode ref (Node (S.Left lkey))
-         (S.Right  r) ->
-           do rkey <- reify' r
-              insertNode ref (Node (S.Right rkey))
-         (S.Delay v sig) ->
-           do key  <- reify' sig
-              insertNode ref (Node (S.Delay v key))
-         (S.Mux sig choices) ->
-           do key  <- reify' sig
-              keys <- forM choices $ \(c, s) ->
-                do s' <- reify' s
-                   return (c, s')
-              insertNode ref (Node (S.Mux key keys))
+       Just old@(Key k') -> return old
+       Nothing  -> do
+         insertName ref
+         case node of
+           (S.Var    dyn) -> insertNode ref (Node (S.Var    dyn))
+           (S.Repeat str) -> insertNode ref (Node (S.Repeat str))
+           (S.Map  f sig) ->
+             do key  <- reify' sig
+                insertNode ref (Node (S.Map f key))
+           (S.Join l r) ->
+             do lkey <- reify' l
+                rkey <- reify' r
+                insertNode ref (Node (S.Join lkey rkey))
+           (S.Left   l) ->
+             do lkey <- reify' l
+                insertNode ref (Node (S.Left lkey))
+           (S.Right  r) ->
+             do rkey <- reify' r
+                insertNode ref (Node (S.Right rkey))
+           (S.Delay v sig) ->
+             do key  <- reify' sig
+                insertNode ref (Node (S.Delay v key))
+           (S.Mux sig choices) ->
+             do key  <- reify' sig
+                keys <- forM choices $ \(c, s) ->
+                  do s' <- reify' s
+                     return (c, s')
+                insertNode ref (Node (S.Mux key keys))
 
 --------------------------------------------------------------------------------
+
+-- | ...
+type Reify i = StateT (Nodes i, Names) IO
 
 -- | Insert a signal node under the given reference name
 insertNode :: Ref (S Symbol i a) -> Node i (S Symbol i a) -> Reify i (Key i a)
@@ -119,7 +119,7 @@ insertNode ref@(Ref name _) node = modify (first $ M.insert ref node) >> return 
 
 -- | Insert a reference name
 insertName :: Ref (S Symbol i a) -> Reify i ()
-insertName ref@(Ref name _) = modify . second $ M.insert ref name
+insertName ref@(Ref name _) = modify $ second $ M.insert ref name
 
 -- | Tries to find a reference name
 lookupName :: Ref (S Symbol i a) -> Reify i (Maybe (Key i a))
