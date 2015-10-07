@@ -4,7 +4,8 @@
 module Filters where
 
 import Language.VHDL
-import Language.Embedded.VHDL
+import Language.Embedded.VHDL hiding (compile)
+import qualified Language.Embedded.VHDL            as V
 import qualified Language.Embedded.VHDL.Expression as E
 
 import Signal hiding (E)
@@ -68,8 +69,8 @@ and2 :: S Bool -> S Bool -> S Bool
 and2 = zipWith E.and
 
 -- | Recursiv signal example
-toggle :: S Bool -> S Bool
-toggle s = let out = high `delay` (inv out) in and2 s out
+toggle :: S Bool
+toggle = let out = high `delay` (inv out) in out
 
 -- | Mux. example
 multiplexer :: S Word8 -> S Word8
@@ -113,6 +114,11 @@ iir (a:as) bs s = o
 
 type P = Program (CMD E)
 
+compS :: Ok a => S a -> IO (P ())
+compS s =
+  do prog <- compile s
+     return $ void $ run prog
+
 compSF :: Ok a => (S a -> S a) -> E a -> IO (P ())
 compSF f a =
   do prog <- compiler f
@@ -121,16 +127,16 @@ compSF f a =
 --------------------------------------------------------------------------------
 
 testRec :: IO ()
-testRec = compSF toggle high >>= putStrLn . compile
+testRec = compS toggle >>= putStrLn . V.compile
 
 testMux :: IO ()
-testMux = compSF multiplexer 0 >>= putStrLn . compile
+testMux = compSF multiplexer 0 >>= putStrLn . V.compile
 
 testFIR :: IO ()
-testFIR = compSF (fir [1,2]) 0 >>= putStrLn . compile
+testFIR = compSF (fir [1,2]) 0 >>= putStrLn . V.compile
 
 testIIR :: IO ()
-testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . compile
+testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . V.compile
 
 --------------------------------------------------------------------------------
 -- *
