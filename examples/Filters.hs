@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators   #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Filters where
 
@@ -42,13 +43,15 @@ instance Compile Expr
 --------------------------------------------------------------------------------
 -- ** Some simple signal functions
 
-repeat :: (Rep a, Typeable a) => E a -> S a
+type Ok a = (Rep a, Typeable a)
+
+repeat :: Ok a => E a -> S a
 repeat = lift0
 
-map :: (E Word8 -> E Word8) -> S Word8 -> S Word8
+map :: Ok a => (E a -> E a) -> S a -> S a
 map f = lift1 f
 
-zipWith :: (E Word8 -> E Word8 -> E Word8) -> S Word8 -> S Word8 -> S Word8
+zipWith :: Ok a => (E a -> E a -> E a) -> S a -> S a -> S a
 zipWith f = lift2 f
 
 --------------------------------------------------------------------------------
@@ -61,11 +64,19 @@ low  = litE False
 inv :: S Bool -> S Bool
 inv = lift1 E.not
 
+and2 :: S Bool -> S Bool -> S Bool
+and2 = zipWith E.and
+
+-- | Recursiv signal example
+toggle :: S Bool -> S Bool
+toggle s = let out = high `delay` (inv out) in and2 s out
+
+-- | Mux. example
 multiplexer :: S Word8 -> S Word8
 multiplexer sig = mux2 toggle (sig, zeroes)
   where
     zeroes = repeat 0
-    toggle = repeat high --high `delay` (inv toggle)
+    toggle = repeat high
 
 --------------------------------------------------------------------------------
 -- ** Some filters
@@ -102,29 +113,32 @@ iir (a:as) bs s = o
 
 type P = Program (CMD E)
 
-compSF :: (S Word8 -> S Word8) -> IO (P ())
-compSF f =
+compSF :: Ok a => (S a -> S a) -> E a -> IO (P ())
+compSF f a =
   do prog <- compiler f
-     return $ void $ run $ prog $ (Stream . return $ return 0)
+     return . void . run . prog . Stream . return . return $ a
 
 --------------------------------------------------------------------------------
 
+testRec :: IO ()
+testRec = compSF toggle high >>= putStrLn . compile
+
 testMux :: IO ()
-testMux = compSF (multiplexer) >>= putStrLn . compile
+testMux = compSF multiplexer 0 >>= putStrLn . compile
 
 testFIR :: IO ()
-testFIR = compSF (fir [1,2]) >>= putStrLn . compile
+testFIR = compSF (fir [1,2]) 0 >>= putStrLn . compile
 
 testIIR :: IO ()
-testIIR = compSF (iir [1,2] [3,4]) >>= putStrLn . compile
+testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . compile
 
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
-
+{-
 write :: IO ()
 write =
   do prog <- compSF (fir [1,2])
      writeFile "generated.vhdl" (compile prog)
-
+-}
 --------------------------------------------------------------------------------
