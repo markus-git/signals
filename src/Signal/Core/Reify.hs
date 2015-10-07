@@ -36,14 +36,12 @@ import Prelude hiding (Left, Right, join)
 --------------------------------------------------------------------------------
 
 -- | ...
-data Key (i :: (* -> *) -> * -> *) (a :: *)
-  where
-    Key :: Name (S Symbol i a) -> Key i a
+data Key (i :: (* -> *) -> * -> *) (a :: *) where
+  Key :: Name (S Symbol i a) -> Key i a
 
 -- | ...
-data Node (i :: (* -> *) -> * -> *) (a :: *)
-  where
-    Node :: Witness i a => S Key i a -> Node i (S Symbol i a)
+data Node (i :: (* -> *) -> * -> *) (a :: *) where
+  Node :: Witness i a => S Key i a -> Node i (S Symbol i a)
 
 -- | Reification of a signal into a mapping over its nodes and root key
 reify :: Sig i a -> IO (Key i (Identity a), Nodes i)
@@ -60,13 +58,13 @@ freify
         , Key i (Identity a) -- input
         , Nodes i)
 freify f =
-  do let (Sig (Signal (Symbol (Ref var _))), sig) =
-           let a = Sig (S.variable (toDyn f)) in (a, f a)
-     (key, nodes) <- reify sig
-     return (key, Key var, nodes)
+  do let (inp, graph) = let a = Sig (S.variable (toDyn f)) in (a, f a)
+     (key, nodes) <- reify graph
+     return (key, varify inp, nodes)
+  where
+    varify (Sig (Signal (Symbol (Ref var _)))) = Key var
 
 --------------------------------------------------------------------------------
--- ** ... 
 
 -- | ...
 type Nodes i = Map (Node i)
