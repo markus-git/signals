@@ -6,14 +6,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Linker (
-    Dist
-  , Named (..)
-  , Names    
-  , Link  (..)
+    Link  (..)
   , Linked(..)
   , Links    
   , linker
-  , name
+
+    -- ^ re-export of naming constructs
+  , module Signal.Compiler.Linker.Names
   )
   where
 
@@ -38,33 +37,34 @@ import qualified Data.Ref.Map as M
 import Prelude hiding (Left, Right, Ordering)
 
 --------------------------------------------------------------------------------
--- * ...
+-- * Linking Types
 --------------------------------------------------------------------------------
 -- Once we have names for every wire (Names), we can substitute the old
 -- group names
 
 -- | Nodes where recursive calls to other nodes have been replaced with names
-data Link   (i :: (* -> *) -> * -> *) (a :: *)
-  where
-    Link :: Witness i a => Names (S Symbol i a) -> Link i a
+data Link   (i :: (* -> *) -> * -> *) (a :: *) where
+  Link :: Witness i a => Names (S Symbol i a) -> Link i a
 
 -- | Container for linked nodes and the names of their own output
-data Linked (i :: (* -> *) -> * -> *) (a :: *)
-  where
-    Linked :: S Link i a -> Link i a -> Linked i (S Symbol i a)
+data Linked (i :: (* -> *) -> * -> *) (a :: *) where
+  Linked :: S Link i a -> Link i a -> Linked i (S Symbol i a)
 
--- | ...
+-- | Short-hand for a mapping over links
 type Links i = Map (Linked i)
 
 --------------------------------------------------------------------------------
 -- ** We will however need to hide their types as they vary between nodes
 
+-- | A single constructor with a hidden type parameter
 data Hide f where
   Hide :: f a -> Hide f
 
+-- | A pair of constructors applied to the same type parameter
 data Pair f g a where
   Pair :: f a -> g a -> Pair f g a
 
+-- | Two hidden constructors
 type Item i = Hide (Pair Name (Linked i))
 
 --------------------------------------------------------------------------------
@@ -77,21 +77,22 @@ type Constraint i = Item  i
 type M i          = Knot (Resolution i) (Constraint i) (State (Nodes i))
 
 --------------------------------------------------------------------------------
+-- some helper functions
 
+(!?) :: Name a -> Map f -> f a
+(!?) name map = case M.lookup name map of
+  Nothing   -> error "Linker.!?: lookup failed"
+  Just node -> node
+
+-- | Find the named node
 node :: Name (S Symbol i a) -> M i (Node i (S Symbol i a))
-node name =
-  do out <- get
-     return $ case M.lookup name out of
-       Nothing   -> error "Linker.node:lookup failed"
-       Just node -> node
+node name = gets (name !?)
 
+-- | Find the indexed key
 resolve :: Key i a -> M i (Link i a)
-resolve (Key name) =
-  do out <- ask
-     return $ case M.lookup name out of
-       Nothing           -> error "Linker.resolve:lookup failed"
-       Just (Linked _ l) -> l
+resolve (Key name) = asks ((\(Linked _ l) -> l) . (name !?))
 
+-- | Tell a new output item
 output :: Item i -> M i ()
 output i = tell [i]
 
@@ -99,6 +100,7 @@ output i = tell [i]
 -- * Linker
 --------------------------------------------------------------------------------
 
+-- | Resolves inputs and constrains the output of each node
 link' :: Ordered i -> M i ()
 link' (Ordered sym) =
   do (Node n) <- node sym
@@ -129,6 +131,7 @@ link' (Ordered sym) =
 
 --------------------------------------------------------------------------------
 
+-- | Link together ordered nodes, results in a mapping over their connections
 linker :: [Ordered i] -> Nodes i -> Links i
 linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
   where
