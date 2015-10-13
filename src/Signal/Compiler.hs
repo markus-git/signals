@@ -87,26 +87,28 @@ comp'
   => Ordered i
   -> Gen     i ()
 comp' (Ordered (Key name)) =
-  do (Channel node out) <- CMR.asks (fromJust . RMap.lookup name)
-     case node of
-       Repeat c -> do
-         declare out Nothing
-         write out c
-       Map f s -> do
-         declare out Nothing
-         write out (f $ read s)
-       Delay d s -> do
-         declare out (Just d)
-         declare (global $ opposite out) Nothing
-         write out (read s)
-       Mux s cs -> do
-         declare out Nothing
-         env <- CMR.ask
-         let (l, r)  = first (fmap literal) $ unzip cs
-             choices = fmap (run env . write out . read) r
-         CMS.lift $ HDL.switch (read s) (zip l choices) (Nothing)
-       Var d -> do
-          declare out Nothing
+  do env <- CMR.asks (RMap.lookup name)
+     case env of
+       Nothing                 -> return ()
+       Just (Channel node out) -> case node of
+         Repeat c -> do
+           declare out Nothing
+           write out c
+         Map f s -> do
+           declare out Nothing
+           write out (f $ read s)
+         Delay d s -> do
+           declare (swap out)     (Nothing)
+           declare (global $ out) (Just d)
+           write (swap out) (read s)
+         Mux s cs -> do
+           declare out Nothing
+           env <- CMR.ask
+           let (l, r)  = first (fmap literal) $ unzip cs
+               choices = fmap (run env . write out . read) r
+           CMS.lift $ HDL.switch (read s) (zip l choices) (Nothing)
+         Var d -> do
+            declare out Nothing
   where
     declare :: forall a. Ident i a -> Maybe (E i a) -> Gen i ()
     declare (Ident i k s) me = dist (witness :: Wit i a) i me
@@ -141,6 +143,13 @@ decl' ident kind scope exp = CMS.lift $ case kind of
   HDL.Signal   -> case scope of
     Header -> void $ HDL.signalPort ident HDL.Out exp
     Global ->        HDL.signalG    ident exp
+
+--------------------------------------------------------------------------------
+
+-- | Swap a delay's identifier back from its `opposite` to the original
+swap :: Ident i (Identity a) -> Ident i (Identity a)
+swap (Ident (Identified i)            k s) =
+     (Ident (Identified (opposite i)) k s)
 
 --------------------------------------------------------------------------------
 -- **
@@ -189,7 +198,7 @@ compile' out channels order = Stream $ inArchitecture "arch" $
     update :: Ordered i -> Gen i ()
     update (Ordered (Key name)) = do
       (Channel (Delay {}) ident) <- CMR.asks (fromJust . RMap.lookup name)
-      write (opposite ident) (read ident)
+      write ident (read (swap ident))
 
     exit :: Key i (Identity a) -> Gen i (IExp i a)
     exit (Key name) = do
@@ -235,11 +244,6 @@ markRoot (Key name) = RMap.adjust update name
     update c = case c of
       Channel node (Ident i _ _) -> Channel node (Ident i HDL.Signal Header)
 
--- | Every delay has an `opposite` which is used in the combinatorial process
-opposite :: Ident i (Identity a) -> Ident i (Identity a)
-opposite (Ident (Identified (VHDL.Ident (i)))          k s) =
-         (Ident (Identified (VHDL.Ident (i ++ "_in"))) k s)
-
 --------------------------------------------------------------------------------
 
 inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Gen i () -> Gen i ()
@@ -272,7 +276,8 @@ compiler f =
      return $ case cycle of
        True  -> error "signal compiler: found cycle"
        False ->
-         let channels = fromLinks links
+         let filtered = RMap.filter useful links
+             channels = fromLinks filtered
           in const $ compile' root channels order
 
 --------------------------------------------------------------------------------
@@ -296,7 +301,21 @@ compile f =
      return $ case cycle of
        True  -> error "signal compiler: found cycle"
        False ->
-         let channels = fromLinks links
+         let filtered = RMap.filter useful links
+             channels = fromLinks filtered
           in compile' root channels order
+
+--------------------------------------------------------------------------------
+
+-- | Usefulness refers to whether we should generate code for the node or not
+useful :: Linked i a -> Bool
+useful (Linked node _) =
+  case node of
+    Var    {} -> True
+    Repeat {} -> True
+    Map    {} -> True
+    Delay  {} -> True
+    Mux    {} -> True
+    _         -> False
 
 --------------------------------------------------------------------------------

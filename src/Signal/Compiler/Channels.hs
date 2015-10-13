@@ -14,6 +14,7 @@ module Signal.Compiler.Channels
   , Channels(..)
 
   , fromLinks
+  , opposite
   )
   where
 
@@ -116,22 +117,32 @@ type Sm = State (Int, Mapping)
 
 -- | Generates a mapping from name to identifier for each entry
 fromList :: Links i -> Mapping
-fromList ls = snd $ CMS.execState (mapM_ insert $ RMap.elems ls) (0, IMap.empty)
+fromList ls = snd $ CMS.execState (mapM_ add $ RMap.elems ls) (0, IMap.empty)
   where
-    insert :: forall i. Entry (Linked i) -> Sm ()
-    insert (RMap.Entry _ (Linked _ (Link names :: Link i a))) = dist (witness :: Wit i a) names
+    add :: forall i. Entry (Linked i) -> Sm (){-
+    add (RMap.Entry _ (Linked (Delay {}) (Link name  :: Link i (Identity a))))
+        = next name >>= insert name . opposite-}
+    add (RMap.Entry _ (Linked _          (Link names :: Link i a)))
+        = dist (witness :: Wit i a) names
       where
         dist :: Wit i x -> Names (S Symbol i x) -> Sm ()
-        dist (WE)     (name) = gensym name
-        dist (WP l r) (u, v) = dist l u >> dist r v
+        dist (WE)     (name) = next name >>= insert name
+        dist (WP l r) (u, v) = dist l u  >>  dist r v
 
 -- | Generate a unique identifier
-gensym :: Names (S Symbol i (Identity x)) -> Sm ()
-gensym (Named name) = do
+next :: Names (S Symbol i (Identity x)) -> Sm Identifier
+next (Named name) = do
   (i, m) <- CMS.get
-  let new = VHDL.Ident ('v' : show i)
-      n   = IMap.insert (hash name) new m
-  CMS.put (i + 1, n)
+  CMS.put (i + 1, m)
+  return $ VHDL.Ident ('v' : show i)
+
+-- | ...
+insert :: Names (S Symbol i (Identity x)) -> Identifier -> Sm ()
+insert (Named name) i = CMS.modify (second (IMap.insert (hash name) i))
+
+-- | Every delay has an `opposite` which is used in the combinatorial process
+opposite :: Identifier -> Identifier
+opposite (VHDL.Ident i) = VHDL.Ident $ i ++ "_in"
 
 --------------------------------------------------------------------------------
 
