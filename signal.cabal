@@ -25,7 +25,7 @@ library
     Signal.Compiler.Sorter,
     Signal.Compiler.Linker,
     Signal.Compiler.Linker.Names,
-    Signal.Compiler.Linker.Channels,
+    Signal.Compiler.Channels,
     Signal.Compiler.Knot,
     Signal.Core,
     Signal.Core.Stream,

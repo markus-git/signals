@@ -70,7 +70,7 @@ and2 = zipWith E.and
 
 -- | Recursiv signal example
 toggle :: S Bool
-toggle = let out = high `delay` (inv out) in out
+toggle = high `delay` (inv toggle)
 
 -- | Mux. example
 multiplexer :: S Word8 -> S Word8

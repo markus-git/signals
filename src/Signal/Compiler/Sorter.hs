@@ -28,7 +28,7 @@ import Unsafe.Coerce -- !
 import Prelude hiding (Left, Right)
 
 --------------------------------------------------------------------------------
--- * 
+-- * Sorting constructs
 --------------------------------------------------------------------------------
 
 -- | During the sorting process a node can either be sorted or unvisited 
@@ -37,20 +37,20 @@ data Status = Visited | Unvisited deriving Eq
 -- | The ordering assigned to a node after being sorted
 type Order = Int
 
--- | ...
+-- | Nodes tagged with extra bookeeping labels
 data Tagged i a where
-  Tagged :: (Witness i a, Typeable a)
+  Tagged :: Witness i a
          => Status
          -> Order
          -> Name     (S Symbol i a)
          -> Node   i (S Symbol i a)
          -> Tagged i (S Symbol i a)
 
--- | ...
-type M i = State (Order, Map (Tagged i))
-
 --------------------------------------------------------------------------------
--- **
+-- ** Sorting helpers
+
+-- | Monad used during sorting
+type M i = State (Order, Map (Tagged i))
 
 -- | Returns a new and unique ordering
 new :: M i Order
@@ -61,14 +61,14 @@ new = do
 
 -- | Updates the order and name-tag of a node
 tag :: forall i a. Name (S Symbol i a) -> Order -> M i ()
-tag r o = modify $ second $ flip M.adjust r update
+tag r o = modify $ second $ M.adjust update r
   where
     update :: Tagged i (S Symbol i a) -> Tagged i (S Symbol i a)
     update (Tagged s _ _ n) = Tagged s o r n
 
 -- | Marks a node as visited
 visited :: Name (S Symbol i a) -> M i ()
-visited r = modify $ second $ flip M.adjust r update
+visited r = modify $ second $ M.adjust update r
   where
     update :: Tagged i (S Symbol i a) -> Tagged i (S Symbol i a)
     update (Tagged _ o k n) = Tagged Visited o k n
@@ -77,7 +77,7 @@ visited r = modify $ second $ flip M.adjust r update
 status :: Name (S Symbol i a) -> M i Status
 status r = gets $ (\(Tagged s _ _ _) -> s) . (M.! r) . snd
 
--- | ...
+-- | Gets the node's constructor typ
 node :: Name (S Symbol i a) -> M i (S Key i a)
 node r = gets $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
 
@@ -85,6 +85,7 @@ node r = gets $ (\(Tagged _ _ k (Node n)) -> n) . (M.! r) . snd
 -- * Sorter
 --------------------------------------------------------------------------------
 
+-- | Sorting of individual nodes: mark as visited, follow children, tag with order.
 sort' :: Name (S Symbol i a) -> M i ()
 sort' r =
   do visited r
@@ -108,33 +109,30 @@ sort' r =
 
 --------------------------------------------------------------------------------
 
+-- | Ordered keys with a witness constraint for well-formedness
 data Ordered i
   where
-    Ordered :: (Witness i a, Typeable a) => Name (S Symbol i a) -> Ordered i
+    Ordered :: Witness i a => Key i a -> Ordered i
 
+-- | Comparing ordered keys is the same as comparing the keys
 instance Eq (Ordered i) where
-  Ordered l == Ordered r = eqStableName l r
+  Ordered (Key l) == Ordered (Key r) = l `eqStableName` r
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced
 sorter :: Key i a -> Nodes i -> [Ordered i]
 sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
   where
     init :: Nodes i -> Map (Tagged i)
-    init = M.hmap apa
+    init = M.hmap repack
       where
-        apa :: forall i a. Node i a -> Tagged i a
-        apa n@(Node (keys :: S Key i b)) = Tagged Unvisited 0 undefined n
+        repack :: forall i a. Node i a -> Tagged i a
+        repack node@(Node (keys :: S Key i b)) = Tagged Unvisited 0 undefined node
 
     reduce :: Map (Tagged i) -> [Ordered i]
-    reduce = fmap snd
-           . sortBy (compare `on` fst)
-           . fmap apa
-           . fmap snd
-           . concat
-           . M.dump
+    reduce = fmap snd . sortBy (compare `on` fst) . fmap repack . M.elems
       where
         -- Haskell is strange sometimes...
-        apa :: forall i. M.HideType (Tagged i) -> (Order, Ordered i)
-        apa (M.Hide (Tagged _ o k (Node _))) = (o, Ordered k)
+        repack :: forall i. M.Entry (Tagged i) -> (Order, Ordered i)
+        repack (M.Entry name (Tagged _ o k (Node _))) = (o, Ordered (Key k))
 
 --------------------------------------------------------------------------------

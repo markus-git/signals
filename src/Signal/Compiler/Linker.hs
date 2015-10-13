@@ -22,7 +22,6 @@ import Signal.Core.Witness
 import Signal.Compiler.Knot
 import Signal.Compiler.Sorter
 import Signal.Compiler.Linker.Names
-
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.State
@@ -30,9 +29,9 @@ import Control.Monad.Identity
 import Data.Hashable
 import Data.Ref
 import Data.Ref.Map (Map, Name)
-import Unsafe.Coerce
-
 import qualified Data.Ref.Map as M
+
+import Unsafe.Coerce
 
 import Prelude hiding (Left, Right, Ordering)
 
@@ -79,18 +78,13 @@ type M i          = Knot (Resolution i) (Constraint i) (State (Nodes i))
 --------------------------------------------------------------------------------
 -- some helper functions
 
-(!?) :: Name a -> Map f -> f a
-(!?) name map = case M.lookup name map of
-  Nothing   -> error "Linker.!?: lookup failed"
-  Just node -> node
-
 -- | Find the named node
 node :: Name (S Symbol i a) -> M i (Node i (S Symbol i a))
-node name = gets (name !?)
+node name = gets (M.! name)
 
 -- | Find the indexed key
 resolve :: Key i a -> M i (Link i a)
-resolve (Key name) = asks ((\(Linked _ l) -> l) . (name !?))
+resolve (Key name) = asks ((\(Linked _ l) -> l) . (M.! name))
 
 -- | Tell a new output item
 output :: Item i -> M i ()
@@ -102,7 +96,7 @@ output i = tell [i]
 
 -- | Resolves inputs and constrains the output of each node
 link' :: Ordered i -> M i ()
-link' (Ordered sym) =
+link' (Ordered (Key sym)) =
   do (Node n) <- node sym
      case n of
        (Var d) ->
