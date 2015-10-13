@@ -6,7 +6,6 @@
 module Signal.Compiler.Channels
   ( Identified(..)
   , Identifiers
-
   , Kind
   , Scope   (..)
   , Ident   (..)

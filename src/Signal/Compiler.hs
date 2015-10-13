@@ -98,8 +98,8 @@ comp' (Ordered (Key name)) =
            declare out Nothing
            write out (f $ read s)
          Delay d s -> do
-           declare (swap out)     (Nothing)
-           declare (global $ out) (Just d)
+           declare (swap out)     (Just d)
+           declare (global $ out) (Nothing)
            write (swap out) (read s)
          Mux s cs -> do
            declare out Nothing
