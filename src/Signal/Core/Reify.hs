@@ -54,10 +54,8 @@ type Nodes i = Map (Node i)
 
 -- | Reification of a signal into a mapping over its nodes and root key
 reify :: Sig i a -> IO (Key i (Identity a), Nodes i)
-reify (Sig (Signal sym)) = do
-  (key, nodes) <- second fst <$> runStateT (reify' sym) (M.empty, M.empty)
-  debug  (key, nodes)
-  return (key, nodes)
+reify (Sig (Signal sym)) =
+  second fst <$> runStateT (reify' sym) (M.empty, M.empty)
 
 -- | Reification of a signal function into a mapping over its nodes, root key and input key
 freify
