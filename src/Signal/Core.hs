@@ -71,14 +71,21 @@ data S sig i a
 
     -- ^ Registers
     Delay  :: (Typeable a, PredicateExp (IExp i) a)
-           => IExp i a
-           -> sig i (Identity a)
-           -> S sig i (Identity a)
+           => IExp i a             -- value taken in first instant
+           -> sig i (Identity a)   -- signal to delay
+           -> S sig i (Identity a) -- delayed signal
 
     -- ^ Multiplexers
     Mux    :: (Typeable a, PredicateExp (IExp i) a, Witness i b)
-           => sig i (Identity a)
-           -> [(a, sig i b)]
+           => sig i (Identity a)   -- choice signal
+           -> [(a, sig i b)]       -- options
+           -> S sig i b            -- 
+
+    -- ^ ...
+    Bind   :: (Witness i a, Witness i b)
+           => String
+           -> (Signal i a -> Signal i b)
+           -> sig i a 
            -> S sig i b
 
     -- ^ Variable trick
@@ -120,6 +127,9 @@ left (Signal s) = signal $ Left s
 right :: (Witness i a, Witness i b) => Signal i (a, b) -> Signal i b
 right (Signal s) = signal $ Right s
 
+bind :: (Witness i a, Witness i b) => String -> (Signal i a -> Signal i b) -> Signal i a -> Signal i b
+bind name f (Signal s) = signal $ Bind name f s
+
 variable :: Witness i a => Dynamic -> Signal i a
 variable = signal . Var 
 
@@ -131,9 +141,7 @@ delay :: (Typeable a, PredicateExp (IExp i) a) => IExp i a -> Sig i a -> Sig i a
 delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 
 -- | Choose output signal according to a control signal
---
--- ^ List must be total, covering all cases
--- ^ ...
+-- ! List must be total, covering all cases. Else strange things might happen.
 mux :: ( Typeable a, PredicateExp (IExp i) a
        , Typeable b, PredicateExp (IExp i) b)
     => Sig i a
@@ -243,6 +251,18 @@ lift
 lift _ f = pack . (map f :: Signal i a -> Signal i b) . unpack
 
 --------------------------------------------------------------------------------
+-- ** General component operator
+
+-- ...
+comp
+  :: forall proxy i a b. (Witness i a, Witness i b)
+  => proxy i a b
+  -> String
+  -> (Packed i a -> Packed i b)
+  -> (Packed i a -> Packed i b)
+comp _ n f = pack . bind n (unpack . f . pack :: Signal i a -> Signal i b) . unpack
+
+--------------------------------------------------------------------------------
 -- * Some common signal operations
 --------------------------------------------------------------------------------
 
@@ -287,6 +307,32 @@ lift2
   -> Sig i b
   -> Sig i c
 lift2 f = curry $ lift p $ uncurry f
+  where
+    p = undefined :: proxy i (Identity a, Identity b) (Identity c)
+
+--------------------------------------------------------------------------------
+-- ** Components
+
+comp1
+  :: forall i a b.
+     ( Typeable a, PredicateExp (IExp i) a
+     , Typeable b, PredicateExp (IExp i) b)
+  => String
+  -> (Sig i a -> Sig i b)
+  -> (Sig i a -> Sig i b)
+comp1 n f = comp p n f
+  where
+    p = undefined :: proxy i (Identity a) (Identity b)
+
+comp2
+  :: forall i a b c.
+     ( Typeable a, PredicateExp (IExp i) a
+     , Typeable b, PredicateExp (IExp i) b
+     , Typeable c, PredicateExp (IExp i) c)
+  => String
+  -> (Sig i a -> Sig i b -> Sig i c)
+  -> (Sig i a -> Sig i b -> Sig i c)
+comp2 n f = curry $ comp p n $ uncurry f
   where
     p = undefined :: proxy i (Identity a, Identity b) (Identity c)
 

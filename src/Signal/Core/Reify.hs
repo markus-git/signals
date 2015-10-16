@@ -35,9 +35,6 @@ import Prelude hiding (Left, Right, join)
 -- * Reification of Signals
 --------------------------------------------------------------------------------
 
-{--- | Index type for names
-type Ix i a = Name (S Symbol i a)
--}
 -- | Index keys of a reification mapping
 data Key (i :: (* -> *) -> * -> *) (a :: *) where
   Key ::  Name (S Symbol i a) -> Key i a
@@ -108,6 +105,9 @@ reify' (Symbol ref@(Ref k node)) =
                   do s' <- reify' s
                      return (c, s')
                 insertNode ref (Node (S.Mux key keys))
+           (S.Bind n f sig) ->
+             do key <- reify' sig
+                undefined
 
 --------------------------------------------------------------------------------
 
