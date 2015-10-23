@@ -46,6 +46,8 @@ import qualified Prelude as P
 -- * Signals
 --------------------------------------------------------------------------------
 
+data Comp a b
+
 -- | ...
 newtype Sig    i a = Sig { runSig :: Signal i (Identity a) }
 
@@ -82,12 +84,21 @@ data S sig i a
            -> S sig i b            -- 
 
     -- ^ ...
+    CLam   :: (Witness i a, Witness i b)
+           => (sym i a -> sym i b) --
+           -> S sym i (Comp a b)
+              
+    CApp   :: (Witness i a, Witness i b)
+           => sym i (Comp a b)     -- 
+           -> sym i a              --
+           -> S sym i b
+{-
     Bind   :: (Witness i a, Witness i b)
            => String
            -> (Signal i a -> Signal i b)
            -> sig i a 
            -> S sig i b
-
+-}
     -- ^ Variable trick
     Var    :: Witness i a => Dynamic -> S sig i a
 
@@ -96,6 +107,20 @@ type family E i a
   where
     E i (Identity a) = IExp i a
     E i (a, b)       = (E i a, E i b)
+
+--------------------------------------------------------------------------------
+
+clam :: (Witness i a, Witness i b) => (Signal i a -> Signal i b) -> Signal i (Comp a b)
+clam f = signal $ CLam (runS . f . Signal)
+  where
+    runS :: Signal i a -> Symbol i a
+    runS (Signal sym) = sym
+
+capp :: (Witness i a, Witness i b) => Signal i (Comp a b) -> Signal i a -> Signal i b
+capp comp s = signal $ CApp (runS comp) (runS s)
+  where
+    runS :: Signal i a -> Symbol i a
+    runS (Signal sym) = sym
 
 --------------------------------------------------------------------------------
 -- ** Some `smart` constructions
@@ -126,10 +151,10 @@ left (Signal s) = signal $ Left s
 
 right :: (Witness i a, Witness i b) => Signal i (a, b) -> Signal i b
 right (Signal s) = signal $ Right s
-
+{-
 bind :: (Witness i a, Witness i b) => String -> (Signal i a -> Signal i b) -> Signal i a -> Signal i b
 bind name f (Signal s) = signal $ Bind name f s
-
+-}
 variable :: Witness i a => Dynamic -> Signal i a
 variable = signal . Var 
 
@@ -252,7 +277,7 @@ lift _ f = pack . (map f :: Signal i a -> Signal i b) . unpack
 
 --------------------------------------------------------------------------------
 -- ** General component operator
-
+{-
 -- ...
 comp
   :: forall proxy i a b. (Witness i a, Witness i b)
@@ -261,7 +286,7 @@ comp
   -> (Packed i a -> Packed i b)
   -> (Packed i a -> Packed i b)
 comp _ n f = pack . bind n (unpack . f . pack :: Signal i a -> Signal i b) . unpack
-
+-}
 --------------------------------------------------------------------------------
 -- * Some common signal operations
 --------------------------------------------------------------------------------
@@ -312,7 +337,7 @@ lift2 f = curry $ lift p $ uncurry f
 
 --------------------------------------------------------------------------------
 -- ** Components
-
+{-
 comp1
   :: forall i a b.
      ( Typeable a, PredicateExp (IExp i) a
@@ -335,6 +360,6 @@ comp2
 comp2 n f = curry $ comp p n $ uncurry f
   where
     p = undefined :: proxy i (Identity a, Identity b) (Identity c)
-
+-}
 --------------------------------------------------------------------------------
 -- the end.
