@@ -7,7 +7,7 @@
 
 module Signal.Core.Witness where
 
-import Control.Monad.Operational.Compositional hiding (join)
+import Control.Monad.Operational.Higher hiding (join)
 import Control.Monad.Identity (Identity)
 import Data.Typeable          (Typeable)
 import Language.Embedded.VHDL (PredicateExp)

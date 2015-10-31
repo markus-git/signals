@@ -23,7 +23,7 @@ import Control.Arrow             (first)
 import Control.Monad.Identity    (Identity)
 import Control.Monad.Reader      (ReaderT)
 import Control.Monad.State       (State)
-import Control.Monad.Operational.Compositional
+import Control.Monad.Operational.Higher
 import qualified Control.Monad.Identity as CMI
 import qualified Control.Monad.Reader   as CMR
 import qualified Control.Monad.State    as CMS

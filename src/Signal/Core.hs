@@ -29,8 +29,8 @@ module Signal.Core
 
 import Signal.Core.Witness
 
-import Control.Monad.Operational.Compositional hiding (join)
-import Control.Monad.Identity                  hiding (join)
+import Control.Monad.Operational.Higher hiding (join)
+import Control.Monad.Identity           hiding (join)
 import Data.Bits
 import Data.Typeable          (Typeable)
 import Data.Dynamic           (Dynamic)

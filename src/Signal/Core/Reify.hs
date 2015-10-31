@@ -13,7 +13,7 @@ module Signal.Core.Reify
 import Signal.Core hiding (lift)
 import Signal.Core.Witness
 
-import Control.Monad.Operational.Compositional
+import Control.Monad.Operational.Higher
 import Control.Applicative    ((<$>))
 import Control.Arrow          (first, second)
 import Control.Monad

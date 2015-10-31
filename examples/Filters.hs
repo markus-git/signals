@@ -11,7 +11,7 @@ import qualified Language.Embedded.VHDL.Expression as E
 import Signal hiding (E)
 import Signal.Compiler.Interface
 
-import Control.Monad.Operational.Compositional
+import Control.Monad.Operational.Higher
 import Data.Bits
 import Data.Typeable
 import Data.Word

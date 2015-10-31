@@ -3,7 +3,7 @@
 
 module Signal.Core.Stream where
 
-import Control.Monad.Operational.Compositional
+import Control.Monad.Operational.Higher
 
 import Control.Applicative
 import Control.Monad
