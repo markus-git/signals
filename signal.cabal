@@ -7,8 +7,8 @@ description:         A library for expressing digital signal processing algorith
                      streaming  algorithms and their implementation. The deep embedding makes it possible
                      to generate efficient VHDL code without any overhead associated with the
                      high-level programming model. 
--- license:             
--- license-file:        LICENSE
+license:             BSD3
+license-file:        LICENSE
 author:              Markus Aronsson
 maintainer:          mararon@chalmers.se
 -- copyright:           
