@@ -1,10 +1,11 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Channels
-  ( Identified(..)
+{-  ( Identified(..)
   , Identifiers
   , Kind
   , Scope   (..)
@@ -13,15 +14,14 @@ module Signal.Compiler.Channels
   , Channels(..)
 
   , fromLinks
-  , opposite
-  )
+  )-}
   where
 
-import Signal.Core            (S(..), Symbol)
+import Signal.Core            (S(..), E(..), Symbol)
 import Signal.Core.Witness
-
 import Signal.Compiler.Linker
 
+import Control.Monad.Operational.Higher
 import Control.Arrow          (second)
 import Control.Monad
 import Control.Monad.Identity (Identity)
@@ -50,20 +50,64 @@ import Prelude hiding (Left, Right)
 --------------------------------------------------------------------------------
 -- * Compiler constructs
 --------------------------------------------------------------------------------
--- I'm fairly certain that a number of these transformations (i.e,
--- keys -> links -> ...) can be done in a signle traversal. They are kept
--- seperate for now since I keep changing the implementation.
 
+data Channel a = Identifier
+
+type Channels  = RMap.Map Channel
+
+--------------------------------------------------------------------------------
+-- ** ...
+
+fromLinks :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => Links i -> Channels
+fromLinks ls = undefined
+  where
+    cs :: Program i Channels
+    cs = fromList (RMap.elems ls)
+
+--------------------------------------------------------------------------------
+
+fromList  :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => [Entry (Linked i)] -> Program i Channels
+fromList es = undefined
+  where
+    go :: Entry (Linked i) -> Channels -> Program i Channels
+    go (RMap.Entry name (Linked node o)) m = case node of
+      Repeat c -> do
+        i <- declare o (Just c)
+        undefined
+      Map f s -> do
+        i <- declare o (Nothing)
+        undefined
+      Delay d s -> do
+        i <- declare o (Just d)
+        undefined
+      Mux s cs -> do
+        i <- declare o (Nothing)
+        undefined
+
+    declare :: forall a. Link i a -> Maybe (E i a) -> Program i ()
+    declare (Link ns) = dist (witness :: Wit i a) ns
+      where
+        dist :: Wit i x -> Names (S Symbol i x) -> Maybe (E i x) -> Program i ()
+        dist (WE)     (ns)   me =
+          do i <- HDL.variableL me
+             return ()
+        dist (WP l r) (u, v) me =
+          do x <- dist l u (fmap fst me)
+             y <- dist r v (fmap snd me)
+             return ()
+
+--------------------------------------------------------------------------------
+{-
 -- | Physical name representing a wire
 data Identified a where
-  Identified :: Identifier -> Identified (S sym i a)
+  Identified :: Integer -> Identified (S sym i a)
 
 -- | Distributed identifiers
 type Identifiers a = Distributed Identified a
-
+-}
 --------------------------------------------------------------------------------
 -- ** Nodes with Identifiers as keys
-
+{-
 -- | Different kinds of scopes available
 data Scope = Header | Global | Local
 
@@ -77,11 +121,11 @@ data Channel (i :: (* -> *) -> * -> *) (a :: *) where
 
 -- | Short-hand for a mapping over channels
 type Channels i = Map (Channel i)
-
+-}
 --------------------------------------------------------------------------------
 -- ** Channel construction
-
-type Mapping = IMap.IntMap Identifier
+{-
+type Mapping = IMap.IntMap Integer
 
 type Rm      = Reader Mapping
 
@@ -109,41 +153,40 @@ fromLinks links = RMap.hmap (translate (fromList links)) links
             dist :: Wit i x -> Names (S Symbol i x) -> Identifiers (S Symbol i x)
             dist (WE) (Named name) = Identified $ fromJust $ IMap.lookup (hash name) m
             dist (WP l r)   (u, v) = (dist l u, dist r v)
-
+-}
 --------------------------------------------------------------------------------
 
 -- | Short-hand for state used in `fromList`
-type Sm = State (Int, Mapping)
-
+--type Sm = State (Integer, Mapping)
+{-
 -- | Generates a mapping from name to identifier for each entry
 fromList :: Links i -> Mapping
 fromList ls = snd $ CMS.execState (mapM_ add $ RMap.elems ls) (0, IMap.empty)
   where
-    add :: forall i. Entry (Linked i) -> Sm (){-
-    add (RMap.Entry _ (Linked (Delay {}) (Link name  :: Link i (Identity a))))
-        = next name >>= insert name . opposite-}
-    add (RMap.Entry _ (Linked _          (Link names :: Link i a)))
+    add :: forall i. Entry (Linked i) -> Sm ()
+    add (RMap.Entry _ (Linked _ (Link names :: Link i a)))
         = dist (witness :: Wit i a) names
       where
         dist :: Wit i x -> Names (S Symbol i x) -> Sm ()
-        dist (WE)     (name) = next name >>= insert name
-        dist (WP l r) (u, v) = dist l u  >>  dist r v
+        dist (WE)     (name) = next >>= insert name
+        dist (WP l r) (u, v) = dist l u >> dist r v
 
 -- | Generate a unique identifier
-next :: Names (S Symbol i (Identity x)) -> Sm Identifier
-next (Named name) = do
+next :: Sm Integer
+next = do
   (i, m) <- CMS.get
   CMS.put (i + 1, m)
-  return $ VHDL.Ident ('v' : show i)
+  return i
 
 -- | ...
-insert :: Names (S Symbol i (Identity x)) -> Identifier -> Sm ()
+insert :: Names (S Symbol i (Identity x)) -> Integer -> Sm ()
 insert (Named name) i = CMS.modify (second (IMap.insert (hash name) i))
-
+-}
+{-
 -- | Every delay has an `opposite` which is used in the combinatorial process
 opposite :: Identifier -> Identifier
 opposite (VHDL.Ident i) = VHDL.Ident $ i ++ "_in"
-
+-}
 --------------------------------------------------------------------------------
 
 -- | Usefulness refers to whether we should generate code for the node or not
