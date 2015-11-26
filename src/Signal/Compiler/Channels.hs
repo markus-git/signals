@@ -64,11 +64,8 @@ fromLinks
      , HDL.ConcurrentCMD (IExp i) :<: i
      )
   => Links i
-  -> Channels
-fromLinks ls = undefined
-  where
-    cs :: Program i Channels
-    cs = fromList (RMap.elems ls)
+  -> Program i Channels
+fromLinks = fromList . RMap.elems
 
 --------------------------------------------------------------------------------
 
