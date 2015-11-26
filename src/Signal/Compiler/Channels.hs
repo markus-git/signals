@@ -22,14 +22,10 @@ import Signal.Core.Witness
 import Signal.Compiler.Linker
 
 import Control.Monad.Operational.Higher
-import Control.Arrow          (second)
 import Control.Monad
 import Control.Monad.Identity (Identity)
-import Control.Monad.State    (State)
-import Control.Monad.Reader   (Reader)
-import qualified Control.Monad.Identity as CMI
-import qualified Control.Monad.State    as CMS
-import qualified Control.Monad.Reader   as CMR
+import Control.Monad.State    (StateT)
+import qualified Control.Monad.State as CMS
 
 import Data.Maybe    (fromJust)
 import Data.Typeable
@@ -51,9 +47,13 @@ import Prelude hiding (Left, Right)
 -- * Compiler constructs
 --------------------------------------------------------------------------------
 
-data Channel a = Identifier
+newtype Channels = Channels { runChannels :: IMap.IntMap Identifier }
 
-type Channels  = RMap.Map Channel
+lookup :: Name a -> Channels -> Maybe Identifier
+lookup name (Channels m) = IMap.lookup (hash name) m
+
+insert :: Name a -> Identifier -> Channels -> Channels
+insert name ident (Channels m) = Channels (IMap.insert (hash name) ident m)
 
 --------------------------------------------------------------------------------
 -- ** ...
@@ -66,35 +66,43 @@ fromLinks ls = undefined
 
 --------------------------------------------------------------------------------
 
-fromList  :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => [Entry (Linked i)] -> Program i Channels
+type M i = StateT Channels (Program i)
+
+fromList :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => [Entry (Linked i)] -> Program i Channels
 fromList es = undefined
   where
-    go :: Entry (Linked i) -> Channels -> Program i Channels
+    go :: Entry (Linked i) -> Channels -> M i ()
     go (RMap.Entry name (Linked node o)) m = case node of
       Repeat c -> do
-        i <- declare o (Just c)
+--        i <- declare o (Just c)
         undefined
       Map f s -> do
-        i <- declare o (Nothing)
+--        i <- declare o (Nothing)
         undefined
       Delay d s -> do
-        i <- declare o (Just d)
+--        i <- declare o (Just d)
         undefined
       Mux s cs -> do
-        i <- declare o (Nothing)
+--        i <- declare o (Nothing)
         undefined
 
-    declare :: forall a. Link i a -> Maybe (E i a) -> Program i ()
-    declare (Link ns) = dist (witness :: Wit i a) ns
+    init :: forall a. Link i a -> M i ()
+    init (Link names) = dist (witness :: Wit i a) names
       where
-        dist :: Wit i x -> Names (S Symbol i x) -> Maybe (E i x) -> Program i ()
-        dist (WE)     (ns)   me =
-          do i <- HDL.variableL me
-             return ()
-        dist (WP l r) (u, v) me =
-          do x <- dist l u (fmap fst me)
-             y <- dist r v (fmap snd me)
-             return ()
+        dist :: Wit i x -> Names (S Symbol i x) -> M i ()
+        dist (WE)     (Named n) = declare n Nothing
+        dist (WP l r) (u, v)    = dist l u >> dist r v
+
+declare
+  :: ( HDL.SequentialCMD (IExp i) :<: i
+     , HDL.PredicateExp  (IExp i) a)
+  => Name (S sym i (Identity a))
+  -> Maybe (IExp i a)
+  -> M i ()
+declare n e = do
+  i <- CMS.lift $ HDL.variableL e
+  CMS.modify (insert n i)
+  
 
 --------------------------------------------------------------------------------
 {-
