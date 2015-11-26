@@ -6,7 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler (compiler, compile) where
+module Signal.Compiler {-(compiler, compile)-} where
 
 import Signal.Core               (S(..), Symbol(..), Sig, E(..))
 import Signal.Core.Stream
@@ -48,8 +48,11 @@ import Language.Embedded.VHDL.Expression.Type (Kind)
 import qualified Language.VHDL                          as VHDL
 import qualified Language.Embedded.VHDL                 as HDL
 import qualified Language.Embedded.VHDL.Expression.Type as HDL
+
 import Prelude           hiding (read, Left, Right)
 import qualified Prelude as P
+
+import Debug.Trace
 
 --------------------------------------------------------------------------------
 -- * Compilation
@@ -57,7 +60,7 @@ import qualified Prelude as P
 
 -- | Monad used for compilation
 type Gen i = ReaderT (Channels i) (Program i)
-
+{-
 read :: forall i a. CompileExp (IExp i) => Ident i a -> E i a
 read (Ident i _ _) = dist (witness :: Wit i a) i
   where
@@ -73,10 +76,10 @@ write (Ident i kind _) = dist (witness :: Wit i a) i
       HDL.Variable -> i HDL.==: exp
       HDL.Signal   -> i HDL.<== exp
     dist (WP l r) (u, v) (x, y) = dist l u x >> dist r v y
-
+-}
 --------------------------------------------------------------------------------
 -- **
-
+{-
 comp'
   :: forall i.
      ( Compile       (IExp i)
@@ -125,7 +128,8 @@ comp' (Ordered (Key name)) =
 
     run :: Channels i -> Gen i x -> Program i x
     run = flip CMR.runReaderT
-
+-}
+{-
 decl' 
   :: ( PredicateExp  (IExp i) a
      , SequentialCMD (IExp i) :<: i
@@ -143,19 +147,19 @@ decl' ident kind scope exp = CMS.lift $ case kind of
   HDL.Signal   -> case scope of
     Header -> void $ HDL.signalPort ident HDL.Out exp
     Global ->        HDL.signalG    ident exp
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- | Swap a delay's identifier back from its `opposite` to the original
 swap :: Ident i (Identity a) -> Ident i (Identity a)
 swap (Ident (Identified i)            k s) =
      (Ident (Identified (opposite i)) k s)
-
+-}
 --------------------------------------------------------------------------------
 -- **
 
 type Order i = [Ordered i]
-
+{-
 compile'
   :: forall i a.
      ( Compile       (IExp i)
@@ -170,7 +174,7 @@ compile'
   -> Str      i a             -- output
 compile' out channels order = Stream $ inArchitecture "arch" $
   do let inp@(delays, nodes) = split channels order
-     clk <- HDL.clock
+     clk <- undefined --HDL.clock
      run $ do
        inProcess "combinatorial" (sens inp) $
          do mapM_ comp' nodes
@@ -183,7 +187,8 @@ compile' out channels order = Stream $ inArchitecture "arch" $
   where
     run :: Gen i x -> Program i (Program i x)
     run = return . flip CMR.runReaderT (markRoot out channels)
-
+-}
+{-
     sens :: (Order i, Order i) -> [Identifier]
     sens (delays, nodes) =
         inputs channels nodes ++ concatMap ids delays
@@ -191,26 +196,30 @@ compile' out channels order = Stream $ inArchitecture "arch" $
         ids :: Ordered i -> [Identifier]
         ids (Ordered (Key name)) = case RMap.lookup name channels of
           Just (Channel (Delay {}) i) -> collect i
-
+-}
+{-
     when :: IExp i Bool -> Gen i () -> Gen i ()
     when exp = CMR.mapReaderT (HDL.when exp)
-
+-}
+{-
     update :: Ordered i -> Gen i ()
     update (Ordered (Key name)) = do
       (Channel (Delay {}) ident) <- CMR.asks (fromJust . RMap.lookup name)
       write ident (read (swap ident))
-
+-}
+{-
     exit :: Key i (Identity a) -> Gen i (IExp i a)
     exit (Key name) = do
       (Channel _ ident) <- CMR.asks (fromJust . RMap.lookup name)
       return $ read ident
-
+-}
+{-
     -- *** this is very hacky, as it assumes `IExp i` to be `HDL.Exp`
     rising :: CompileExp (IExp i) => Identifier -> IExp i Bool
-    rising (VHDL.Ident i) = HDL.varE $ VHDL.Ident $ "rising_edge(" ++ i ++ ")"
-
+    rising (VHDL.Ident i) = undefined --HDL.varE $ VHDL.Ident $ "rising_edge(" ++ i ++ ")"
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- *** I don't like how it needs to lookup every ordered name
 split :: Channels i -> Order i -> (Order i, Order i)
 split c = partitionEithers . fmap sort
@@ -219,7 +228,8 @@ split c = partitionEithers . fmap sort
     sort ord@(Ordered (Key name)) = case RMap.lookup name c of
       Just (Channel (Delay {}) _) -> P.Left  ord
       _                           -> P.Right ord
-
+-}
+{-
 inputs :: Channels i -> Order i -> [Identifier]
 inputs c = concatMap vars
   where
@@ -227,7 +237,8 @@ inputs c = concatMap vars
     vars ord@(Ordered (Key name)) = case RMap.lookup name c of
       Just (Channel (Var {}) i) -> collect i
       _                         -> []
-
+-}
+{-
 -- *** This could easily be improved by not using lists internally
 collect :: forall i a. Ident i a -> [Identifier]
 collect (Ident is _ _) = dist (witness :: Wit i a) is
@@ -235,7 +246,8 @@ collect (Ident is _ _) = dist (witness :: Wit i a) is
     dist :: Wit i x -> Identifiers (S Symbol i x) -> [Identifier]
     dist (WE) (Identified i) = [i]
     dist (WP l r) (u, v)     = dist l u ++ dist r v
-
+-}
+{-
 -- | Mark a key as root, giving it a signal kind and marking it as a port
 markRoot :: Key i a -> Channels i -> Channels i
 markRoot (Key name) = RMap.adjust update name
@@ -243,7 +255,7 @@ markRoot (Key name) = RMap.adjust update name
     update :: Channel i a -> Channel i a
     update c = case c of
       Channel node (Ident i _ _) -> Channel node (Ident i HDL.Signal Header)
-
+-}
 --------------------------------------------------------------------------------
 
 inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Gen i () -> Gen i ()
@@ -254,7 +266,7 @@ inArchitecture name = fmap (HDL.architecture name)
 
 --------------------------------------------------------------------------------
 -- **
-
+{-
 -- | Compile signal functions into stream functions
 compiler
   :: ( Compile       (IExp i)
@@ -279,10 +291,10 @@ compiler f =
          let filtered = RMap.filter useful links
              channels = fromLinks filtered
           in const $ compile' root channels order
-
+-}
 --------------------------------------------------------------------------------
 -- | Compile signals into streams
-
+{-
 compile
   :: ( Compile       (IExp i)
      , CompileExp    (IExp i)
@@ -298,25 +310,13 @@ compile f =
      let order = sorter root  nodes
          cycle = cycles root  nodes
          links = linker order nodes
-
-     if null order
-       then putStrLn "Order null!"
-       else putStrLn "Order done!"
-     if cycle
-       then putStrLn "Cycle found"
-       else putStrLn "Cycle done!"
-     if RMap.null links
-       then putStrLn "Links null!"
-       else putStrLn "Links done!"
-
-     case cycle of
+     return $ case cycle of
        True  -> error "signal compiler: found cycle"
-       False -> do
+       False ->
          let filtered = RMap.filter useful links
              channels = fromLinks filtered
-         putStrLn "Compiling..."
-         return $ compile' root channels order
-
+          in compile' root channels order
+-}
 --------------------------------------------------------------------------------
 
 -- | Usefulness refers to whether we should generate code for the node or not
