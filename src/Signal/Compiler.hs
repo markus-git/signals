@@ -59,15 +59,18 @@ import Debug.Trace
 --------------------------------------------------------------------------------
 
 -- | Monad used for compilation
-type Gen i = ReaderT (Channels i) (Program i)
-{-
-read :: forall i a. CompileExp (IExp i) => Ident i a -> E i a
-read (Ident i _ _) = dist (witness :: Wit i a) i
-  where
-    dist :: Wit i x -> Identifiers (S Symbol i x) -> E i x
-    dist (WE) (Identified i) = HDL.varE i
-    dist (WP l r) (u, v)     = (dist l u, dist r v)
+type Gen i = ReaderT Channels (Program i)
 
+read :: forall i a. CompileExp (IExp i) => Link i a -> Gen i (E i a)
+read (Link names) = dist (witness :: Wit i a) names
+  where
+    dist :: Wit i x -> Names (S Symbol i x) -> Gen i (E i x)
+    dist (WE)     (name) = undefined -- ???
+    dist (WP l r) (u, v) =
+      do x <- dist l u
+         y <- dist r v
+         return (x, y)
+{-
 write :: forall i a. (SequentialCMD (IExp i) :<: i) => Ident i a -> E i a -> Gen i ()
 write (Ident i kind _) = dist (witness :: Wit i a) i
   where

@@ -90,6 +90,7 @@ fromList es = CMS.execStateT (mapM_ go es) (Channels IMap.empty)
         Delay d s -> do
           declare n (Just d)
           -- ??? 'opposite' ???
+          -- declare ? (Nothing)
         Mux s cs -> do
           init o
 
