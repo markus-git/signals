@@ -58,7 +58,13 @@ insert name ident (Channels m) = Channels (IMap.insert (hash name) ident m)
 --------------------------------------------------------------------------------
 -- ** ...
 
-fromLinks :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => Links i -> Channels
+fromLinks
+  :: forall i.
+     ( HDL.SequentialCMD (IExp i) :<: i
+     , HDL.ConcurrentCMD (IExp i) :<: i
+     )
+  => Links i
+  -> Channels
 fromLinks ls = undefined
   where
     cs :: Program i Channels
@@ -68,41 +74,45 @@ fromLinks ls = undefined
 
 type M i = StateT Channels (Program i)
 
-fromList :: forall i. (HDL.SequentialCMD (IExp i) :<: i) => [Entry (Linked i)] -> Program i Channels
-fromList es = undefined
+fromList
+  :: forall i.
+     ( HDL.SequentialCMD (IExp i) :<: i
+     , HDL.ConcurrentCMD (IExp i) :<: i
+     )
+  => [Entry (Linked i)]
+  -> Program i Channels
+fromList es = CMS.execStateT (mapM_ go es) (Channels IMap.empty)
   where
-    go :: Entry (Linked i) -> Channels -> M i ()
-    go (RMap.Entry name (Linked node o)) m = case node of
-      Repeat c -> do
---        i <- declare o (Just c)
-        undefined
-      Map f s -> do
---        i <- declare o (Nothing)
-        undefined
-      Delay d s -> do
---        i <- declare o (Just d)
-        undefined
-      Mux s cs -> do
---        i <- declare o (Nothing)
-        undefined
+    go :: Entry (Linked i)  -> M i ()
+    go (RMap.Entry name (Linked node o@(Link n))) =
+      case node of
+        Repeat c -> do
+          declare n (Just c)
+        Map f s -> do
+          init o
+        Delay d s -> do
+          declare n (Just d)
+          -- ??? 'opposite' ???
+        Mux s cs -> do
+          init o
 
     init :: forall a. Link i a -> M i ()
     init (Link names) = dist (witness :: Wit i a) names
       where
         dist :: Wit i x -> Names (S Symbol i x) -> M i ()
-        dist (WE)     (Named n) = declare n Nothing
-        dist (WP l r) (u, v)    = dist l u >> dist r v
+        dist (WE)     (name) = declare name Nothing
+        dist (WP l r) (u, v) = dist l u >> dist r v
 
+-- | Declares a VHDL variable for a name with, possibly, some init value
 declare
   :: ( HDL.SequentialCMD (IExp i) :<: i
      , HDL.PredicateExp  (IExp i) a)
-  => Name (S sym i (Identity a))
+  => Named (S sym i (Identity a))
   -> Maybe (IExp i a)
   -> M i ()
-declare n e = do
+declare (Named n) e = do
   i <- CMS.lift $ HDL.variableL e
-  CMS.modify (insert n i)
-  
+  CMS.modify (insert n i)  
 
 --------------------------------------------------------------------------------
 {-
