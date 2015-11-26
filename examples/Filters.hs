@@ -28,7 +28,7 @@ import qualified Prelude as P
 type CMD exp = SequentialCMD exp :+: ConcurrentCMD exp :+: HeaderCMD exp
 
 -- | Short-hand for the expression type we will use
-type E = Expr
+type E = Data
 
 -- | Short-hand for signals over our commands
 type S = Sig (CMD E)
@@ -37,14 +37,14 @@ type S = Sig (CMD E)
 type Sr a = Str (CMD E) a
 
 -- | ...
-instance Compile Expr
+instance Compile Data
   where
     literal = litE
 
 --------------------------------------------------------------------------------
 -- ** Some simple signal functions
 
-type Ok a = (Rep a, Typeable a)
+type Ok a = (Type a, Typeable a)
 
 repeat :: Ok a => E a -> S a
 repeat = lift0
@@ -56,7 +56,7 @@ zipWith :: Ok a => (E a -> E a -> E a) -> S a -> S a -> S a
 zipWith f = lift2 f
 
 --------------------------------------------------------------------------------
--- ** Some simple circuits
+-- ** Some _very_ simple signals
 
 high, low :: E Bool
 high = litE True
@@ -64,6 +64,9 @@ low  = litE False
 
 inv :: S Bool -> S Bool
 inv = lift1 E.not
+
+--------------------------------------------------------------------------------
+-- ** Some simple circuits
 
 and2 :: S Bool -> S Bool -> S Bool
 and2 = zipWith E.and
@@ -125,6 +128,12 @@ compSF f a =
      return . void . run . prog . Stream . return . return $ a
 
 --------------------------------------------------------------------------------
+
+testInv :: IO ()
+testInv = do
+  x <- compS (inv (repeat high))
+  putStrLn "Done!"
+  putStrLn $ V.compile x
 
 testRec :: IO ()
 testRec = compS toggle >>= putStrLn . V.compile

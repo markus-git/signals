@@ -38,16 +38,16 @@ import qualified Data.IntMap  as IMap
 import qualified Data.Ref.Map as RMap
 
 import Language.VHDL          (Identifier)
-import Language.Embedded.VHDL ( Kind
-                              , Mode
+import Language.Embedded.VHDL ( Mode
                               , PredicateExp
                               , CompileExp
                               , SequentialCMD
                               , ConcurrentCMD
                               , HeaderCMD)
-import qualified Language.VHDL          as VHDL
-import qualified Language.Embedded.VHDL as HDL
-
+import Language.Embedded.VHDL.Expression.Type (Kind)
+import qualified Language.VHDL                          as VHDL
+import qualified Language.Embedded.VHDL                 as HDL
+import qualified Language.Embedded.VHDL.Expression.Type as HDL
 import Prelude           hiding (read, Left, Right)
 import qualified Prelude as P
 
@@ -298,12 +298,24 @@ compile f =
      let order = sorter root  nodes
          cycle = cycles root  nodes
          links = linker order nodes
-     return $ case cycle of
+
+     if null order
+       then putStrLn "Order null!"
+       else putStrLn "Order done!"
+     if cycle
+       then putStrLn "Cycle found"
+       else putStrLn "Cycle done!"
+     if RMap.null links
+       then putStrLn "Links null!"
+       else putStrLn "Links done!"
+
+     case cycle of
        True  -> error "signal compiler: found cycle"
-       False ->
+       False -> do
          let filtered = RMap.filter useful links
              channels = fromLinks filtered
-          in compile' root channels order
+         putStrLn "Compiling..."
+         return $ compile' root channels order
 
 --------------------------------------------------------------------------------
 
