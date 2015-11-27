@@ -5,6 +5,7 @@
 
 module Signal.Compiler.Sorter (
     Ordered(..)
+  , Orders(..)
   , sorter
   )
 where
@@ -110,16 +111,18 @@ sort' r =
 --------------------------------------------------------------------------------
 
 -- | Ordered keys with a witness constraint for well-formedness
-data Ordered i
-  where
-    Ordered :: Witness i a => Key i a -> Ordered i
+data Ordered i where
+  Ordered :: Key i a -> Ordered i
 
 -- | Comparing ordered keys is the same as comparing the keys
 instance Eq (Ordered i) where
   Ordered (Key l) == Ordered (Key r) = l `eqStableName` r
 
+-- | ...
+type Orders i = [Ordered i]
+
 -- | Given a root and a set of graph nodes, a topological ordering is produced
-sorter :: Key i a -> Nodes i -> [Ordered i]
+sorter :: Key i a -> Nodes i -> Orders i
 sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort' n
   where
     init :: Nodes i -> Map (Tagged i)
