@@ -8,7 +8,7 @@
 
 module Signal.Compiler {-(compiler, compile)-} where
 
-import Signal.Core               (S(..), Symbol(..), Sig, E(..))
+import Signal.Core (S(..), Symbol(..), Sig, E(..))
 import Signal.Core.Stream
 import Signal.Core.Reify
 import Signal.Core.Witness
@@ -17,7 +17,8 @@ import Signal.Compiler.Interface
 import Signal.Compiler.Cycles
 import Signal.Compiler.Sorter
 import Signal.Compiler.Linker
-import Signal.Compiler.Channels
+import Signal.Compiler.Channels (Channels)
+import qualified Signal.Compiler.Channels as Chan
 
 import Control.Arrow             (first)
 import Control.Monad.Identity    (Identity)
@@ -37,22 +38,15 @@ import Data.Ref.Map (Name, Map)
 import qualified Data.IntMap  as IMap
 import qualified Data.Ref.Map as RMap
 
-import Language.VHDL          (Identifier)
-import Language.Embedded.VHDL ( Mode
-                              , PredicateExp
-                              , CompileExp
-                              , SequentialCMD
-                              , ConcurrentCMD
-                              , HeaderCMD)
+import Language.VHDL (Identifier)
+import Language.Embedded.VHDL (Mode, PredicateExp, CompileExp, SequentialCMD, ConcurrentCMD, HeaderCMD)
 import Language.Embedded.VHDL.Expression.Type (Kind)
 import qualified Language.VHDL                          as VHDL
 import qualified Language.Embedded.VHDL                 as HDL
 import qualified Language.Embedded.VHDL.Expression.Type as HDL
 
-import Prelude           hiding (read, Left, Right)
+import Prelude hiding (read, Left, Right)
 import qualified Prelude as P
-
-import Debug.Trace
 
 --------------------------------------------------------------------------------
 -- * Compilation
@@ -61,42 +55,57 @@ import Debug.Trace
 -- | Monad used for compilation
 type Gen i = ReaderT Channels (Program i)
 
+-- exploits the behaviour of HDL.genSym and HDL.compiler.
+identifier :: (CompileExp exp, PredicateExp exp a) => Identifier -> exp a
+identifier (VHDL.Ident ('v':i)) = HDL.varE (P.read i :: Integer)
+
 read :: forall i a. CompileExp (IExp i) => Link i a -> Gen i (E i a)
 read (Link names) = dist (witness :: Wit i a) names
   where
     dist :: Wit i x -> Names (S Symbol i x) -> Gen i (E i x)
-    dist (WE)     (name) = undefined -- ???
+    dist (WE) (Named n)  =
+      do chan <- CMR.asks (Chan.lookup n)
+         return $ case chan of
+           Nothing -> error "missing channel in read!"
+           Just (Chan.Channel i _) -> identifier i
     dist (WP l r) (u, v) =
       do x <- dist l u
          y <- dist r v
          return (x, y)
-{-
-write :: forall i a. (SequentialCMD (IExp i) :<: i) => Ident i a -> E i a -> Gen i ()
-write (Ident i kind _) = dist (witness :: Wit i a) i
+
+write :: forall i a. (SequentialCMD (IExp i) :<: i) => Link i a -> E i a -> Gen i ()
+write (Link names) = dist (witness :: Wit i a) names
   where
-    dist :: Wit i x -> Identifiers (S Symbol i x) -> E i x -> Gen i ()
-    dist (WE) (Identified i) exp = CMS.lift $ case kind of
-      HDL.Variable -> i HDL.==: exp
-      HDL.Signal   -> i HDL.<== exp
-    dist (WP l r) (u, v) (x, y) = dist l u x >> dist r v y
--}
+    dist :: Wit i x -> Names (S Symbol i x) -> E i x -> Gen i ()
+    dist (WE) (Named n) (exp)   =
+      do chan <- CMR.asks (Chan.lookup n)
+         CMR.lift $ case chan of
+           Nothing -> error "missing channel in write!"
+           Just (Chan.Channel i HDL.Signal)   -> i HDL.<== exp
+           Just (Chan.Channel i HDL.Variable) -> i HDL.==: exp
+    dist (WP l r) (u, v) (x, y) =
+      do dist l u x
+         dist r v y
+
 --------------------------------------------------------------------------------
 -- **
-{-
-comp'
-  :: forall i.
+
+compileSym
+  :: forall i a.
      ( Compile       (IExp i)
      , CompileExp    (IExp i)
      , SequentialCMD (IExp i) :<: i
-     , ConcurrentCMD (IExp i) :<: i
-     , HeaderCMD     (IExp i) :<: i)
-  => Ordered i
-  -> Gen     i ()
-comp' (Ordered (Key name)) =
-  do env <- CMR.asks (RMap.lookup name)
-     case env of
-       Nothing                 -> return ()
-       Just (Channel node out) -> case node of
+     , ConcurrentCMD (IExp i) :<: i)
+  => Linked i a
+  -> Gen    i ()
+compileSym (Linked sym out) = case sym of
+  Repeat c -> do
+    undefined
+    
+{-
+       case sym of
+       Nothing  -> return ()
+       Just node -> case node of
          Repeat c -> do
            declare out Nothing
            write out c
@@ -114,7 +123,9 @@ comp' (Ordered (Key name)) =
                choices = fmap (run env . write out . read) r
            CMS.lift $ HDL.switch (read s) (zip l choices) (Nothing)
          Var d -> do
-            declare out Nothing
+           declare out Nothing
+-}
+{-            
   where
     declare :: forall a. Ident i a -> Maybe (E i a) -> Gen i ()
     declare (Ident i k s) me = dist (witness :: Wit i a) i me
