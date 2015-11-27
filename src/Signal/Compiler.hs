@@ -87,6 +87,9 @@ write (Link names) = dist (witness :: Wit i a) names
       do dist l u x
          dist r v y
 
+swap :: Link i (Identity a) -> Link i (Identity a)
+swap (Link name) = Link (other name)
+
 --------------------------------------------------------------------------------
 -- **
 
@@ -106,7 +109,7 @@ compileSym (Linked sym out) = case sym of
     write out (f x)
   Delay d s -> do
     x <- read s
-    undefined -- ??? write (opposite_delay_name out) x
+    write (swap out) x
   Mux s cs -> do
     env <- CMR.ask
     let (ls, rs) = unzip cs
@@ -120,12 +123,13 @@ compileSym (Linked sym out) = case sym of
 
 updateSym
   :: forall i a.
-     (SequentialCMD (IExp i) :<: i)
+     ( CompileExp    (IExp i)
+     , SequentialCMD (IExp i) :<: i)
   => Linked i a
   -> Gen    i ()
 updateSym (Linked sym out) = case sym of
   Delay d s -> do
-    x <- undefined -- ??? read (opposite_delay_name out)
+    x <- read (swap out)
     write out x
   _ -> return ()
 

@@ -29,12 +29,14 @@ data Named a
     Named  :: Name  (S sym i a)      -> Named (S sym i a)
     Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
     Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
+    Other  :: Named (S sym i a)      -> Named (S sym i a)
 
 instance Hashable (Named a)
   where
     hashWithSalt s (Named  n) = s `hashWithSalt` n
     hashWithSalt s (Lefty  l) = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
     hashWithSalt s (Righty r) = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
+    hashWithSalt s (Other  n) = s `hashWithSalt` (2 :: Int) `hashWithSalt` n
 
 --------------------------------------------------------------------------------
 -- ** Naming wires, i.e distributing one wire's name over its subwires
@@ -49,5 +51,9 @@ name n = go (witness :: Wit i a) (Named n)
     go :: Wit i x -> Named (S sym i x) -> Names (S sym i x)
     go (WE)     n = n
     go (WP l r) n = (go l (Lefty n), go r (Righty n))
+
+-- | ...
+other :: Names (S sym i (Identity a)) -> Names (S sym i (Identity a))
+other = Other
 
 --------------------------------------------------------------------------------

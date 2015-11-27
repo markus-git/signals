@@ -103,7 +103,8 @@ fromList (Key key) es =
         Map f s -> do
           init o
         Delay d s -> do
-          declare n HDL.Signal Global (Just d)
+          declare n         HDL.Signal Global (Just d)
+          declare (other n) HDL.Signal Global (Nothing)
           -- ??? 'opposite' ???
           -- declare ? (Nothing)
         Mux s cs -> do
