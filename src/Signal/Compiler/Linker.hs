@@ -11,6 +11,8 @@ module Signal.Compiler.Linker (
   , Links    
   , linker
 
+  , Hide(..)
+
     -- ^ re-export of naming constructs
   , module Signal.Compiler.Linker.Names
   )
