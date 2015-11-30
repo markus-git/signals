@@ -63,8 +63,8 @@ read :: forall i a. CompileExp (IExp i) => Link i a -> Gen i (E i a)
 read (Link names) = dist (witness :: Wit i a) names
   where
     dist :: Wit i x -> Names (S Symbol i x) -> Gen i (E i x)
-    dist (WE) (Named n)  =
-      do chan <- CMR.asks (Chan.lookup n)
+    dist (WE) (name) =
+      do chan <- CMR.asks (Chan.lookup name)
          return $ case chan of
            Nothing -> error "missing channel in read!"
            Just (Chan.Channel i _) -> identifier i
@@ -77,8 +77,8 @@ write :: forall i a. (SequentialCMD (IExp i) :<: i) => Link i a -> E i a -> Gen 
 write (Link names) = dist (witness :: Wit i a) names
   where
     dist :: Wit i x -> Names (S Symbol i x) -> E i x -> Gen i ()
-    dist (WE) (Named n) (exp)   =
-      do chan <- CMR.asks (Chan.lookup n)
+    dist (WE) (name) (exp) =
+      do chan <- CMR.asks (Chan.lookup name)
          CMR.lift $ case chan of
            Nothing -> error "missing channel in write!"
            Just (Chan.Channel i HDL.Signal)   -> i HDL.<== exp
@@ -193,7 +193,7 @@ inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Gen i (
 inProcess name = CMR.mapReaderT . HDL.process name
 
 inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i a) -> Program i (Program i a)
-inArchitecture name = fmap (HDL.architecture name)
+inArchitecture name = return . HDL.architecture name . join
 
 --------------------------------------------------------------------------------
 -- **
