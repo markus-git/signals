@@ -135,6 +135,6 @@ linker order nodes = snd . flip evalState nodes . tie solve $ forM_ order link'
     solve = foldr ins M.empty
 
     ins :: Item i -> Links i -> Links i
-    ins (Hide (Pair n l)) = M.insert (Data.Ref.Ref n undefined) l
+    ins (Hide (Pair n l)) = M.insert (Data.Ref.Ref n (error "lazy")) l
 
 --------------------------------------------------------------------------------
