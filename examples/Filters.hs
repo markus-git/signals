@@ -130,10 +130,7 @@ compSF f a =
 --------------------------------------------------------------------------------
 
 testInv :: IO ()
-testInv = do
-  x <- compS (inv (repeat high))
-  putStrLn "Done!"
-  putStrLn $ V.compile x
+testInv = compS (inv (repeat high)) >>= putStrLn . V.compile
 
 testRec :: IO ()
 testRec = compS toggle >>= putStrLn . V.compile
