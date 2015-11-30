@@ -105,8 +105,6 @@ fromList (Key key) es =
         Delay d s -> do
           declare n         HDL.Signal Global (Just d)
           declare (other n) HDL.Signal Global (Nothing)
-          -- ??? 'opposite' ???
-          -- declare ? (Nothing)
         Mux s cs -> do
           init o
 
@@ -131,17 +129,18 @@ fromList (Key key) es =
       -> Maybe (IExp i b)
       -> M i ()
     declare (Named n) kind scope e
-      | key `eqStableName` n =
-          do i <- CMS.lift $ HDL.signalPort HDL.In e
-             CMS.modify (insert n i HDL.Signal)
-      | otherwise =
-          do i <- CMS.lift $ case kind of
-               HDL.Variable -> case scope of
-                 Local  -> HDL.variableL e
-               HDL.Signal -> case scope of
-                 Port   -> HDL.signalPort HDL.Out e
-                 Global -> HDL.signalG e
-             CMS.modify (insert n i undefined)  
+      | key `eqStableName` n = decl (HDL.signalPort HDL.In e) HDL.Signal
+      | otherwise = case kind of
+          HDL.Variable -> case scope of
+            Local  -> decl (HDL.variableL e) HDL.Variable
+          HDL.Signal -> case scope of
+            Port   -> decl (HDL.signalPort HDL.Out e) HDL.Signal
+            Global -> decl (HDL.signalG e) HDL.Signal
+      where
+        decl :: Program i Identifier -> Kind -> M i ()
+        decl p k = do
+          i <- CMS.lift p
+          CMS.modify (insert n i k)
 
 -- | Usefulness refers to whether we should generate code for the node or not
 useful :: RMap.Entry (Linked i) -> Bool
