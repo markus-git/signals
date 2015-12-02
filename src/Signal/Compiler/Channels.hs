@@ -104,15 +104,15 @@ declareSignals (Key key) links =
           Repeat  c -> do
             port   (single) HDL.Out (Just c)
           Delay d s -> do
-            port   (single) HDL.Out (Nothing)
-            signal (other single)   (Just d)
+            port   (other single) HDL.Out (Nothing)
+            signal (single) (Just d)
           Var   d   -> nested HDL.InOut o
           _         -> nested HDL.Out   o
       | otherwise = case node of
           Var   d   -> nested HDL.In o
           Delay d s -> do
-            signal (single)       (Nothing)
-            signal (other single) (Just d)
+            signal (other single) (Nothing)
+            signal (single)       (Just d)
           _         -> return ()
 
     nested :: forall b. Mode -> Link i b -> M i ()
