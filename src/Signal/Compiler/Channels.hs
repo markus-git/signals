@@ -51,99 +51,149 @@ import Prelude hiding (Left, Right)
 -- * Compiler constructs
 --------------------------------------------------------------------------------
 
-data Scope   = Local | Global | Port
+data Scope = Local | Global | Port
 
 data Channel = Channel Identifier Kind
 
 newtype Channels = Channels { runChannels :: IMap.IntMap Channel }
 
+--------------------------------------------------------------------------------
+-- ** ...
+
+-- | Lookup channel
 lookup :: Named a -> Channels -> Maybe Channel
 lookup name (Channels m) = IMap.lookup (hash name) m
 
+-- | Insert new channel of given kind
 insert :: Named a -> Identifier -> Kind -> Channels -> Channels
 insert name i k (Channels m) = Channels (IMap.insert (hash name) (Channel i k) m)
+
+-- | Left join of two channel sets
+with   :: Channels -> Channels -> Channels
+with (Channels m) (Channels n) = Channels (IMap.unionWith const m n)
 
 --------------------------------------------------------------------------------
 -- ** ...
 
-fromLinks
-  :: forall i a.
-     ( HDL.SequentialCMD (IExp i) :<: i
-     , HDL.ConcurrentCMD (IExp i) :<: i
-     , HDL.HeaderCMD     (IExp i) :<: i
-     )
-  => Key i (Identity a)
-  -> Links i
-  -> Program i Channels
-fromLinks key = fromList key . filter useful . RMap.elems
-
---------------------------------------------------------------------------------
-
 type M i = StateT Channels (Program i)
 
-fromList
+-- | ...
+--
+-- A number of special cases are included in order to account for root nodes.
+--   - Roots are always uninitialized output ports, unless
+--     * It's a Repeat node, then it is initialized
+--     * It's a Delay  node, then a initialized signal is also declared
+--     * It's a Var    node, then the node is both an input and output signal
+--   - If they aren't roots, then
+--     * Variable nodes are still declared as ports
+--     * Delays produce two signals
+declareSignals
   :: forall i a.
-     ( HDL.SequentialCMD (IExp i) :<: i
+     ( HDL.HeaderCMD     (IExp i) :<: i
      , HDL.ConcurrentCMD (IExp i) :<: i
-     , HDL.HeaderCMD     (IExp i) :<: i
      )
   => Key i (Identity a)
   -> [Entry (Linked i)]
   -> Program i Channels
-fromList (Key key) es = CMS.execStateT (mapM_ go es) (Channels IMap.empty)
+declareSignals (Key key) entries =
+    CMS.execStateT (mapM_ declare entries) (Channels IMap.empty)
   where
-    go :: Entry (Linked i)  -> M i ()
-    go (RMap.Entry name (Linked node o@(Link n))) =
-      case node of
-        Var d    -> nested o
-        Map f s  -> nested o
-        Mux s cs -> nested o
-        Repeat c -> case n of 
-          Named name ->
-            if key `eqStableName` name
-               then declare n HDL.Signal   HDL.Out Port  (Just c)
-               else declare n HDL.Variable HDL.Out Local (Just c)
-        Delay d s -> case n of
-          Named name -> do
-            if key `eqStableName` name
-               then declare (other n) HDL.Signal HDL.InOut Port   Nothing
-               else declare (other n) HDL.Signal HDL.Out   Global Nothing
-            declare n HDL.Signal HDL.Out Global (Just d)
+    declare :: Entry (Linked i) -> M i ()
+    declare (RMap.Entry name (Linked node o@(Link single)))
+      | name `eqStableName` key = case node of
+          Repeat  c -> do
+            port   (single) HDL.Out (Just c)
+          Delay d s -> do
+            port   (single) HDL.Out (Nothing)
+            signal (other single)   (Just d)
+          Var   d   -> nested HDL.InOut o
+          _         -> nested HDL.Out   o
+      | otherwise = case node of
+          Var   d   -> nested HDL.In o
+          Delay d s -> do
+            signal (single)       (Nothing)
+            signal (other single) (Just d)
+          _         -> return ()
+
+    nested :: forall b. Mode -> Link i b -> M i ()
+    nested mode (Link names) = dist (witness :: Wit i b) names
+      where
+        dist :: Wit i x -> Names (S Symbol i x) -> M i ()
+        dist (WP l r) (u, v) = dist l u >> dist r v
+        dist (WE)     (name) = port name mode (Nothing :: Maybe (IExp i x))
+
+--------------------------------------------------------------------------------
+-- ** ...
+
+-- | ...
+declareVariables
+  :: forall i a.
+     (HDL.SequentialCMD (IExp i) :<: i)
+  => Key i (Identity a)
+  -> [Entry (Linked i)]
+  -> Program i Channels
+declareVariables (Key key) entries =
+    CMS.execStateT (mapM_ declare entries) (Channels IMap.empty)
+  where
+    declare :: Entry (Linked i) -> M i ()
+    declare (RMap.Entry name (Linked node o@(Link single)))
+      | name `eqStableName` key = return () -- it's already declared
+      | otherwise = case node of
+          Repeat c -> variable single (Just c)
+          Map _ _  -> nested o
+          Mux _ _  -> nested o
+          _        -> return ()
 
     nested :: forall b. Link i b -> M i ()
     nested (Link names) = dist (witness :: Wit i b) names
       where
         dist :: Wit i x -> Names (S Symbol i x) -> M i ()
-        dist (WE) name@(Named n) =
-          if key `eqStableName` n
-             then declare name HDL.Signal   HDL.Out Port  Nothing
-             else declare name HDL.Variable HDL.In  Local Nothing
-        dist (WP l r) (u, v) =
-          do dist l u
-             dist r v
+        dist (WP l r) (u, v) = dist l u >> dist r v
+        dist (WE)     (name) = variable name (Nothing :: Maybe (IExp i x))
 
-    declare
-      :: forall b.
-         ( HDL.SequentialCMD (IExp i) :<: i
-         , HDL.ConcurrentCMD (IExp i) :<: i
-         , HDL.PredicateExp  (IExp i) b)
-      => Named (S Symbol i (Identity b))
-      -> Kind
-      -> Mode
-      -> Scope
-      -> Maybe (IExp i b)
-      -> M i ()
-    declare name kind mode scope e = case kind of
-      HDL.Variable -> case scope of
-        Local  -> decl (HDL.variableL e) HDL.Variable
-      HDL.Signal   -> case scope of
-        Port   -> decl (HDL.signalPort mode e) HDL.Signal
-        Global -> decl (HDL.signalG e) HDL.Signal
-      where
-        decl :: Program i Identifier -> Kind -> M i ()
-        decl p k = do
-          i <- CMS.lift p
-          CMS.modify (insert name i k)
+--------------------------------------------------------------------------------
+
+-- | ...
+port
+  :: forall i a.
+     ( HDL.HeaderCMD    (IExp i) :<: i
+     , HDL.PredicateExp (IExp i) a
+     )
+  => Named (S Symbol i (Identity a))
+  -> Mode
+  -> Maybe (IExp i a)
+  -> M i ()
+port name mode exp = do
+  i <- CMS.lift (HDL.signalPort mode exp)
+  CMS.modify (insert name i HDL.Signal)
+
+-- | ...
+signal
+  :: forall i a.
+     ( HDL.ConcurrentCMD (IExp i) :<: i
+     , HDL.PredicateExp  (IExp i) a
+     )
+  => Named (S Symbol i (Identity a))
+  -> Maybe (IExp i a)
+  -> M i ()
+signal name exp = do
+  i <- CMS.lift (HDL.signalG exp)
+  CMS.modify (insert name i HDL.Signal)
+
+-- | ...
+variable
+  :: forall i a.
+     ( HDL.SequentialCMD (IExp i) :<: i
+     , HDL.PredicateExp  (IExp i) a
+     )
+  => Named (S Symbol i (Identity a))
+  -> Maybe (IExp i a)
+  -> M i ()
+variable name exp = do
+  i <- CMS.lift (HDL.variableL exp)
+  CMS.modify (insert name i HDL.Variable)
+
+--------------------------------------------------------------------------------
 
 -- | Usefulness refers to whether we should generate code for the node or not
 useful :: RMap.Entry (Linked i) -> Bool
