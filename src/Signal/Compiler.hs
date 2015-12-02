@@ -150,31 +150,28 @@ compileSig
   -> Str    i a
 compileSig key links ords = Stream . inArchitecture "arch" $
   do let (delays, nodes) = filterDelays links ords
-     channels <- Chan.fromLinks key links
-     -- ??? clock
-     run channels $ do
+     signals <- Chan.declareSignals key links
+     return $ do
        inProcess "combinatorial" [] $ do
-         mapM_ cmp nodes
-         mapM_ cmp delays
-       unless (null delays) $ inProcess "sequential" [] $ do
-         mapM_ upd delays
-       exit key
+         channels <- (signals `Chan.with`) <$> Chan.declareVariables key links
+         mapM_ (`cmp` channels) nodes 
+         mapM_ (`cmp` channels) delays
+       inProcess "sequential" [] $ do
+         mapM_ (`upd` signals) delays
+       return $ error "!"
   where
     run :: Channels -> Gen i x -> Program i (Program i x)
     run chan = return . flip CMR.runReaderT chan
 
-    cmp :: Ix i -> Gen i ()
-    cmp (Hide x) = compileSym x
+    cmp :: Ix i -> Channels -> Program i ()
+    cmp (Hide x) = CMR.runReaderT (compileSym x)
 
-    upd :: Ix i -> Gen i ()
-    upd (Hide x) = updateSym x
+    upd :: Ix i -> Channels -> Program i ()
+    upd (Hide x) = CMR.runReaderT (updateSym x)
 
-    when :: IExp i Bool -> Gen i () -> Gen i ()
-    when exp = CMR.mapReaderT (HDL.when exp)
-
-    exit :: Key i (Identity a) -> Gen i (IExp i a)
-    exit (Key name) = case RMap.lookup name links of
-      Just (Linked _ link) -> read link
+    exit :: Key i (Identity a) -> Channels -> Program i (IExp i a)
+    exit (Key name) channels = case RMap.lookup name links of
+      Just (Linked _ link) -> CMR.runReaderT (read link) channels
       Nothing              -> error "huh?"
 
 --------------------------------------------------------------------------------
@@ -189,8 +186,8 @@ filterDelays links = partitionEithers . fmap eitherDelay
       Just l@(Linked (Delay {}) n) -> P.Left  (Hide l)
       Just l@(Linked _          n) -> P.Right (Hide l)
 
-inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Gen i () -> Gen i ()
-inProcess name = CMR.mapReaderT . HDL.process name
+inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Program i () -> Program i ()
+inProcess = HDL.process
 
 inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i a) -> Program i (Program i a)
 inArchitecture name = return . HDL.architecture name . join
