@@ -93,10 +93,10 @@ declareSignals
      , HDL.ConcurrentCMD (IExp i) :<: i
      )
   => Key i (Identity a)
-  -> [Entry (Linked i)]
+  -> Links i
   -> Program i Channels
-declareSignals (Key key) entries =
-    CMS.execStateT (mapM_ declare entries) (Channels IMap.empty)
+declareSignals (Key key) links =
+    CMS.execStateT (mapM_ declare (RMap.elems links)) (Channels IMap.empty)
   where
     declare :: Entry (Linked i) -> M i ()
     declare (RMap.Entry name (Linked node o@(Link single)))
@@ -130,10 +130,10 @@ declareVariables
   :: forall i a.
      (HDL.SequentialCMD (IExp i) :<: i)
   => Key i (Identity a)
-  -> [Entry (Linked i)]
+  -> Links i
   -> Program i Channels
-declareVariables (Key key) entries =
-    CMS.execStateT (mapM_ declare entries) (Channels IMap.empty)
+declareVariables (Key key) links =
+    CMS.execStateT (mapM_ declare (RMap.elems links)) (Channels IMap.empty)
   where
     declare :: Entry (Linked i) -> M i ()
     declare (RMap.Entry name (Linked node o@(Link single)))
@@ -192,18 +192,5 @@ variable
 variable name exp = do
   i <- CMS.lift (HDL.variableL exp)
   CMS.modify (insert name i HDL.Variable)
-
---------------------------------------------------------------------------------
-
--- | Usefulness refers to whether we should generate code for the node or not
-useful :: RMap.Entry (Linked i) -> Bool
-useful (RMap.Entry name (Linked node link)) =
-  case node of
-    Var    {} -> True
-    Repeat {} -> True
-    Map    {} -> True
-    Delay  {} -> True
-    Mux    {} -> True
-    _         -> False
 
 --------------------------------------------------------------------------------
