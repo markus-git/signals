@@ -5,16 +5,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Channels
-{-  ( Identified(..)
-  , Identifiers
-  , Kind
-  , Scope   (..)
-  , Ident   (..)
-  , Channel (..)
-  , Channels(..)
+  ( Channels
+  , Channel(..)
 
-  , fromLinks
-  )-}
+  , lookup
+  , insert
+  , with
+
+  , declareSignals
+  , declareVariables
+  )
   where
 
 import Signal.Core            (S(..), E(..), Symbol)
@@ -45,7 +45,7 @@ import qualified Language.Embedded.VHDL.Expression.Type as HDL
 
 import System.Mem.StableName (eqStableName)
 
-import Prelude hiding (Left, Right)
+import Prelude hiding (Left, Right, lookup)
 
 --------------------------------------------------------------------------------
 -- * Compiler constructs
