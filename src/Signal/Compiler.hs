@@ -149,12 +149,14 @@ compileSig
 compileSig key links ords = Stream . inArchitecture "arch" $
   do let (delays, nodes) = filterDelays links ords
      signals <- Chan.declareSignals key links
+     clock   <- HDL.signalPort HDL.In (Nothing :: Maybe (IExp i Bool))
      return $ do
-       inProcess "combinatorial" [] $ do
+       let sl = sensitivities delays signals
+       inProcess "combinatorial" sl $ do
          channels <- (signals `Chan.with`) <$> Chan.declareVariables key links
          mapM_ (`cmp` channels) nodes 
          mapM_ (`cmp` channels) delays
-       inProcess "sequential" [] $ do
+       inProcess "sequential" [clock] $ do
          mapM_ (`upd` signals) delays
        return $ error "!"
   where
@@ -183,6 +185,19 @@ filterDelays links = partitionEithers . fmap eitherDelay
     eitherDelay (Ordered (Key name)) = case RMap.lookup name links of
       Just l@(Linked (Delay {}) n) -> P.Left  (Hide l)
       Just l@(Linked _          n) -> P.Right (Hide l)
+
+sensitivities :: [Ix i] -> Channels -> [Identifier]
+sensitivities ix channels =
+    concatMap (\(Hide (Linked _ link)) -> fetch link) ix
+  where
+    fetch :: forall i a. Link i a -> [Identifier]
+    fetch (Link name) = dist (witness :: Wit i a) name
+      where
+        dist :: Wit i x -> Names (S Symbol i x) -> [Identifier]
+        dist (WP l r) (u, v) = dist l u ++ dist r v
+        dist (WE)     (name) = case Chan.lookup name channels of
+          Just (Chan.Channel i _) -> [i]
+          Nothing                 -> [ ]
 
 inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Program i () -> Program i ()
 inProcess = HDL.process
@@ -216,9 +231,7 @@ compiler f =
        True  -> error "signal compiler: found cycle"
        False -> const $ compileSig root links order
 
---------------------------------------------------------------------------------
 -- | Compile signals into streams
-
 compile
   :: ( Compile       (IExp i)
      , CompileExp    (IExp i)
@@ -237,18 +250,5 @@ compile f =
      return $ case cycle of
        True  -> error "signal compiler: found cycle"
        False -> compileSig root links order
-
---------------------------------------------------------------------------------
-
--- | Usefulness refers to whether we should generate code for the node or not
-useful :: Linked i a -> Bool
-useful (Linked node _) =
-  case node of
-    Var    {} -> True
-    Repeat {} -> True
-    Map    {} -> True
-    Delay  {} -> True
-    Mux    {} -> True
-    _         -> False
 
 --------------------------------------------------------------------------------
