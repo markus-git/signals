@@ -151,7 +151,7 @@ compileSig key links ords = Stream . inArchitecture "arch" $
      signals <- Chan.declareSignals key links
      clock   <- HDL.signalPort HDL.In (Nothing :: Maybe (IExp i Bool))
      return $ do
-       let sl = sensitivities delays signals
+       let sl = sensitivities (delays ++ nodes) signals
        inProcess "combinatorial" sl $ do
          channels <- (signals `Chan.with`) <$> Chan.declareVariables key links
          mapM_ (`cmp` channels) nodes 
@@ -187,9 +187,13 @@ filterDelays links = partitionEithers . fmap eitherDelay
       Just l@(Linked _          n) -> P.Right (Hide l)
 
 sensitivities :: [Ix i] -> Channels -> [Identifier]
-sensitivities ix channels =
-    concatMap (\(Hide (Linked _ link)) -> fetch link) ix
+sensitivities ix channels = concatMap filter ix
   where
+    filter :: Ix i -> [Identifier]
+    filter (Hide (Linked (Var {})   link)) = fetch link
+    filter (Hide (Linked (Delay {}) link)) = fetch link
+    filter _                               = []
+    
     fetch :: forall i a. Link i a -> [Identifier]
     fetch (Link name) = dist (witness :: Wit i a) name
       where
