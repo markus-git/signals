@@ -102,8 +102,6 @@ compileSym
   => Linked i a
   -> Gen    i ()
 compileSym (Linked sym out) = case sym of
-  Repeat c -> do
-    write out c
   Map f s -> do
     x <- read s
     write out (f x)
