@@ -205,6 +205,8 @@ instance (Integral (IExp i a), Typeable a, PredicateExp (IExp i) a) => Integral 
     rem       = lift2 rem
     quotRem   = curry $ lift p $ uncurry quotRem
       where p = undefined :: proxy i (Identity a, Identity a) (Identity a, Identity a)
+    divMod    = curry $ lift p $ uncurry divMod
+      where p = undefined :: proxy i (Identity a, Identity a) (Identity a, Identity a)
     toInteger = error "toIntegral not supported"
 
 --------------------------------------------------------------------------------
