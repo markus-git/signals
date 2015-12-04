@@ -134,11 +134,8 @@ delay e (Sig (Signal s)) = Sig . signal $ Delay e s
 --
 -- ^ List must be total, covering all cases
 -- ^ ...
-mux :: ( Typeable a, PredicateExp (IExp i) a
-       , Typeable b, PredicateExp (IExp i) b)
-    => Sig i a
-    -> [(a, Sig i b)]
-    -> Sig i b
+mux :: (Typeable a, PredicateExp (IExp i) a, Typeable b, PredicateExp (IExp i) b)
+    => Sig i a -> [(a, Sig i b)] -> Sig i b
 mux (Sig (Signal s)) = Sig . signal . Mux s . fmap (fmap (runSignal . runSig))
 
 --------------------------------------------------------------------------------

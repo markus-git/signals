@@ -34,9 +34,6 @@ type E = Data
 type S = Sig (CMD E)
 
 -- | ...
-type Sr a = Str (CMD E) a
-
--- | ...
 instance Compile Data
   where
     literal = litE
@@ -112,6 +109,12 @@ iir (a:as) bs s = o
     o = (1 `divs` repeat a) * (u - l)
 
 --------------------------------------------------------------------------------
+-- ** Tuples
+
+tuple :: S Word8 -> S Word8
+tuple s = let (d, m) = divMod s 2 in d + m
+
+--------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
@@ -143,6 +146,9 @@ testFIR = compSF (fir [1,2]) 0 >>= putStrLn . V.compile
 
 testIIR :: IO ()
 testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . V.compile
+
+testTuple :: IO ()
+testTuple = compSF tuple 4 >>= putStrLn . V.compile
 
 --------------------------------------------------------------------------------
 -- *
