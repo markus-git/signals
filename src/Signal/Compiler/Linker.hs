@@ -109,9 +109,16 @@ link' (Ordered (Key sym)) =
          do inp <- resolve s
             constrain (Map f inp) (name sym)
        (Join l r) ->
-         do inp_l <- resolve l
-            inp_r <- resolve r
-            constrain (Join inp_l inp_r) (reify inp_l, reify inp_r)
+         do l' <- resolve l
+            r' <- resolve r
+            constrain (Join l' r') $ case (l', r') of
+              (Link u, Link v) -> (u, v)
+       (Left l) ->
+         do l' <- resolve l
+            constrain (Left l') $ case l' of Link (u, _) -> u
+       (Right r) ->
+         do r' <- resolve r
+            constrain (Right r') $ case r' of Link (_, v) -> v
        (Delay c s) ->
          do inp <- resolve s
             constrain (Delay c inp) (name sym)
@@ -122,7 +129,7 @@ link' (Ordered (Key sym)) =
                    return (c, s')
             constrain (Mux inp inps) (name sym)
   where
-    reify ~(Link n) = n
+    reify (Link n) = n
     constrain n l   = output $ Hide $ Pair sym $ Linked n $ Link l
 
 --------------------------------------------------------------------------------
