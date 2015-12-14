@@ -40,10 +40,10 @@ import qualified Data.Ref.Map as RMap
 
 import Language.VHDL (Identifier)
 import Language.Embedded.VHDL (Mode, PredicateExp, CompileExp, SequentialCMD, ConcurrentCMD, HeaderCMD)
-import Language.Embedded.VHDL.Expression.Type (Kind)
-import qualified Language.VHDL                          as VHDL
-import qualified Language.Embedded.VHDL                 as HDL
-import qualified Language.Embedded.VHDL.Expression.Type as HDL
+import Language.Embedded.VHDL.Monad.Type (Kind)
+import qualified Language.VHDL                     as VHDL
+import qualified Language.Embedded.VHDL            as HDL
+import qualified Language.Embedded.VHDL.Monad.Type as HDL
 
 import Prelude hiding (read, Left, Right)
 import qualified Prelude as P
@@ -139,6 +139,7 @@ compileSig
      ( Compile       (IExp i)
      , CompileExp    (IExp i)
      , PredicateExp  (IExp i) Bool
+     , PredicateExp  (IExp i) a
      , SequentialCMD (IExp i) :<: i
      , ConcurrentCMD (IExp i) :<: i
      , HeaderCMD     (IExp i) :<: i)
@@ -146,19 +147,33 @@ compileSig
   -> Links  i              -- ^ Links between names and their signal constructors
   -> Orders i              -- ^ Names sorted in a topological ordering
   -> Str    i a
-compileSig key links ords = Stream . inArchitecture "arch" $
-  do let (delays, nodes) = filterDelays links ords
-     signals <- Chan.declareSignals key links
-     clock   <- HDL.signalPort HDL.In (Nothing :: Maybe (IExp i Bool))
-     return $ do
-       let sl = sensitivities (delays ++ nodes) signals
-       inProcess "combinatorial" sl $ do
-         channels <- (signals `Chan.with`) <$> Chan.declareVariables key links
-         mapM_ (`cmp` channels) nodes 
-         mapM_ (`cmp` channels) delays
-       inProcess "sequential" [clock] $ do
-         mapM_ (`upd` signals) delays
-       return $ error "!"
+compileSig key links ords = Stream $
+ do let (delays, nodes) = filterDelays links ords
+
+    -- declare entity and return channels
+    (ss, c, r) <- entity "main" $
+      do ss <- Chan.declareSignals key links
+         c  <- HDL.signalPort HDL.In (Nothing :: Maybe (IExp i Bool))
+         r  <- HDL.signalPort HDL.In (Nothing :: Maybe (IExp i Bool))
+         return (ss, c, r)
+
+    -- declare architecture and return value of the 'last' node
+    result <- architecture "behavioural" "main" $
+      do let listen = sensitivities (delays ++ nodes) ss
+         process "combinatorial" (listen) $
+           do vs <- Chan.declareVariables key links
+              let compile = flip cmp (Chan.with ss vs)
+              mapM_ compile nodes
+              mapM_ compile delays
+         process "sequential" [c, r] $
+           do let update = flip upd ss
+              mapM_ update delays
+              -- *** These updates should be conditional!
+              --     Check for "'rising_edge" and reset.
+         return $ exit key ss
+
+    -- done!
+    return $ return result
   where
     run :: Channels -> Gen i x -> Program i (Program i x)
     run chan = return . flip CMR.runReaderT chan
@@ -169,10 +184,23 @@ compileSig key links ords = Stream . inArchitecture "arch" $
     upd :: Ix i -> Channels -> Program i ()
     upd (Hide x) = CMR.runReaderT (updateSym x)
 
-    exit :: Key i (Identity a) -> Channels -> Program i (IExp i a)
+    exit :: Key i (Identity a) -> Channels -> IExp i a
     exit (Key name) channels = case RMap.lookup name links of
-      Just (Linked _ link) -> CMR.runReaderT (read link) channels
-      Nothing              -> error "huh?"
+      Just (Linked _ link) -> case Chan.lookup (Named name) channels of
+        Just (Chan.Channel i _) -> identifier i
+        Nothing -> error "signals: missing channel"
+      Nothing -> error "signals: missing key"
+ --CMR.runReaderT (read link) channels
+--------------------------------------------------------------------------------
+
+entity :: (HeaderCMD (IExp i) :<: i) => String -> Program i a -> Program i a
+entity name = HDL.entity name
+
+architecture :: (HeaderCMD (IExp i) :<: i) => String -> String -> Program i a -> Program i a
+architecture name entity = HDL.architecture name entity
+
+process :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Program i () -> Program i ()
+process = HDL.process
 
 --------------------------------------------------------------------------------
 
@@ -202,12 +230,6 @@ sensitivities ix channels = concatMap filter ix
         dist (WE)     (name) = case Chan.lookup name channels of
           Just (Chan.Channel i _) -> [i]
           Nothing                 -> [ ]
-
-inProcess :: (ConcurrentCMD (IExp i) :<: i) => String -> [Identifier] -> Program i () -> Program i ()
-inProcess = HDL.process
-
-inArchitecture :: (HeaderCMD (IExp i) :<: i) => String -> Program i (Program i a) -> Program i (Program i a)
-inArchitecture name = return . HDL.architecture name . join
 
 --------------------------------------------------------------------------------
 -- **

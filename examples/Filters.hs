@@ -12,6 +12,7 @@ import Signal hiding (E)
 import Signal.Compiler.Interface
 
 import Control.Monad.Operational.Higher
+import Control.Monad.Identity
 import Data.Bits
 import Data.Typeable
 import Data.Word
@@ -111,9 +112,15 @@ iir (a:as) bs s = o
 --------------------------------------------------------------------------------
 -- ** Tuples
 
-tuple :: S Word8 -> S Word8
-tuple s = let (d, m) = divMod s 2 in d + m
-
+-- | tuples in the signal layer
+tupleS :: S Word8 -> S Word8
+tupleS s = let (d, m) = divMod s 2 in d + m
+{-
+-- | tuples in the expression layer
+tupleE :: S Word8 -> S (Word8, S Word8)
+tupleE s = undefined
+  where p = undefined :: proxy i (Identity a, Identity a) (a, a)
+-}
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
@@ -125,7 +132,7 @@ compS s =
   do prog <- compile s
      return $ void $ run prog
 
-compSF :: Ok a => (S a -> S a) -> E a -> IO (P ())
+compSF :: (Ok a, Ok b) => (S a -> S b) -> E a -> IO (P ())
 compSF f a =
   do prog <- compiler f
      return . void . run . prog . Stream . return . return $ a
@@ -147,9 +154,12 @@ testFIR = compSF (fir [1,2]) 0 >>= putStrLn . V.compile
 testIIR :: IO ()
 testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . V.compile
 
-testTuple :: IO ()
-testTuple = compSF tuple 4 >>= putStrLn . V.compile
-
+testTupleS :: IO ()
+testTupleS = compSF tupleS 4 >>= putStrLn . V.compile
+{-
+testTupleE :: IO ()
+testTupleE = compSF tupleE 4 >>= putStrLn . V.compile
+-}
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------

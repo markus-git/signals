@@ -36,12 +36,12 @@ import Data.Ref.Map  (Map, Entry, Name)
 import qualified Data.Ref.Map as RMap
 import qualified Data.IntMap  as IMap
 
-import Language.VHDL                          (Identifier)
-import Language.Embedded.VHDL                 (Mode)
-import Language.Embedded.VHDL.Expression.Type (Kind)
-import qualified Language.VHDL                          as VHDL
-import qualified Language.Embedded.VHDL                 as HDL
-import qualified Language.Embedded.VHDL.Expression.Type as HDL
+import Language.VHDL                     (Identifier)
+import Language.Embedded.VHDL            (Mode)
+import Language.Embedded.VHDL.Monad.Type (Kind)
+import qualified Language.VHDL                     as VHDL
+import qualified Language.Embedded.VHDL            as HDL
+import qualified Language.Embedded.VHDL.Monad.Type as HDL
 
 import System.Mem.StableName (eqStableName)
 
