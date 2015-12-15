@@ -160,11 +160,12 @@ compileSig key links ords = Stream $
     -- declare architecture and return value of the 'last' node
     result <- architecture "behavioural" "main" $
       do let listen = sensitivities (delays ++ nodes) ss
-         process "combinatorial" (listen) $
-           do vs <- Chan.declareVariables key links
-              let compile = flip cmp (Chan.with ss vs)
-              mapM_ compile nodes
-              mapM_ compile delays
+         when (not $ null delays && null nodes) $ 
+           process "combinatorial" (listen) $
+             do vs <- Chan.declareVariables key links
+                let compile = flip cmp (Chan.with ss vs)
+                mapM_ compile nodes
+                mapM_ compile delays
          when (not $ null delays) $ 
            process "sequential" [c, r] $
              do let update = flip upd ss
