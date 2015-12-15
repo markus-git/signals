@@ -165,11 +165,12 @@ compileSig key links ords = Stream $
               let compile = flip cmp (Chan.with ss vs)
               mapM_ compile nodes
               mapM_ compile delays
-         process "sequential" [c, r] $
-           do let update = flip upd ss
-              mapM_ update delays
-              -- *** These updates should be conditional!
-              --     Check for "'rising_edge" and reset.
+         when (not $ null delays) $ 
+           process "sequential" [c, r] $
+             do let update = flip upd ss
+                mapM_ update delays
+                -- *** These updates should be conditional!
+                --     Check for "'rising_edge" and reset.
          return $ exit key ss
 
     -- done!
