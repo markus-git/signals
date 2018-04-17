@@ -1,59 +1,60 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Linker.Names where
 
-import Signal.Core  (S)
 import Signal.Core.Witness
+import qualified Signal.Core as S (Core (..))
 
 import Control.Monad.Identity
+
 import Data.Hashable
-import Data.Ref.Map (Name)
+import Data.Proxy
+
+-- observable-sharing
+import qualified Data.Ref.Map as R (Name)
 
 --------------------------------------------------------------------------------
--- * Distributing
+-- * Distributing Names over a wire.
 --------------------------------------------------------------------------------
 
--- | ...
-type family Distributed (node :: * -> *) a where
-  Distributed node (S sym i (Identity a)) = node (S sym i (Identity a))
-  Distributed node (S sym i (a, b))       = ( Distributed node (S sym i a)
-                                            , Distributed node (S sym i b))
-
--- | ...
-data Named a
+-- | Sub-names over the individual parts of a name.
+data Name a
   where
-    Named  :: Name  (S sym i a)      -> Named (S sym i a)
-    Lefty  :: Named (S sym i (a, b)) -> Named (S sym i a)
-    Righty :: Named (S sym i (a, b)) -> Named (S sym i b)
-    Other  :: Named (S sym i a)      -> Named (S sym i a)
+    Name :: R.Name (S.Core sym exp pred a)      -> Name (S.Core sym exp pred a)
+    Fst  :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred a)
+    Snd  :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred b)
 
-instance Hashable (Named a)
+instance Hashable (Name a)
   where
-    hashWithSalt s (Named  n) = s `hashWithSalt` n
-    hashWithSalt s (Lefty  l) = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
-    hashWithSalt s (Righty r) = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
-    hashWithSalt s (Other  n) = s `hashWithSalt` (2 :: Int) `hashWithSalt` n
+    hashWithSalt s (Name n) = s `hashWithSalt` n
+    hashWithSalt s (Fst  l) = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
+    hashWithSalt s (Snd  r) = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
 
 --------------------------------------------------------------------------------
--- ** Naming wires, i.e distributing one wire's name over its subwires
 
--- | Shorthand for distributed names
-type Names a = Distributed Named a
-
--- | Takes a composite name and creates unique names for each part
-name :: forall sym i a. Witness i a => Name (S sym i a) -> Names (S sym i a)
-name n = go (witness :: Wit i a) (Named n)
+-- | A bundle is a collection of names, one for each result of a core construct.
+data Bundle a
   where
-    go :: Wit i x -> Named (S sym i x) -> Names (S sym i x)
-    go (WE)     n = n
-    go (WP l r) n = (go l (Lefty n), go r (Righty n))
+    -- ^ A single name.
+    One  :: Name   (S.Core sym exp pred a)
+         -> Bundle (S.Core sym exp pred a)
+    -- ^ A pair of names.
+    Pair :: Bundle (S.Core sym exp pred a)
+         -> Bundle (S.Core sym exp pred b)
+         -> Bundle (S.Core sym exp pred (a, b))
 
--- | ...
-other :: Names (S sym i (Identity a)) -> Names (S sym i (Identity a))
-other = Other
+-- | Creates a bundle of names from a single name.
+bundle :: forall sym exp pred a . Tuple pred a
+  => R.Name (S.Core sym exp pred a)
+  -> Bundle (S.Core sym exp pred a)
+bundle n = go (witness :: TupleRep pred a) (Name n)
+  where
+    go :: TupleRep pred b
+       -> Name   (S.Core sym exp pred b)
+       -> Bundle (S.Core sym exp pred b)
+    go (Single)    name = One name
+    go (Tuple l r) name = Pair (go l $ Fst name) (go r $ Snd name)
 
 --------------------------------------------------------------------------------

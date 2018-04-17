@@ -1,10 +1,12 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Signal.Compiler.Channels
+module Signal.Compiler.Backend.VHDL.Channels where
+{-
   ( Channels
   , Channel(..)
 
@@ -15,12 +17,13 @@ module Signal.Compiler.Channels
   , declareSignals
   , declareVariables
   )
-  where
+-}
 
-import Signal.Core            (S(..), E(..), Symbol)
-import Signal.Core.Witness
-import Signal.Core.Reify      (Key(..))
+import Signal.Core
+--import Signal.Core.Witness
+import Signal.Core.Reify
 import Signal.Compiler.Linker
+import Signal.Compiler.Linker.Names
 
 import Control.Monad.Operational.Higher
 import Control.Monad
@@ -36,13 +39,21 @@ import Data.Ref.Map  (Map, Entry, Name)
 import qualified Data.Ref.Map as RMap
 import qualified Data.IntMap  as IMap
 
+-- operational-alacarte
+import Control.Monad.Operational.Higher (Program)
+import Data.ALaCarte (Param2(..))
+
+-- hardware-edsl
+import qualified Language.Embedded.Hardware.Interface as HDL
+
+{-
 import Language.VHDL                     (Identifier)
 import Language.Embedded.VHDL            (Mode)
 import Language.Embedded.VHDL.Monad.Type (Kind)
 import qualified Language.VHDL                     as VHDL
 import qualified Language.Embedded.VHDL            as HDL
 import qualified Language.Embedded.VHDL.Monad.Type as HDL
-
+-}
 import System.Mem.StableName (eqStableName)
 
 import Prelude hiding (Left, Right, lookup)
@@ -51,40 +62,61 @@ import Prelude hiding (Left, Right, lookup)
 -- * Compiler constructs
 --------------------------------------------------------------------------------
 
-data Scope = Local | Global | Port
+-- | Channels consists of either signals or variables.
+data Kind = Signal | Variable
 
-data Channel = Channel Identifier Kind
+-- | A Channel is represented by unique identifier to a signal or variable.
+data Channel = Channel HDL.VarId Kind
 
+-- | Short-hand for a int-mapping over channels.
 newtype Channels = Channels { runChannels :: IMap.IntMap Channel }
 
---------------------------------------------------------------------------------
--- ** ...
+-- | Short-hand for a state monad over channels.
+type ChannelsM instr exp pred = StateT Channels (Program instr (Param2 exp pred))
 
--- | Lookup channel
-lookup :: Named a -> Channels -> Maybe Channel
+--------------------------------------------------------------------------------
+
+-- | Lookup a channel.
+lookup :: RMap.Name a -> Channels -> Maybe Channel
 lookup name (Channels m) = IMap.lookup (hash name) m
 
 -- | Insert new channel of given kind
-insert :: Named a -> Identifier -> Kind -> Channels -> Channels
+insert :: RMap.Name a -> HDL.VarId -> Kind -> Channels -> Channels
 insert name i k (Channels m) = Channels (IMap.insert (hash name) (Channel i k) m)
 
 -- | Left join of two channel sets
-with   :: Channels -> Channels -> Channels
-with (Channels m) (Channels n) = Channels (IMap.unionWith const m n)
+union :: Channels -> Channels -> Channels
+union (Channels m) (Channels n) = Channels (IMap.unionWith const m n)
 
 --------------------------------------------------------------------------------
--- ** ...
 
-type M i = StateT Channels (Program i)
+-- | Declare all signal inputs/outputs of a given link-mapping.
+declareSignals :: Witness pred
+  => Key exp pred a
+  -> Links exp pred
+  -> Program instr (Param2 exp pred) Channels
+declareSignals (Key k) links =
+    CMS.execStateT (mapM_ declareSignal (RMap.elems links)) (Channels IMap.empty)
+  where
+    declareSignal :: RMap.Entry (LinkedNode exp pred) -> ChannelsM instr exp pred ()
+    declareSignal (RMap.Entry name (LinkedNode node))
+      | name `eqStableName` k = declareRoot   node
+      | otherwise             = declareGlobal node
+    
+    declareRoot :: Core Link exp pred a -> ChannelsM instr exp pred ()
+    declareRoot (Val e) = undefined
 
--- | ...
+    declareGlobal :: Core Link exp pred a -> ChannelsM instr exp pred ()
+    declareGlobal = undefined
+{-
+-- | Declare a signal.
 --
 -- A number of special cases are included in order to account for root nodes.
---   - Roots are always uninitialized output ports, unless
+--   > Roots are always uninitialized output ports, unless
 --     * It's a Repeat node, then it is initialized
 --     * It's a Delay  node, then a initialized signal is also declared
 --     * It's a Var    node, then the node is both an input and output signal
---   - If they aren't roots, then
+--   > If they aren't roots, then
 --     * Variable nodes are still declared as ports
 --     * Delays produce two signals
 declareSignals
@@ -121,14 +153,12 @@ declareSignals (Key key) links =
         dist :: Wit i x -> Names (S Symbol i x) -> M i ()
         dist (WP l r) (u, v) = dist l u >> dist r v
         dist (WE)     (name) = port name mode (Nothing :: Maybe (IExp i x))
-
+-}
 --------------------------------------------------------------------------------
 -- ** ...
-
+{-
 -- | ...
-declareVariables
-  :: forall i a.
-     (HDL.SequentialCMD (IExp i) :<: i)
+declareVariables :: forall i a . (HDL.SequentialCMD (IExp i) :<: i)
   => Key i (Identity a)
   -> Links i
   -> Program i Channels
@@ -150,15 +180,11 @@ declareVariables (Key key) links =
         dist :: Wit i x -> Names (S Symbol i x) -> M i ()
         dist (WP l r) (u, v) = dist l u >> dist r v
         dist (WE)     (name) = variable name (Nothing :: Maybe (IExp i x))
-
+-}
 --------------------------------------------------------------------------------
-
+{-
 -- | ...
-port
-  :: forall i a.
-     ( HDL.HeaderCMD    (IExp i) :<: i
-     , HDL.PredicateExp (IExp i) a
-     )
+port :: forall i a . (HDL.HeaderCMD (IExp i) :<: i, HDL.PredicateExp (IExp i) a)
   => Named (S Symbol i (Identity a))
   -> Mode
   -> Maybe (IExp i a)
@@ -192,5 +218,5 @@ variable
 variable name exp = do
   i <- CMS.lift (HDL.variableL exp)
   CMS.modify (insert name i HDL.Variable)
-
+-}
 --------------------------------------------------------------------------------

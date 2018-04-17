@@ -1,47 +1,44 @@
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Core.Witness where
 
-import Control.Monad.Operational.Higher hiding (join)
 import Control.Monad.Identity (Identity)
-import Data.Typeable          (Typeable)
-import Language.Embedded.VHDL (PredicateExp)
 
 --------------------------------------------------------------------------------
--- * Witness
+-- * Check if a type is a tuple or not.
 --------------------------------------------------------------------------------
 
--- | A witness for the correct construction (as a nested tuple) of some type
-data Wit (i :: (* -> *) -> * -> *) a
+-- | A representation of the 'tuple'-structure of a type.
+data TupleRep pred a
   where
-    WE :: (Typeable a, PredicateExp (IExp i) a) => Wit i (Identity a)
-          
-    WP :: (Witness i a, Witness i b)
-       => Wit i a
-       -> Wit i b
-       -> Wit i (a, b)
+    -- ^ A base expression.
+    Single :: pred a => TupleRep pred (Identity a)
+    
+    -- ^ A pair of two values, possibly tuples.
+    Tuple  :: (Tuple pred a, Tuple pred b)
+           => TupleRep pred a
+           -> TupleRep pred b
+           -> TupleRep pred (a, b)
 
 --------------------------------------------------------------------------------
--- ** ...
 
--- | Class of things for which we can produce a correctness witness
-class Typeable a => Witness i a
+-- | Produce a witness of the 'tuple'-structure of a type.
+class Tuple pred a
   where
-    witness :: Typeable a => Wit i a
+    witness :: TupleRep pred a
 
--- | Single value case
-instance (Typeable a, PredicateExp (IExp i) a) => Witness i (Identity a)
+-- | Witness for a base expression.
+instance pred a => Tuple pred (Identity a)
   where
-    witness = WE
+    witness = Single
 
--- | Nested tuple case
-instance (Witness i a, Witness i b) => Witness i (a, b)
+-- | Witness for a tuple of values.
+instance (Tuple pred a, Tuple pred b) => Tuple pred (a, b)
   where
-    witness = WP (witness :: Wit i a) (witness :: Wit i b)
+    witness = Tuple (witness :: TupleRep pred a) (witness :: TupleRep pred b)
 
 --------------------------------------------------------------------------------
