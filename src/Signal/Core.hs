@@ -10,6 +10,7 @@
 module Signal.Core where
 
 import Signal.Core.Witness
+
 import Control.Monad.Identity (Identity)
 
 import Data.Bits
@@ -71,7 +72,7 @@ data Core sig exp pred a
           -> Core sig exp pred (Identity a)
 
     -- | Hole, used during reification.
-    Var :: Tuple pred a => Dynamic -> Core sig exp pred a
+    Var :: pred a => Dynamic -> Core sig exp pred (Identity a)
 
 -- | A symbol is a reference to a core signal construct.
 newtype Symbol exp pred a = Symbol { runSym :: Ref (Core Symbol exp pred a) }
@@ -137,7 +138,7 @@ delay :: pred a
 delay e = signal . Delay e . symbol
 
 -- | Creates a hole, useful during reification.
-var :: Tuple pred a => Dynamic -> Signal exp pred a
+var :: pred a => Dynamic -> Signal exp pred (Identity a)
 var = signal . Var
 
 --------------------------------------------------------------------------------

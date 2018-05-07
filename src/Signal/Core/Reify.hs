@@ -8,7 +8,7 @@ module Signal.Core.Reify
   , Node(..)
   , Nodes    
   , reify
-  , reifyFun
+  , reifyF1
   ) where
 
 import Signal.Core (Signal (..), Symbol (..), Core (..))
@@ -58,19 +58,30 @@ type Reify exp pred = StateT (Nodes exp pred, Map Name) IO
 reify :: Signal exp pred a -> IO (Key exp pred a, Nodes exp pred)
 reify (Signal sym) = second fst <$> runStateT (reify' sym) (M.empty, M.empty)
 
--- | Reification of a signal function into a mapping over its nodes, root key
---   and input key.
-reifyFun ::
+-- | Reification of a 1-ary signal function.
+reifyF1 ::
      ( Typeable exp
      , Typeable pred
      , Typeable a
      , Typeable b
-     , Tuple pred a
+     , pred a
      )
-  => (Signal exp pred a -> Signal exp pred b)
+  => (Signal exp pred (Identity a) -> Signal exp pred b)
   -> IO (Key exp pred b, Nodes exp pred)
-reifyFun f =
-  let (_, graph) = let a = S.var (toDyn f) in (a, f a) in reify graph
+reifyF1 f =
+  let (_, graph) = let a = S.var (toDyn f) in (a, f a)
+  in reify graph
+
+reifyF2 ::
+  ( Typeable exp
+  , Typeable pred
+  , Typeable a
+  , Typeable b
+  , Typeable c
+  )
+  => (Signal exp pred a -> Signal exp pred b -> Signal exp pred c)
+  -> IO (Key exp pred b, Nodes exp pred)
+reifyF2 = undefined
 
 --------------------------------------------------------------------------------
 

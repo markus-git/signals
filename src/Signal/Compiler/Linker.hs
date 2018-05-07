@@ -49,16 +49,18 @@ import System.Mem.StableName (eqStableName, hashStableName) -- !
 -- names. We will however need to hide their types as they vary between nodes.
 
 -- | Nodes where recursive calls to other nodes have been replaced with names.
-data Link exp pred a where
-  Link :: Bundle (Core Symbol exp pred a) -> Link exp pred a
+data Link exp pred a
+  where
+    Link :: Bundle (Core Symbol exp pred a) -> Link exp pred a
 
 -- | Container for linked nodes and the names of their own output.
-data Linked exp pred a where
-  Linked ::
-       Maybe (Core Link exp pred a)             -- ^ Symbol with incoming links.
-    -> Maybe (Link exp pred a)                  -- ^ Outgoing link for symbol.
-    -> Node exp pred (Core Symbol exp pred a)   -- ^ Node referenced for symbol.
-    -> Linked exp pred (Core Symbol exp pred a)
+data Linked exp pred a
+  where
+    Linked ::
+         Maybe (Core Link exp pred a)           -- ^ Symbol with incoming links.
+      -> Maybe (Link exp pred a)                -- ^ Outgoing link for symbol.
+      -> Node exp pred (Core Symbol exp pred a) -- ^ Node referenced for symbol.
+      -> Linked exp pred (Core Symbol exp pred a)
 
 -- | Linking monad.
 type LinkM exp pred = State (Map (Linked exp pred))
@@ -102,7 +104,6 @@ visited r =
        Just (Linked _ out _) -> out
        Nothing -> error $
          "Linker.linked: lookup failed: " ++ show (hashStableName r)
-     
 
 -- | Gets the node referenced by a name.
 node ::
@@ -118,7 +119,7 @@ node r =
 --------------------------------------------------------------------------------
 
 link :: Tuple pred a => Key exp pred a -> LinkM exp pred (Link exp pred a)
-link key@(Key r) =
+link (Key r) =
   do ml <- visited r
      case ml of
        Just l  -> return l
@@ -157,10 +158,12 @@ link key@(Key r) =
 --------------------------------------------------------------------------------
 
 -- | Linked nodes.... to get around a type mismatch.
-data LinkedNode exp pred a where
-  LinkedNode ::
-       Core Link exp pred a
-    -> LinkedNode exp pred (Core Symbol exp pred a)
+data LinkedNode exp pred a
+  where
+    LinkedNode ::
+         Core Link exp pred a
+      -> Link exp pred a
+      -> LinkedNode exp pred (Core Symbol exp pred a)
 
 -- | Short-hand for a map over core symbols with links to inputs.
 type Links exp pred = Map (LinkedNode exp pred)
@@ -168,7 +171,7 @@ type Links exp pred = Map (LinkedNode exp pred)
 -- | Given a root and a set of graph nodes, a map over links to individual
 --   outputs is produced.
 linker :: Tuple pred a => Key exp pred a -> Nodes exp pred -> Links exp pred
-linker (Key n) nodes = undefined
+linker k nodes = reduce $ flip execState (init nodes) $ link k
   where
     init :: Nodes exp pred -> Map (Linked exp pred)
     init = M.hmap repack
@@ -177,9 +180,16 @@ linker (Key n) nodes = undefined
         repack node@(Node keys) = Linked Nothing Nothing node
 
     reduce :: Map (Linked exp pred) -> Map (LinkedNode exp pred)
-    reduce = M.hmap repack
+    reduce = M.hmap repack . M.filter (not . connector)
       where
         repack :: Linked exp pred a -> LinkedNode exp pred a
-        repack (Linked (Just l) _ _) = LinkedNode l
+        repack (Linked (Just l) (Just o) _) = LinkedNode l o
+
+        connector :: Linked exp pred a -> Bool
+        connector (Linked _ _ (Node n)) = case n of
+          C.Pair _ _ -> True
+          C.Fst  _   -> True
+          C.Snd  _   -> True
+          _          -> False
 
 --------------------------------------------------------------------------------

@@ -15,6 +15,8 @@ import Data.Proxy
 -- observable-sharing
 import qualified Data.Ref.Map as R (Name)
 
+import System.Mem.StableName (hashStableName)
+
 --------------------------------------------------------------------------------
 -- * Distributing Names over a wire.
 --------------------------------------------------------------------------------
@@ -22,15 +24,23 @@ import qualified Data.Ref.Map as R (Name)
 -- | Sub-names over the individual parts of a name.
 data Name a
   where
-    Name :: R.Name (S.Core sym exp pred a)      -> Name (S.Core sym exp pred a)
-    Fst  :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred a)
-    Snd  :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred b)
+    Name  :: R.Name (S.Core sym exp pred a)      -> Name (S.Core sym exp pred a)
+    Fst   :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred a)
+    Snd   :: Name   (S.Core sym exp pred (a, b)) -> Name (S.Core sym exp pred b)
+    Other :: Name   (S.Core sym exp pred a)      -> Name (S.Core sym exp pred a)
 
 instance Hashable (Name a)
   where
-    hashWithSalt s (Name n) = s `hashWithSalt` n
-    hashWithSalt s (Fst  l) = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
-    hashWithSalt s (Snd  r) = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
+    hashWithSalt s (Name n)  = s `hashWithSalt` n
+    hashWithSalt s (Fst  l)  = s `hashWithSalt` (0 :: Int) `hashWithSalt` l
+    hashWithSalt s (Snd  r)  = s `hashWithSalt` (1 :: Int) `hashWithSalt` r
+    hashWithSalt s (Other o) = s `hashWithSalt` (2 :: Int) `hashWithSalt` o
+
+toString :: Name a -> String
+toString (Name n)  = show $ hashStableName n
+toString (Fst p)   = toString p ++ "_fst"
+toString (Snd p)   = toString p ++ "_snd"
+toString (Other o) = toString o ++ "_d"
 
 --------------------------------------------------------------------------------
 
@@ -56,5 +66,8 @@ bundle n = go (witness :: TupleRep pred a) (Name n)
        -> Bundle (S.Core sym exp pred b)
     go (Single)    name = One name
     go (Tuple l r) name = Pair (go l $ Fst name) (go r $ Snd name)
+
+other :: Name (S.Core sym exp pred a) -> Name (S.Core sym exp pred a)
+other = Other
 
 --------------------------------------------------------------------------------

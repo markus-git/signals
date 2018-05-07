@@ -4,8 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Signal.Compiler.Sorter
-  ( HiddenKey(..)
-  , Ordering
+  ( Ordering
   , sorter
   )
   where
@@ -115,15 +114,8 @@ visit (Key k) =
 
 --------------------------------------------------------------------------------
 
--- | Ordered keys.
-newtype HiddenKey exp pred = HiddenKey { reveal :: Hide (Key exp pred) }
-
--- | Comparing ordered keys is the same as comparing the keys.
-instance Eq (HiddenKey exp pred) where
-  HiddenKey (Hide (Key l)) == HiddenKey (Hide (Key r)) = l `eqStableName` r
-
 -- | List of ordered keys.
-type Ordering exp pred = [HiddenKey exp pred]
+type Ordering exp pred = [Hide (Key exp pred)]
 
 -- | Given a root and a set of graph nodes, a topological ordering is produced.
 sorter :: Key exp pred a -> Nodes exp pred -> Ordering exp pred
@@ -136,10 +128,10 @@ sorter (Key n) nodes = reduce $ snd $ flip execState (1, init nodes) $ sort n
         repack node@(Node keys) = Tagged Unvisited 0 node
 
     reduce :: Map (Tagged exp pred) -> Ordering exp pred
-    reduce = fmap snd . sortBy (compare `on` fst) . fmap repack . M.elems
+    reduce = fmap snd . sortBy (compare `on` fst) . fmap repack . M.toList
       where
-        repack :: M.Entry (Tagged exp pred) -> (Order, HiddenKey exp pred)
+        repack :: M.Entry (Tagged exp pred) -> (Order, Hide (Key exp pred))
         repack (M.Entry name (Tagged _ order _)) =
-          (order, HiddenKey (Hide (Key name)))
+          (order, Hide (Key name))
 
 --------------------------------------------------------------------------------

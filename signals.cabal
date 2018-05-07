@@ -60,7 +60,7 @@ library
     hashable             >= 1.2,
     syntactic            >= 3.6.1,
     operational-alacarte >= 0.3,
-    observable-sharing   >= 0.2.2.1,
+    observable-sharing   >= 0.2.5,
     language-vhdl        >= 0.1.3,
     imperative-edsl      >= 0.7.1,
     hardware-edsl        >= 0.1.5.2
