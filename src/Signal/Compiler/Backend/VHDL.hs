@@ -11,7 +11,7 @@ module Signal.Compiler.Backend.VHDL where
 
 import Signal.Core (Core, Symbol, Expr)
 import Signal.Core.Stream
-import Signal.Core.Reify (reify, reifyF1, Key)
+import Signal.Core.Reify (reify, reifyF1, reifyF2, Key)
 import Signal.Core.Witness
 import Signal.Core.Frontend (Sig(..))
 import Signal.Core.Data
@@ -229,55 +229,50 @@ sortSymbols order wires =
 -- todo: Find a way of reading from input and writing to output that doesn't
 --       involve coercion. Problem is that creation and linking of core nodes is
 --       seperated from the creation of inputs and outputs for the component
---       below. I do get a reference to the root node, which could be useful for
---       linking with the output, but the input problem would remain.
+--       below. I do get a reference to the root node, which is useful for
+--       linking with the output, but the input problem remains.
+--------------------------------------------------------------------------------
 
-compileCompFun :: forall instr exp pred a b .
+compileCore :: forall instr exp pred a .
      ( HDL.SignalCMD    :<: instr
      , HDL.VariableCMD  :<: instr
      , HDL.ComponentCMD :<: instr
      , HDL.ProcessCMD   :<: instr
      , HDL.FreeExp exp
      , Subsume pred (HDL.PredicateExp exp)
-     , HDL.PrimType b, Integral b, pred b
-     , HDL.PrimType a, Integral a, pred a
+     , HDL.PrimType a, pred a
      )
-  => Key exp pred (Identity b)
+  => Key exp pred (Identity a)
+  -> [Input]
+  -> HDL.Signal a
   -> Ordering exp pred
   -> Links exp pred
-  -> Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-       HDL.Signal a -> HDL.Signal b -> ()))
-compileCompFun root order links =
-  HDL.component $
-  HDL.input  $ \inc ->
-  HDL.output $ \out ->
-  HDL.ret $
-    do -- First of, we declare all the linked signals.
-       signals <- declareSignals links [input inc]
-       -- Then, we create the two processes design.
-       -- > Combinatorial:
-       HDL.process (inc HDL..: []) $
-         do -- 1. Declare local variables.
-            variables <- declareVariables links
-            -- 2. Put together signal and variable wires.
-            let wires = wire signals variables
-            -- 3. Seperate delays.
-            let (delays, nodes) = sortSymbols order wires
-            -- 4. Put in the combinatorial nodes.
-            run nodes
-            -- 5. Put in any writes to delayed nodes.
-            run delays
-            -- 6. Write output.
-            output root out wires
-            -- Done!
-       -- > Sequential:
-       HDL.process [] $
-         do -- 1. No local variables to declare or wiring to do, as we are only
-            --    interested in updating the outputs of any delayed signals.
-            --    Sorting doesn't matter, as each delay only interacts with
-            --    itself when updating.
-            update signals
-            -- Done!
+  -> Program instr (Param2 exp pred) ()
+compileCore root inputs output order links =
+  do -- First of, we declare all the linked signals.
+     signals <- declareSignals links inputs
+     -- Then, we create the two processes design.
+     -- > Combinatorial:
+     HDL.process (foldr (\(Hide i) is -> i HDL..: is) [] inputs) $
+       do -- 1. Declare local variables.
+          variables <- declareVariables links
+          -- 2. Put together signal and variable wires.
+          let wires = wire signals variables
+          -- 3. Seperate delays.
+          let (delays, nodes) = sortSymbols order wires
+          -- 4. Put in the combinatorial nodes.
+          run nodes
+          -- 5. Put in any writes to delayed nodes.
+          run delays
+          -- 6. Write output.
+          writeOutput root output wires
+     -- > Sequential:
+     HDL.process [] $
+       do -- 1. No local variables to declare or wiring to do, as we are only
+          --    interested in updating the outputs of any delayed signals.
+          --    Sorting doesn't matter, as each delay only interacts with
+          --    itself when updating.
+          update signals
   where
     run :: [Node exp pred] -> Program instr (Param2 exp pred) ()
     run = mapM_ (\(Hide s) -> compileSymbol s)
@@ -285,22 +280,26 @@ compileCompFun root order links =
     update :: Map (Wired exp pred) -> Program instr (Param2 exp pred) ()
     update = mapM_ (\(RMap.Entry _ s) -> updateSymbol s) . RMap.toList
 
-    output :: Key exp pred (Identity b) -> HDL.Signal b -> Wires exp pred -> Program instr (Param2 exp pred) ()
-    output (S.Key k) out m = case RMap.lookup k m of
-        Just (WiredNode _ (Wire (Chan   o))) -> writeOutput o
-        Just (WiredNode _ (Wire (Buff _ o))) -> writeOutput o
+    writeOutput ::
+         Key exp pred (Identity a)
+      -> HDL.Signal a
+      -> Wires exp pred
+      -> Program instr (Param2 exp pred) ()
+    writeOutput (S.Key k) out m = case RMap.lookup k m of
+        Just (WiredNode _ (Wire (Chan   o))) -> writeOutputChan o
+        Just (WiredNode _ (Wire (Buff _ o))) -> writeOutputChan o
         Nothing -> error "signals.vhdl: couldn't find output node."
       where
-        writeOutput :: Channel pred b -> Program instr (Param2 exp pred) ()
-        writeOutput c =
+        writeOutputChan :: Channel pred a -> Program instr (Param2 exp pred) ()
+        writeOutputChan c =
           do val <- readChan c
              HDL.setSignal out val
-
+    
 --------------------------------------------------------------------------------
 
-compileFun ::
+compileNodes :: 
        -- Reification requires that our types be 'Typeable'.
-     ( Typeable exp, Typeable pred, Typeable a, Typeable b
+     ( Typeable exp, Typeable pred, Typeable a
        -- Compilation requires that the following instructions are supported.
      , HDL.SignalCMD    :<: instr
      , HDL.VariableCMD  :<: instr
@@ -311,27 +310,28 @@ compileFun ::
      , HDL.FreeExp exp
      , Subsume pred (HDL.PredicateExp exp)
        -- The output signal must be well-typed.
-     , HDL.PrimType b, Integral b, pred b
-       -- The input signal must be well-typed.
-     , HDL.PrimType a, Integral a, pred a
+     , HDL.PrimType a, pred a
      )
-  => (Sig exp pred a -> Sig exp pred b)
-  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-           HDL.Signal a -> HDL.Signal b -> ())))
-compileFun f =
-  do (root, nodes) <- reifyF1 (runSig . f . Sig)
-     let order = sorter root nodes
-         cycle = cycles root nodes
-         links = linker root nodes
-     return $ case cycle of
-       True  -> error "signal compiler: found cycle"
-       False -> compileCompFun root order links
+  => S.Key exp pred (Identity a)
+  -> [Input]
+  -> HDL.Signal a
+  -> S.Nodes exp pred
+  -> Program instr (Param2 exp pred) ()
+compileNodes root inputs output nodes =
+  let order = sorter root nodes
+      cycle = cycles root nodes
+      links = linker root nodes
+  in case cycle of
+    True  -> error "signal compiler: found cycle"
+    False -> compileCore root inputs output order links
 
 --------------------------------------------------------------------------------
-{-
+
 compile ::
+       -- Reification requires that our types be 'Typeable'.
+     ( Typeable exp, Typeable pred
        -- Compilation requires that the following instructions are supported.
-     ( HDL.SignalCMD    :<: instr
+     , HDL.SignalCMD    :<: instr
      , HDL.VariableCMD  :<: instr
      , HDL.ComponentCMD :<: instr
      , HDL.ProcessCMD   :<: instr
@@ -346,16 +346,59 @@ compile ::
      )
   => Sig exp pred a
   -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-           HDL.Signal Bool
-        -> HDL.Signal a
-        -> ()))
-        )
-compile root nodes =
-  do let order = sorter root nodes
-         cycle = cycles root nodes
-         links = linker root nodes
-     return $ case cycle of
-       True  -> error "signal compiler: found cycle"
-       False -> error "todo"
--}
+           HDL.Signal a -> ())))
+compile sig =
+  do (root, nodes) <- reify (runSig sig)
+     return $ HDL.component $
+       HDL.output $ \out ->
+       HDL.ret $ compileNodes root [] out nodes
+
+--------------------------------------------------------------------------------
+
+compileF1 ::
+     ( Typeable exp, Typeable pred, Typeable a, Typeable b
+     , HDL.SignalCMD    :<: instr
+     , HDL.VariableCMD  :<: instr
+     , HDL.ComponentCMD :<: instr
+     , HDL.ProcessCMD   :<: instr
+     , HDL.FreeExp exp
+     , Subsume pred (HDL.PredicateExp exp)
+     , HDL.PrimType a, Integral a, pred a
+     , HDL.PrimType b, Integral b, pred b
+     )
+  => (Sig exp pred a -> Sig exp pred b)
+  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
+           HDL.Signal a -> HDL.Signal b -> ())))
+compileF1 f =
+  do (root, nodes) <- reifyF1 (runSig . f . Sig)
+     return $ HDL.component $
+       HDL.input  $ \inc ->
+       HDL.output $ \out ->
+       HDL.ret $ compileNodes root [input inc] out nodes
+
+--------------------------------------------------------------------------------
+
+compileF2 ::
+     ( Typeable exp, Typeable pred, Typeable a, Typeable b, Typeable c
+     , HDL.SignalCMD    :<: instr
+     , HDL.VariableCMD  :<: instr
+     , HDL.ComponentCMD :<: instr
+     , HDL.ProcessCMD   :<: instr
+     , HDL.FreeExp exp
+     , Subsume pred (HDL.PredicateExp exp)
+     , HDL.PrimType a, Integral a, pred a
+     , HDL.PrimType b, Integral b, pred b
+     , HDL.PrimType c, Integral c, pred c
+     )
+  => (Sig exp pred a -> Sig exp pred b -> Sig exp pred c)
+  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
+           HDL.Signal a -> HDL.Signal b -> HDL.Signal c -> ())))
+compileF2 f =
+  do (root, nodes) <- reifyF2 (\a b -> runSig $ f (Sig a) (Sig b))
+     return $ HDL.component $
+       HDL.input  $ \incA ->
+       HDL.input  $ \incB ->
+       HDL.output $ \out  ->
+       HDL.ret $ compileNodes root [input incA, input incB] out nodes
+
 --------------------------------------------------------------------------------

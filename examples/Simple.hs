@@ -67,7 +67,7 @@ example sig = zipWith (neq) sig (delay (litE False) sig)
 
 test :: IO ()
 test = do
-  prog <- compileFun example ::
+  prog <- compileF1 example ::
     IO (Prog (Comp (Signal Bool -> Signal Bool -> ())))
   putStrLn $ HDL.compile $ do
     comp <- prog

@@ -9,6 +9,7 @@ module Signal.Core.Reify
   , Nodes    
   , reify
   , reifyF1
+  , reifyF2
   ) where
 
 import Signal.Core (Signal (..), Symbol (..), Core (..))
@@ -69,8 +70,8 @@ reifyF1 ::
   => (Signal exp pred (Identity a) -> Signal exp pred b)
   -> IO (Key exp pred b, Nodes exp pred)
 reifyF1 f =
-  let (_, graph) = let a = S.var (toDyn f) in (a, f a)
-  in reify graph
+  let (_, sig) = let a = S.var (toDyn f) in (a, f a)
+  in reify sig
 
 reifyF2 ::
   ( Typeable exp
@@ -78,10 +79,14 @@ reifyF2 ::
   , Typeable a
   , Typeable b
   , Typeable c
+  , pred a
+  , pred b
   )
-  => (Signal exp pred a -> Signal exp pred b -> Signal exp pred c)
-  -> IO (Key exp pred b, Nodes exp pred)
-reifyF2 = undefined
+  => (Signal exp pred (Identity a) -> Signal exp pred (Identity b) -> Signal exp pred c)
+  -> IO (Key exp pred c, Nodes exp pred)
+reifyF2 f =
+  let (_, g) = let a = S.var (toDyn f) in (a, f a)
+  in reifyF1 g
 
 --------------------------------------------------------------------------------
 
