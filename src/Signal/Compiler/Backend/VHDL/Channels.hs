@@ -130,7 +130,7 @@ type Input = Hide (HDL.Signal)
 input :: HDL.Signal a -> Input
 input = Hide
 
--- | ...
+-- | Fetch the corresponding input signal for a dynamic object.
 signalOf :: forall a . Proxy (Identity a) -> Dynamic -> [Input] -> HDL.Signal a
 signalOf _ dyn is = go (indexOf dyn) is
   where
@@ -167,8 +167,8 @@ declareSignalNodes (RMap.Entry name (LinkedNode core (Link link))) is =
     S.Delay e _ -> do
       let n = nameOf  link
       let o = otherOf link
-      rin :: HDL.Signal b <- HDL.newNamedSignal n
-      r   :: HDL.Signal b <- HDL.initNamedSignal o e
+      rin <- HDL.newNamedSignal n
+      r   <- HDL.initNamedSignal o e
       return $ Just $ entry $ Buff (S rin) (S r)
     _           -> return Nothing
 

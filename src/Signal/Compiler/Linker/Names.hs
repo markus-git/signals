@@ -42,6 +42,9 @@ toString (Fst p)   = toString p ++ "_fst"
 toString (Snd p)   = toString p ++ "_snd"
 toString (Other o) = toString o ++ "_d"
 
+eqName :: Name a -> Name b -> Bool
+eqName a b = hash a == hash b
+
 --------------------------------------------------------------------------------
 
 -- | A bundle is a collection of names, one for each result of a core construct.

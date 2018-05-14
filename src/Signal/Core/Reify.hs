@@ -59,6 +59,8 @@ type Reify exp pred = StateT (Nodes exp pred, Map Name) IO
 reify :: Signal exp pred a -> IO (Key exp pred a, Nodes exp pred)
 reify (Signal sym) = second fst <$> runStateT (reify' sym) (M.empty, M.empty)
 
+--------------------------------------------------------------------------------
+
 -- | Reification of a 1-ary signal function.
 reifyF1 ::
      ( Typeable exp
@@ -73,6 +75,9 @@ reifyF1 f =
   let (_, sig) = let a = S.var (toDyn f) in (a, f a)
   in reify sig
 
+--------------------------------------------------------------------------------
+
+-- | Reification of a 2-ary signal function.
 reifyF2 ::
   ( Typeable exp
   , Typeable pred
