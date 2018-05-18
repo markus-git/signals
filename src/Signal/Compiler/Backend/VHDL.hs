@@ -7,10 +7,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE UndecidableInstances #-}
+
 module Signal.Compiler.Backend.VHDL where
 
 import Signal.Core (Core, Symbol, Expr)
-import Signal.Core.Stream
+import Signal.Core.Stream (Stream, Str)
 import Signal.Core.Reify (reify, reifyF1, reifyF2, Key)
 import Signal.Core.Witness
 import Signal.Core.Frontend (Sig(..))
@@ -31,7 +33,7 @@ import qualified Control.Monad.Identity as CMI
 import qualified Control.Monad.Reader   as CMR
 
 import Data.Either (partitionEithers)
-import Data.Maybe (fromJust, catMaybes)
+import Data.Maybe (catMaybes)
 import Data.Constraint
 import Data.Typeable
 import Data.Ref
@@ -50,28 +52,32 @@ import qualified Prelude as P
 --------------------------------------------------------------------------------
 -- * Compilation
 --------------------------------------------------------------------------------  
-
-class Subsume p1 p2
+{-
+instance (HDL.FreeExp exp, S.Subsume pred (HDL.PredicateExp exp))
+    => S.Literal exp pred
   where
-    wit :: forall a . Dict (p1 a) -> Dict (p2 a)
+    lit = literal
 
-instance (p1 ~ p2) => Subsume p1 p2
-  where
-    wit = id
-
+literal :: forall exp pred a . (HDL.FreeExp exp, S.Subsume pred (HDL.PredicateExp exp))
+  => Dict (pred a)
+  -> a
+  -> exp a
+literal dict a = case S.wit (dict :: Dict (pred a)) of
+  (Dict :: Dict (HDL.PredicateExp exp a)) -> HDL.litE a
+-}
 --------------------------------------------------------------------------------
 
 readChan :: forall instr exp pred a .
      ( HDL.SignalCMD   :<: instr
      , HDL.VariableCMD :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      )
   => Channel pred a
   -> Program instr (Param2 exp pred) (exp a)
-readChan (S s) = case wit (Dict :: Dict (pred a)) of
+readChan (S s) = case S.wit (Dict :: Dict (pred a)) of
   (Dict :: Dict (HDL.PredicateExp exp a)) -> HDL.getSignal s
-readChan (V v) = case wit (Dict :: Dict (pred a)) of
+readChan (V v) = case S.wit (Dict :: Dict (pred a)) of
   (Dict :: Dict (HDL.PredicateExp exp a)) -> HDL.getVariable v
 
 writeChan ::
@@ -91,7 +97,7 @@ readWire ::
      ( HDL.SignalCMD   :<: instr
      , HDL.VariableCMD :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      )
   => Wire exp pred a
   -> Program instr (Param2 exp pred) (Expr exp a)
@@ -101,7 +107,7 @@ readWire (Wire b) = readBundle b
          ( HDL.SignalCMD   :<: instr
          , HDL.VariableCMD :<: instr
          , HDL.FreeExp exp
-         , Subsume pred (HDL.PredicateExp exp)
+         , S.Subsume pred (HDL.PredicateExp exp)
          )
       => Bundle pred (Core Symbol exp pred a)
       -> Program instr (Param2 exp pred) (Expr exp a)
@@ -114,7 +120,7 @@ writeWire ::
      ( HDL.SignalCMD   :<: instr
      , HDL.VariableCMD :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      )
   => Wire exp pred a
   -> Expr exp a
@@ -125,7 +131,7 @@ writeWire (Wire b) e = writeBundle b e
          ( HDL.SignalCMD   :<: instr
          , HDL.VariableCMD :<: instr
          , HDL.FreeExp exp
-         , Subsume pred (HDL.PredicateExp exp)
+         , S.Subsume pred (HDL.PredicateExp exp)
          )
       => Bundle pred (Core Symbol exp pred a)
       -> Expr exp a
@@ -140,7 +146,7 @@ compileSymbol ::
      ( HDL.SignalCMD   :<: instr
      , HDL.VariableCMD :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      )
   => WiredNode exp pred a
   -> Program instr (Param2 exp pred) ()
@@ -173,7 +179,7 @@ updateSymbol ::
      ( HDL.SignalCMD   :<: instr
      , HDL.VariableCMD :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      )
   => Wired exp pred a
   -> Program instr (Param2 exp pred) ()
@@ -239,7 +245,7 @@ compileCore :: forall instr exp pred a .
      , HDL.ComponentCMD :<: instr
      , HDL.ProcessCMD   :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      , HDL.PrimType a, pred a
      )
   => Key exp pred (Identity a)
@@ -308,7 +314,7 @@ compileNodes ::
        -- As both variables and signals are declared, the expression and
        -- predicate types are required to support such actions.
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
        -- The output signal must be well-typed.
      , HDL.PrimType a, pred a
      )
@@ -338,7 +344,7 @@ compile ::
        -- As both variables and signals are declared, the expression and
        -- predicate types are required to support such actions.
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
        -- The output signal must be well-typed.
      , HDL.PrimType a, Integral a, pred a
        -- The clock signal requires that booleans be supported.
@@ -362,7 +368,7 @@ compileF1 ::
      , HDL.ComponentCMD :<: instr
      , HDL.ProcessCMD   :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      , HDL.PrimType a, Integral a, pred a
      , HDL.PrimType b, Integral b, pred b
      )
@@ -385,7 +391,7 @@ compileF2 ::
      , HDL.ComponentCMD :<: instr
      , HDL.ProcessCMD   :<: instr
      , HDL.FreeExp exp
-     , Subsume pred (HDL.PredicateExp exp)
+     , S.Subsume pred (HDL.PredicateExp exp)
      , HDL.PrimType a, Integral a, pred a
      , HDL.PrimType b, Integral b, pred b
      , HDL.PrimType c, Integral c, pred c

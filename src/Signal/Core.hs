@@ -14,7 +14,7 @@ import Signal.Core.Witness
 import Control.Monad.Identity (Identity)
 
 import Data.Bits
-import Data.Constraint (Constraint)
+import Data.Constraint (Dict, Constraint)
 import Data.Dynamic (Dynamic)
 import Data.Typeable (Typeable, Proxy (..))
 import Data.Unique
@@ -38,6 +38,23 @@ type family Expr exp a
 
 --------------------------------------------------------------------------------
 
+-- | Proves that a type predicate subsumes another.
+class Subsume p1 p2
+  where
+    wit :: forall a . Dict (p1 a) -> Dict (p2 a)
+
+-- | All type predicates subsumes themselves.
+instance (p1 ~ p2) => Subsume p1 p2
+  where
+    wit = id
+
+-- | Expressions that, under a constraint, supports lifting values.
+class Literal exp pred
+  where
+    lit :: Dict (pred a) -> a -> exp a
+
+--------------------------------------------------------------------------------
+
 -- | Core signal operations.
 data Core sig exp pred a
   where
@@ -46,30 +63,31 @@ data Core sig exp pred a
 
     -- | Promote a function over expressions to signals.
     Map :: (Tuple pred a, Tuple pred b)
-        => (Expr exp a -> Expr exp b)
-        -> sig exp pred a
-        -> Core sig exp pred b
+      => (Expr exp a -> Expr exp b)
+      -> sig exp pred a
+      -> Core sig exp pred b
 
     -- | Join two signals.
     Pair :: (Tuple pred a, Tuple pred b)
-         => sig exp pred a
-         -> sig exp pred b
-         -> Core sig exp pred (a, b)
+      => sig exp pred a
+      -> sig exp pred b
+      -> Core sig exp pred (a, b)
 
     -- | Pick out the left-most signal of a pair.
     Fst :: (Tuple pred a, Tuple pred b)
-        => sig exp pred (a, b)
-        -> Core sig exp pred a
+      => sig exp pred (a, b)
+      -> Core sig exp pred a
 
     -- | Pick out the right-most signal of a pair.
     Snd :: (Tuple pred a, Tuple pred b)
-        => sig exp pred (a, b)
-        -> Core sig exp pred b
+      => sig exp pred (a, b)
+      -> Core sig exp pred b
 
     -- | Introduce a unit delay.
-    Delay :: pred a => exp a
-          -> sig exp pred (Identity a)
-          -> Core sig exp pred (Identity a)
+    Delay :: (Literal exp pred, pred a)
+      => a
+      -> sig exp pred (Identity a)
+      -> Core sig exp pred (Identity a)
 
     -- | Hole, used during reification.
     Var :: pred a => Dynamic -> Core sig exp pred (Identity a)
@@ -131,8 +149,8 @@ snd :: (Tuple pred a, Tuple pred b)
 snd = signal . Snd . symbol
 
 -- | Delay a signal by one unit.
-delay :: pred a
-  => exp a
+delay :: (Literal exp pred, pred a)
+  => a
   -> Signal exp pred (Identity a)
   -> Signal exp pred (Identity a)
 delay e = signal . Delay e . symbol

@@ -5,9 +5,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PolyKinds #-}
 
-module Signal.Compiler.Backend.C.Buffer where
+module Signal.Compiler.Backend.C.Buffers where
 
 import Signal.Core (Core, Symbol)
+import Signal.Core.Stream (Stream, Str)
 import Signal.Core.Witness
 import Signal.Core.Reify
 import Signal.Core.Data
@@ -24,7 +25,8 @@ import qualified Control.Monad.Reader as CMR
 import Data.Typeable hiding (TypeRep)
 import Type.Reflection
 import Data.Dynamic
-import Data.Maybe (isJust)
+import Data.Constraint (Dict(..))
+import Data.Maybe (isJust, catMaybes)
 import Data.List (deleteBy)
 import Data.Int
 import Data.Ref
@@ -33,10 +35,12 @@ import Data.IntMap (IntMap)
 import qualified Data.Ref.Map as RMap
 import qualified Data.IntMap as IMap
 
-import System.Mem.StableName (eqStableName) -- !
+import System.Mem.StableName -- !
 import Unsafe.Coerce -- !!!
 
 import qualified Language.Embedded.Imperative as C
+
+import Prelude hiding (lookup)
 
 --------------------------------------------------------------------------------
 -- *
@@ -109,23 +113,6 @@ findChains links =
 --------------------------------------------------------------------------------
 
 -- | ...
-data Buffer pred a
-  where
-    Buffer :: pred a
-      => C.Ref Int32   -- head
-      -> C.Ref Int32   -- length
-      -> C.Arr Int32 a -- contents
-      -> Buffer pred a
-
-declareChains :: [[Delay exp pred]] -> Program instr (Param2 exp pred) ()
-declareChains delays = undefined
-  where
-    declareChain :: [Delay exp pred] -> Program instr (Param2 exp pred) ()
-    declareChain = undefined
-
---------------------------------------------------------------------------------
-
--- | ...
 data Bundle pred a
   where
     -- ^ A single channel.
@@ -136,11 +123,6 @@ data Bundle pred a
     Buff :: pred a
       => C.Ref a -- rin
       -> C.Ref a -- r
-      -> Bundle pred (Core Symbol exp pred (Identity a))
-    -- ^ A collection of delayed channels.
-    Arr :: pred a
-      => C.Ref Int32   -- offset
-      -> Buffer pred a -- buffer
       -> Bundle pred (Core Symbol exp pred (Identity a))
     -- ^ A pair of channels.
     Pair ::
@@ -192,19 +174,19 @@ otherOf (Names.One n) = Names.toString $ Names.other n
 
 --------------------------------------------------------------------------------
 
-type Input = Hide (C.Ref)
+type Input = Hide C.Ref
 
 input :: C.Ref a -> Input
 input = Hide
 
 -- | Fetch the corresponding input variable for a dynamic object.
-variableOf :: forall a . Proxy (Identity a) -> Dynamic -> [Input] -> C.Ref a
-variableOf _ dyn is = go (indexOf dyn) is
+inputOf :: forall a . Proxy (Identity a) -> Dynamic -> [Input] -> C.Ref a
+inputOf _ dyn is = go (indexOf dyn) is
   where
     go :: Int -> [Input] -> C.Ref a
     go 0 _  = error "signals.variables: access to input from constant signal."
     go i is = case is !! (i - 1) of
-      Hide ref -> unsafeCoerce ref
+      Hide m -> unsafeCoerce m
 
 -- | Check the arity of a dynamic object.
 indexOf :: Dynamic -> Int
@@ -226,7 +208,7 @@ declareVariableNodes (RMap.Entry name (LinkedNode core (Link link))) is =
   let entry w = RMap.Entry name (Wired Nothing (Just (Wire w)) core) in
   case core of
     S.Var   d   -> do
-      return $ Just $ entry $ Var $ variableOf Proxy d is
+      return $ Just $ entry $ Var $ inputOf Proxy d is
     S.Val   e   -> do
       ref <- C.initNamedRef (nameOf link) e
       return $ Just $ entry $ Var ref
@@ -237,10 +219,14 @@ declareVariableNodes (RMap.Entry name (LinkedNode core (Link link))) is =
       let n = nameOf  link
       let o = otherOf link
       rin <- C.newNamedRef n
-      r   <- C.initNamedRef o e
+      r   <- C.initNamedRef o $ S.lit (dict e) e
       return $ Just $ entry $ Buff rin r
     _ -> return Nothing
+  where
+    dict :: pred a => a -> Dict (pred a)
+    dict _ = Dict
 
+-- | Declare all variables used in a bundle of variable links.
 declareVariableBundle ::
      (C.RefCMD :<: instr, C.ArrCMD :<: instr)
   => TupleRep pred a
@@ -253,5 +239,82 @@ declareVariableBundle (Tuple l r) (Names.Pair n m) =
   do vl <- declareVariableBundle l n
      vr <- declareVariableBundle r m
      return $ Pair vl vr
+
+-- | Declare all variables used during linking.
+declareVariables ::
+     (C.RefCMD :<: instr, C.ArrCMD :<: instr)
+  => Links exp pred
+  -> [Input]
+  -> Program instr (Param2 exp pred) (Map (Wired exp pred))
+declareVariables links is =
+  do variables <- mapM (flip declareVariableNodes is) $ RMap.toList links
+     return $ RMap.fromList $ catMaybes variables
+
+--------------------------------------------------------------------------------
+-- ** Linking of wires.
+--------------------------------------------------------------------------------
+
+-- | Wiring monad.
+type WireM exp pred = Reader (Map (Wired exp pred))
+
+-- | Lookup a wire.
+lookup ::
+     RMap.Name (S.Core sym exp pred a)
+  -> Map (Wired exp pred)
+  -> Wire exp pred a
+lookup r =
+  do s <- CMR.ask
+     return $ case RMap.lookup r s of
+       Just (Wired _ (Just w)  _) -> w
+       Just (Wired _ (Nothing) _) -> error $
+         "Channels.lookup: node " ++ show (hashStableName r) ++ " not wired"
+       Nothing -> error $
+         "Channels.lookup: failed to find node " ++ show (hashStableName r)
+
+--------------------------------------------------------------------------------
+
+-- | Translate a linked node into a wired one.
+wireNode :: forall exp pred a .
+     Map (Wired exp pred)
+  -> Core Link exp pred a
+  -> Core Wire exp pred a
+wireNode wires core = case core of
+    (S.Var d)     -> S.Var d
+    (S.Val e)     -> S.Val e
+    (S.Map f s)   -> S.Map f (loadLink s)
+    (S.Delay e s) -> S.Delay e (loadLink s)
+  where
+    loadLink :: Link exp pred b -> Wire exp pred b
+    loadLink (Link bundle) = loadBundle bundle
+
+    loadBundle :: Names.Bundle (S.Core Symbol exp pred b) -> Wire exp pred b
+    loadBundle (Names.One n)    = loadName n
+    loadBundle (Names.Pair a b) = joinWires (loadBundle a) (loadBundle b)
+
+    loadName :: Names.Name (S.Core sym exp pred b) -> Wire exp pred b
+    loadName (Names.Name n)  = lookup n wires
+    loadName (Names.Fst n)   = leftWire (loadName n)
+    loadName (Names.Snd n)   = rightWire (loadName n)
+    loadName (Names.Other n) = bufferedWire (loadName n)
+
+--------------------------------------------------------------------------------
+
+-- | Completely wired node, as opposed to 'Wired' which may still have holes.
+data WiredNode exp pred a
+  where
+    WiredNode ::
+         Core Wire exp pred a
+      -> Wire exp pred a
+      -> WiredNode exp pred (Core Symbol exp pred a)
+
+-- | Short-hand for a mapping over wired nodes.
+type Wires exp pred = Map (WiredNode exp pred)
+
+-- | Given an incomplete wiring of variable nodes, produces a complete wiring.
+wire :: Map (Wired exp pred) -> Wires exp pred
+wire vs = RMap.hmap (go vs) vs
+  where
+    go :: RMap.Map (Wired exp pred) -> Wired exp pred a -> WiredNode exp pred a
+    go wires (Wired _ (Just o) core) = WiredNode (wireNode wires core) o
 
 --------------------------------------------------------------------------------

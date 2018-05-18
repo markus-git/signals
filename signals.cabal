@@ -27,18 +27,19 @@ library
   exposed-modules:
     Signal,
     Signal.Compiler,
---    Signal.Compiler.Interface,
     Signal.Compiler.Cycles,
     Signal.Compiler.Sorter,
     Signal.Compiler.Linker,
     Signal.Compiler.Linker.Names,
     Signal.Compiler.Backend.VHDL,
     Signal.Compiler.Backend.VHDL.Channels,
-    Signal.Compiler.Knot,
+    Signal.Compiler.Backend.C,
+    Signal.Compiler.Backend.C.Buffers,
     Signal.Core,
+    Signal.Core.Frontend,
     Signal.Core.Stream,
---    Signal.Core.Witness,
     Signal.Core.Data,
+    Signal.Core.Witness,
     Signal.Core.Reify
     
   -- other-modules:       

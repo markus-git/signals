@@ -34,9 +34,10 @@ import Control.Monad.Identity (Identity)
 import Control.Monad.Reader   (Reader)
 import qualified Control.Monad.Reader as CMR
 
+import Type.Reflection
 import Data.Maybe    (catMaybes)
 import Data.Typeable hiding (TypeRep)
-import Type.Reflection
+import Data.Constraint
 import Data.Dynamic
 import Data.Hashable
 import Data.Ref
@@ -52,8 +53,7 @@ import Data.ALaCarte (Param2(..))
 import qualified Language.Embedded.Hardware.Command   as HDL
 import qualified Language.Embedded.Hardware.Interface as HDL
 
-import System.Mem.StableName
-
+import System.Mem.StableName -- !
 import Unsafe.Coerce -- !!!
 
 import Prelude hiding (Left, Right, lookup)
@@ -168,9 +168,12 @@ declareSignalNodes (RMap.Entry name (LinkedNode core (Link link))) is =
       let n = nameOf  link
       let o = otherOf link
       rin <- HDL.newNamedSignal n
-      r   <- HDL.initNamedSignal o e
+      r   <- HDL.initNamedSignal o $ S.lit (dict e) e
       return $ Just $ entry $ Buff (S rin) (S r)
     _           -> return Nothing
+  where
+    dict :: pred a => a -> Dict (pred a)
+    dict _ = Dict
 
 -- | Declare all signals used during linking.
 declareSignals :: (HDL.SignalCMD :<: instr)

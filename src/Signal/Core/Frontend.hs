@@ -2,7 +2,7 @@
 
 module Signal.Core.Frontend where
 
-import Signal.Core (Signal(..), Symbol(..))
+import Signal.Core (Signal(..), Symbol(..), Literal)
 import Signal.Core.Witness
 import qualified Signal.Core as S
 
@@ -25,7 +25,7 @@ repeat :: pred a => exp a -> Sig exp pred a
 repeat = Sig . S.repeat
 
 -- | Delay a signal by one value.
-delay :: pred a => exp a -> Sig exp pred a -> Sig exp pred a
+delay :: (Literal exp pred, pred a) => a -> Sig exp pred a -> Sig exp pred a
 delay e = Sig . S.delay e . runSig
 
 -- | Apply a function element-wise to a signal.
