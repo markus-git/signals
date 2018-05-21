@@ -351,13 +351,11 @@ compile ::
      , pred Bool
      )
   => Sig exp pred a
-  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-           HDL.Signal a -> ())))
+  -> IO (HDL.Sig instr exp pred Identity (HDL.Signal a -> ()))
 compile sig =
   do (root, nodes) <- reify (runSig sig)
-     return $ HDL.component $
-       HDL.output $ \out ->
-       HDL.ret $ compileNodes root [] out nodes
+     return $ HDL.output $ \out -> HDL.ret $
+       compileNodes root [] out nodes
 
 --------------------------------------------------------------------------------
 
@@ -373,14 +371,11 @@ compileF1 ::
      , HDL.PrimType b, Integral b, pred b
      )
   => (Sig exp pred a -> Sig exp pred b)
-  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-           HDL.Signal a -> HDL.Signal b -> ())))
+  -> IO (HDL.Sig instr exp pred Identity (HDL.Signal a -> HDL.Signal b -> ()))
 compileF1 f =
   do (root, nodes) <- reifyF1 (runSig . f . Sig)
-     return $ HDL.component $
-       HDL.input  $ \inc ->
-       HDL.output $ \out ->
-       HDL.ret $ compileNodes root [input inc] out nodes
+     return $ HDL.input  $ \inc -> HDL.output $ \out -> HDL.ret $
+       compileNodes root [input inc] out nodes
 
 --------------------------------------------------------------------------------
 
@@ -397,14 +392,10 @@ compileF2 ::
      , HDL.PrimType c, Integral c, pred c
      )
   => (Sig exp pred a -> Sig exp pred b -> Sig exp pred c)
-  -> IO (Program instr (Param2 exp pred) (HDL.Comp instr exp pred Identity (
-           HDL.Signal a -> HDL.Signal b -> HDL.Signal c -> ())))
+  -> IO (HDL.Sig instr exp pred Identity (HDL.Signal a -> HDL.Signal b -> HDL.Signal c -> ()))
 compileF2 f =
   do (root, nodes) <- reifyF2 (\a b -> runSig $ f (Sig a) (Sig b))
-     return $ HDL.component $
-       HDL.input  $ \incA ->
-       HDL.input  $ \incB ->
-       HDL.output $ \out  ->
-       HDL.ret $ compileNodes root [input incA, input incB] out nodes
+     return $ HDL.input $ \incA -> HDL.input $ \incB -> HDL.output $ \out -> HDL.ret $
+       compileNodes root [input incA, input incB] out nodes
 
 --------------------------------------------------------------------------------

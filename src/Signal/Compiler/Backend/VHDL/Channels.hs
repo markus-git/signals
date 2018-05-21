@@ -165,8 +165,8 @@ declareSignalNodes (RMap.Entry name (LinkedNode core (Link link))) is =
     S.Val   _   -> return Nothing
     S.Map   _ _ -> return Nothing
     S.Delay e _ -> do
-      let n = nameOf  link
-      let o = otherOf link
+      let n = "s" ++ nameOf  link
+      let o = "s" ++ otherOf link
       rin <- HDL.newNamedSignal n
       r   <- HDL.initNamedSignal o $ S.lit (dict e) e
       return $ Just $ entry $ Buff (S rin) (S r)
@@ -195,7 +195,7 @@ declareVariableNodes (RMap.Entry name (LinkedNode core (Link link))) =
   case core of
     S.Var   _   -> return Nothing
     S.Val   e   -> do
-      var <- HDL.initNamedVariable (nameOf link) e
+      var <- HDL.initNamedVariable ("v" ++ nameOf link) e
       return $ Just $ entry $ Chan $ V var
     S.Map   _ _ -> do
       wires <- declareVariableBundle witness link
@@ -209,7 +209,7 @@ declareVariableBundle :: (HDL.VariableCMD :<: instr)
   -> Names.Bundle (S.Core Symbol exp pred a)
   -> Program instr (Param2 exp pred) (Bundle pred (S.Core Symbol exp pred a))
 declareVariableBundle (Single) (Names.One n) =
-  do var <- HDL.variable $ Names.toString n
+  do var <- HDL.variable $ "v" ++ Names.toString n
      return $ Chan $ V var
 declareVariableBundle (Tuple l r) (Names.Pair n m) =
   do vl <- declareVariableBundle l n

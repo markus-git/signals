@@ -64,7 +64,7 @@ library
     observable-sharing   >= 0.2.5,
     language-vhdl        >= 0.1.3,
     imperative-edsl      >= 0.7.1,
-    hardware-edsl        >= 0.1.5.2
+    hardware-edsl        >= 0.1.5.3
 
   hs-source-dirs:
     .,src

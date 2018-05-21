@@ -210,14 +210,14 @@ declareVariableNodes (RMap.Entry name (LinkedNode core (Link link))) is =
     S.Var   d   -> do
       return $ Just $ entry $ Var $ inputOf Proxy d is
     S.Val   e   -> do
-      ref <- C.initNamedRef (nameOf link) e
+      ref <- C.initNamedRef ("v" ++ nameOf link) e
       return $ Just $ entry $ Var ref
     S.Map   _ _ -> do
       refs <- declareVariableBundle witness link
       return $ Just $ entry refs
     S.Delay e _ -> do
-      let n = nameOf  link
-      let o = otherOf link
+      let n = "v" ++ nameOf  link
+      let o = "v" ++ otherOf link
       rin <- C.newNamedRef n
       r   <- C.initNamedRef o $ S.lit (dict e) e
       return $ Just $ entry $ Buff rin r
@@ -233,7 +233,7 @@ declareVariableBundle ::
   -> Names.Bundle (S.Core Symbol exp pred a)
   -> Program instr (Param2 exp pred) (Bundle pred (S.Core Symbol exp pred a))
 declareVariableBundle (Single) (Names.One n) =
-  do ref <- C.newNamedRef $ Names.toString n
+  do ref <- C.newNamedRef $ "v" ++ Names.toString n
      return $ Var ref
 declareVariableBundle (Tuple l r) (Names.Pair n m) =
   do vl <- declareVariableBundle l n

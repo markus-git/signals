@@ -40,8 +40,9 @@ import Prelude hiding (repeat, zipWith)
 --------------------------------------------------------------------------------
 
 type HInstr = SignalCMD :+: VariableCMD :+: ConditionalCMD :+: ComponentCMD :+: ProcessCMD :+: VHDLCMD
-type HProg  = Program HInstr (Param2 HExp HType)
+type HProg  = Program  HInstr (Param2 HExp HType)
 type HComp  = HDL.Comp HInstr HExp HType Identity
+type HSig   = HDL.Sig  HInstr HExp HType Identity
 type Signal = HDL.Signal
 
 --------------------------------------------------------------------------------
@@ -58,11 +59,8 @@ instance S.Literal HExp HType
 
 vhdl :: IO ()
 vhdl =
-  do prog <- HDL.compileF1 ex
-       :: IO (HProg (HComp (Signal Bool -> Signal Bool -> ())))
-     putStrLn $ HDL.compile $ do
-       comp <- prog
-       return ()
+  do sig <- HDL.compileF1 ex :: IO (HSig (Signal Bool -> Signal Bool -> ()))
+     putStrLn $ HDL.compileSig sig
   where
     ex :: S.Sig HExp HType Bool -> S.Sig HExp HType Bool
     ex sig = zipWith (neq) sig (delay False sig)
