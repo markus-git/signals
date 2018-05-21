@@ -1,5 +1,5 @@
 name:                signals
-version:             0.2.0.2
+version:             0.2.1
 synopsis:            Synchronous signal processing for DSLs.
 description:         A library for expressing digital signal processing
                      algorithms using a deeply embedded domain-specific language.
