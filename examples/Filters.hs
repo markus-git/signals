@@ -1,108 +1,95 @@
-{-# LANGUAGE TypeOperators   #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Filters where
 
-import Language.VHDL
-import Language.Embedded.VHDL hiding (compile)
-import qualified Language.Embedded.VHDL            as V
-import qualified Language.Embedded.VHDL.Expression as E
+import Signal
+import Signal.Core (Literal(..))
+import Signal.Compiler.Backend.VHDL
 
-import Signal hiding (E)
-import Signal.Compiler.Interface
-
+import qualified Language.Embedded.Hardware.Expression as E
+import qualified Language.Embedded.Hardware.Expression.Represent as E
+import qualified Language.Embedded.Hardware.Command    as C
+import qualified Language.Embedded.Hardware.Command.Frontend as C
+import qualified Language.Embedded.Hardware.Interface  as I
 import Control.Monad.Operational.Higher
 import Control.Monad.Identity
+import Data.ALaCarte
 import Data.Bits
+import Data.Constraint (Dict(..))
 import Data.Typeable
 import Data.Word
 import System.IO
-
 import Prelude hiding (repeat, map, zipWith, div)
 import qualified Prelude as P
 
 --------------------------------------------------------------------------------
--- *
+-- * Hardware signals.
 --------------------------------------------------------------------------------
 
--- | The kinds of commands we can use
-type CMD exp = SequentialCMD exp :+: ConcurrentCMD exp :+: HeaderCMD exp
+-- | Short-hand for expressions type.
+type Exp  = E.HExp
 
--- | Short-hand for the expression type we will use
-type E = Data
+-- | Short-hand for predicate type.
+type Pred = E.HType
 
--- | Short-hand for signals over our commands
-type S = Sig (CMD E)
+-- | Short-hand for signals over above instructions and expressinos.
+type S = Sig Exp Pred
 
--- | ...
-instance Compile Data
-  where
-    literal = litE
+instance Literal E.HExp E.HType where
+  lit Dict = I.litE
 
 --------------------------------------------------------------------------------
--- ** Some simple signal functions
+-- ** Simple circuits
 
-type Ok a = (Type a, Typeable a)
-
-repeat :: Ok a => E a -> S a
-repeat = lift0
-
-map :: Ok a => (E a -> E a) -> S a -> S a
-map f = lift1 f
-
-zipWith :: Ok a => (E a -> E a -> E a) -> S a -> S a -> S a
-zipWith f = lift2 f
-
---------------------------------------------------------------------------------
--- ** Some _very_ simple signals
-
-high, low :: E Bool
-high = litE True
-low  = litE False
-
+-- | Inverter for a signal.
 inv :: S Bool -> S Bool
-inv = lift1 E.not
+inv = map E.not
 
---------------------------------------------------------------------------------
--- ** Some simple circuits
-
+-- | Logical and for two signals.
 and2 :: S Bool -> S Bool -> S Bool
 and2 = zipWith E.and
 
--- | Recursiv signal example
+-- | Recursiv signal to create an alternating signal.
 toggle :: S Bool
-toggle = high `delay` (inv toggle)
+toggle = True `delay` (inv toggle)
 
--- | Mux. example
+{-
+-- | Todo.
 multiplexer :: S Word8 -> S Word8
 multiplexer sig = mux2 toggle (sig, zeroes)
   where
     zeroes = repeat 0
     toggle = repeat high
-
+-}
 --------------------------------------------------------------------------------
--- ** Some filters
+-- ** Filters.
 
+-- | Join two signals by division.
 divs :: S Word8 -> S Word8 -> S Word8
-divs = zipWith div
+divs = zipWith E.div
 
+-- | Join a number of signals by addition.
 sums :: [S Word8] -> S Word8
 sums = P.foldr1 (+)
 
-muls :: [E Word8] -> [S Word8] -> [S Word8]
+-- | Multiply a number of signals by some coefficients.
+muls :: [Exp Word8] -> [S Word8] -> [S Word8]
 muls es = P.zipWith (*) (P.map repeat es)
 
-delays :: [E Word8] -> S Word8 -> [S Word8]
-delays es s = scanl (flip delay) s es
+-- | Create a number of signals by iteratively delaying them by some value.
+delays :: Word8 -> S Word8 -> [S Word8]
+delays e = P.iterate (delay e)
 
--- | Finite impulse response filter
-fir :: [E Word8] -> S Word8 -> S Word8
-fir as = sums . muls as . delays ds
-  where
-    ds = P.replicate (P.length as) 0
+-- | Finite impulse response filter.
+fir :: [Exp Word8] -> S Word8 -> S Word8
+fir as = sums . muls as . delays 0
 
 -- | Infinite impulse response filter
-iir :: [E Word8] -> [E Word8] -> S Word8 -> S Word8
+iir :: [Exp Word8] -> [Exp Word8] -> S Word8 -> S Word8
 iir (a:as) bs s = o
   where
     u = fir bs s
@@ -112,61 +99,50 @@ iir (a:as) bs s = o
 --------------------------------------------------------------------------------
 -- ** Tuples
 
--- | tuples in the signal layer
+-- | Tuples used within signal computations.
 tupleS :: S Word8 -> S Word8
 tupleS s = let (d, m) = divMod s 2 in d + m
+
 {-
--- | tuples in the expression layer
+-- | Todo
 tupleE :: S Word8 -> S (Word8, S Word8)
 tupleE s = undefined
   where p = undefined :: proxy i (Identity a, Identity a) (a, a)
 -}
+
 --------------------------------------------------------------------------------
 -- *
 --------------------------------------------------------------------------------
 
-type P = Program (CMD E)
+-- | Short-hand for instruction set.
+type Instr = C.SignalCMD :+: C.VariableCMD :+: C.ComponentCMD :+: C.ProcessCMD
 
-compS :: Ok a => S a -> IO (P ())
-compS s =
-  do prog <- compile s
-     return $ void $ run prog
+-- | Short-hand for programs over our expression and predicate types.
+type P = Program Instr (Param2 Exp Pred)
 
-compSF :: (Ok a, Ok b) => (S a -> S b) -> E a -> IO (P ())
-compSF f a =
-  do prog <- compiler f
-     return . void . run . prog . Stream . return . return $ a
+comp :: (E.PrimType a, Integral a) => S a -> IO ()
+comp f =
+  do sig :: C.Sig Instr Exp Pred Identity (C.Signal a -> ()) <- compile f
+     C.icompileSig sig
+
+-- | Compile a signal function into a signature, and then produce a design.
+compF1 ::
+     ( E.PrimType a, Integral a
+     , E.PrimType b, Integral b)
+  => (S a -> S b) -> IO ()
+compF1 f =
+  do sig :: C.Sig Instr Exp Pred Identity (C.Signal a -> C.Signal b -> ()) <- compileF1 f
+     C.icompileSig sig
 
 --------------------------------------------------------------------------------
 
-testInv :: IO ()
-testInv = compS (inv (repeat high)) >>= putStrLn . V.compile
+testInv = compF1 inv
+testRec = comp   toggle
 
-testRec :: IO ()
-testRec = compS toggle >>= putStrLn . V.compile
+testFIR = compF1 (fir [1,2])
+testIIR = compF1 (iir [1,2] [3,4])
 
-testMux :: IO ()
-testMux = compSF multiplexer 0 >>= putStrLn . V.compile
+testTupleS = compF1 tupleS
+--testTupleE = compF1 tupleE
 
-testFIR :: IO ()
-testFIR = compSF (fir [1,2]) 0 >>= putStrLn . V.compile
-
-testIIR :: IO ()
-testIIR = compSF (iir [1,2] [3,4]) 0 >>= putStrLn . V.compile
-
-testTupleS :: IO ()
-testTupleS = compSF tupleS 4 >>= putStrLn . V.compile
-{-
-testTupleE :: IO ()
-testTupleE = compSF tupleE 4 >>= putStrLn . V.compile
--}
---------------------------------------------------------------------------------
--- *
---------------------------------------------------------------------------------
-{-
-write :: IO ()
-write =
-  do prog <- compSF (fir [1,2])
-     writeFile "generated.vhdl" (compile prog)
--}
 --------------------------------------------------------------------------------
