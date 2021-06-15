@@ -31,6 +31,7 @@ library
     Signal.Compiler.Sorter,
     Signal.Compiler.Linker,
     Signal.Compiler.Linker.Names,
+    Signal.Compiler.Knot
     Signal.Compiler.Backend.VHDL,
     Signal.Compiler.Backend.VHDL.Channels,
     Signal.Compiler.Backend.C,
@@ -57,14 +58,14 @@ library
     base                 >= 4.7 && <5,
     mtl                  >= 2.2 && <2.3,
     constraints          >= 0.8,
-    containers           >= 0.5 && <0.6,
+    containers           >= 0.5.10,
     hashable             >= 1.2,
     syntactic            >= 3.6.1,
     operational-alacarte >= 0.3,
     observable-sharing   >= 0.2.5,
-    language-vhdl        >= 0.1.3,
+    language-vhdl        >= 0.1.4,
     imperative-edsl      >= 0.7.1,
-    hardware-edsl        >= 0.1.5.3
+    hardware-edsl        >= 0.1.6
 
   hs-source-dirs:
     .,src

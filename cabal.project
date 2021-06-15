@@ -1,0 +1,17 @@
+packages: .
+
+source-repository-package
+    type: git
+    location: https://github.com/markus-git/language-vhdl.git
+
+source-repository-package
+    type: git
+    location: https://github.com/markus-git/hardware-edsl.git
+
+source-repository-package
+    type: git
+    location: https://github.com/emilaxelsson/syntactic.git
+
+source-repository-package
+    type: git
+    location: https://github.com/atzeus/observable-sharing.git
